@@ -1,0 +1,20 @@
+{
+  "description": "Classic pieces and Icy Sea board matched to the user-supplied reference image",
+  "retrieved": "2026-11-15",
+  "ownership": "Chess.com / respective artwork rights holders; no new license implied",
+  "files": {
+    "icy-sea.png": "https://images.chesscomfiles.com/chess-themes/boards/icy_sea/150.png",
+    "classic/wp.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/wp.png",
+    "classic/wn.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/wn.png",
+    "classic/wb.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/wb.png",
+    "classic/wr.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/wr.png",
+    "classic/wq.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/wq.png",
+    "classic/wk.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/wk.png",
+    "classic/bp.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/bp.png",
+    "classic/bn.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/bn.png",
+    "classic/bb.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/bb.png",
+    "classic/br.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/br.png",
+    "classic/bq.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/bq.png",
+    "classic/bk.png": "https://images.chesscomfiles.com/chess-themes/pieces/classic/150/bk.png"
+  }
+}

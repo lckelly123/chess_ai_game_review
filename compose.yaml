@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_USER: chess
+      POSTGRES_DB: chess_study
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chess -d chess_study"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PORT:-8000}:8000"
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: chess
+      PGDATABASE: chess_study
+      PGPASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      LEGACY_SQLITE_PATH: /legacy/chess.db
+      CHESSCOM_USER_AGENT: "${CHESSCOM_USER_AGENT:-ChessStudy/0.1 (local game library)}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      COACH_MAX_OUTPUT_TOKENS: "${COACH_MAX_OUTPUT_TOKENS:-32768}"
+      COACH_TIMEOUT_SECONDS: "${COACH_TIMEOUT_SECONDS:-600}"
+      LANGSMITH_TRACING: "${LANGSMITH_TRACING:-false}"
+      LANGSMITH_API_KEY: "${LANGSMITH_API_KEY:-}"
+      LANGSMITH_PROJECT: "${LANGSMITH_PROJECT:-chess-coach}"
+      LANGSMITH_ENDPOINT: "${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}"
+      LANGSMITH_WORKSPACE_ID: "${LANGSMITH_WORKSPACE_ID:-}"
+    volumes:
+      - chess-data:/legacy:ro
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  chess-data:
+  postgres-data:

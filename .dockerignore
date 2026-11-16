@@ -1,0 +1,12 @@
+.git
+.venv
+.langgraph_api
+**/__pycache__
+.pytest_cache
+frontend/node_modules
+frontend/dist
+data
+.env
+.impeccable
+*.log
+**/*.tsbuildinfo

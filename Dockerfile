@@ -1,0 +1,32 @@
+FROM node:24-bookworm-slim AS frontend
+WORKDIR /build
+COPY frontend/package*.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+FROM python:3.13-slim-bookworm AS backend
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FRONTEND_DIST=/app/frontend/dist
+WORKDIR /app
+COPY backend/requirements.lock ./requirements.lock
+RUN pip install --no-cache-dir -r requirements.lock \
+    && groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --no-create-home app \
+    && mkdir -p /data && chown app:app /data
+COPY backend/ ./backend/
+COPY --from=frontend /build/dist ./frontend/dist/
+USER app
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM backend AS test
+USER root
+RUN pip install --no-cache-dir 'pytest>=8,<10'
+COPY langgraph.json ./
+USER app
+CMD ["python", "-m", "pytest", "backend/tests", "-q", "-p", "no:cacheprovider"]
+
+FROM backend AS app

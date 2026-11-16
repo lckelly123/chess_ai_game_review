@@ -1,0 +1,7 @@
+{
+  "dependencies": ["./backend"],
+  "graphs": {
+    "chess_coach": "backend.coach.graph:graph"
+  },
+  "env": ".env"
+}

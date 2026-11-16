@@ -1,0 +1,5 @@
+# Optional loopback access for a locally running Python backend or SQL client.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"

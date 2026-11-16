@@ -1,0 +1,13 @@
+.venv/
+.langgraph_api/
+__pycache__/
+.pytest_cache/
+*.pyc
+data/
+.env
+frontend/node_modules/
+frontend/dist/
+.impeccable/review/
+.impeccable/live/
+*.log
+*.tsbuildinfo
