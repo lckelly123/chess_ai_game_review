@@ -12,14 +12,17 @@ docker compose up --build -d
 
 Open **http://localhost:8000**. Enter a Chess.com username and import the latest 20, 50, or 100 games. No Chess.com password or API key is needed. The username is a public lookup, not verified ownership or account linking.
 
+The same command also starts the **Studio graph server** on http://127.0.0.1:2024. Open [LangSmith Studio](https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024) and select **chess_coach** to visualize and run the graph. The `app` and `studio` services use the same image, including Python, graph dependencies, and Stockfish; no local `.venv` or additional startup command is needed. Both services can also be started from the existing Compose stack in Docker Desktop after the first build. See [Studio inputs and tracing setup](backend/coach/README.md#run-in-langsmith-studio).
+
 ```sh
 docker compose logs -f app
+docker compose logs -f studio
 docker compose down
 ```
 
 Games and coach feedback are stored in PostgreSQL's `postgres-data` named volume and survive ordinary container recreation and `docker compose down`. **`docker compose down -v` deletes the named volumes.** PostgreSQL is reachable only on the Compose network by default. The opening screen is the game library. The frontend remembers the selected player and each game's replay position in the browser. This is a single-user local application: the app port binds to loopback by default, and there is no app authentication. Do not expose it publicly without adding access controls.
 
-Set `PORT` or a descriptive `CHESSCOM_USER_AGENT` in `.env` as needed. The `db` service runs PostgreSQL 18; the app waits for its health check before starting.
+Set `PORT`, `STUDIO_PORT`, or a descriptive `CHESSCOM_USER_AGENT` in `.env` as needed. Both published ports bind to loopback; if you change `STUDIO_PORT`, use that port in Studio's `baseUrl`. The `db` service runs PostgreSQL 18; the app waits for its health check before starting. Studio starts independently of the app/database and keeps its development threads and checkpoints in the separate `studio-data` volume, which survives ordinary restarts and `docker compose down`. Rebuild with the usual command after code or dependency changes so both services use the same updated graph.
 
 ### Existing SQLite installations
 
@@ -88,17 +91,16 @@ In Docker, use `docker compose exec app python -m backend.coach.stockfish` with 
 - **Back to games** returns to the library with your filters, scroll position, and keyboard focus restored. Browser Back/Forward and replay links also work.
 - Left/right arrows step through moves; Home/End jump to the beginning/end; Space toggles autoplay. Shortcuts do not intercept form fields. Space retains its native action on focused buttons and links.
 - Flip the board; the initial orientation follows the imported player.
-- Download the original PGN or open the source game on Chess.com.
 - Selecting a game again restores your last position in this browser.
 - The Coach panel has a wide, scrollable response area with formatted headings, emphasis, and lists, plus a question box. Run coach analyzes the currently selected position and saves its answer to PostgreSQL. The latest saved answer is restored automatically. Question drafts are saved per game in this browser and are not sent.
 
 ## Coach backend
 
-`backend/coach/` contains a LangGraph workflow using the OpenAI Responses API with GPT-6 Astra and xhigh reasoning for both passes. `analyze_position` receives only the selected FEN and derived ASCII board. `evaluate_move` receives its complete output, the same board, the next recorded move, and Stockfish's candidates and played-move evaluation, using the separate supplied move-review prompt. Its section 3 is appended to the first response. The replay sends `{ "game_id": "...", "ply": 0 }` to `POST /api/coach/analyze`; the server derives the position and move from the saved PGN. `{ "fen": "..." }` remains available for position-only coaching. Student questions are not connected.
+`backend/coach/` contains a LangGraph workflow using the OpenAI Responses API with GPT-6 Astra (default) or GPT-6.1 Terra and xhigh reasoning for both passes. Choose the model beneath Run coach; the browser remembers the selection. Both models use the same prompts, engine evidence, and graph. `analyze_position` receives only the selected FEN and derived ASCII board. `evaluate_move` receives its complete output, the same board, the next recorded move, and Stockfish's candidates and played-move evaluation, using the separate supplied move-review prompt. Its section 3 is appended to the first response. The replay sends `{ "game_id": "...", "ply": 0, "model": "gpt-6.1-terra" }` to `POST /api/coach/analyze`; the server derives the position and move from the saved PGN. `{ "fen": "...", "model": "gpt-6.1-terra" }` remains available for position-only coaching. Omitting `model` defaults to Astra; unsupported model IDs are rejected. Saved responses identify their generating model; selecting another model takes effect on the next run. Student questions are not connected.
 
 See [backend/coach/README.md](backend/coach/README.md) for the Python interface, command-line dry run, credentials, and Docker usage. Set `OPENAI_API_KEY` in the ignored project `.env`, then restart the app (`docker compose up -d` for Docker). The key is used only by the backend. The existing game library works without a key.
 
-The same graph is available in LangSmith Studio through the root `langgraph.json`. Install `backend/requirements-dev.txt`, set `$env:PYTHONUTF8 = "1"` on Windows, and run `.\.venv\Scripts\langgraph dev` from the root. See the coach README for Studio input and tracing setup. LangSmith tracing is optional: set `LANGSMITH_API_KEY`, `LANGSMITH_TRACING=true`, and `LANGSMITH_PROJECT=chess-coach` in `.env` to record graph, node, and Responses API spans. App requests execute the graph directly and do not require the Studio server.
+The same graph is available in LangSmith Studio through the root `langgraph.json`; Docker Compose starts its server automatically. See the coach README for Studio input, tracing setup, and optional local Python development. LangSmith tracing is optional: set `LANGSMITH_API_KEY`, `LANGSMITH_TRACING=true`, and `LANGSMITH_PROJECT=chess-coach` in `.env`, then run `docker compose up -d` to apply those settings to both services and record graph, node, and Responses API spans. App requests execute the graph directly and do not require the Studio server.
 
 ## Import behavior
 
@@ -117,7 +119,7 @@ cd frontend
 npm run build
 ```
 
-The test stack uses a separate PostgreSQL container with temporary storage and no production credentials or OpenAI calls. Backend tests cover SQLite migration/rollback, feedback history and restart persistence, database failures, coach serialization/validation, imports, caching, replay, and the existing graph workflow. For local pytest, install `backend/requirements-dev.txt` and set `TEST_DATABASE_URL` to a disposable PostgreSQL database; tests create and remove isolated schemas there. `npm run build` performs TypeScript checking before bundling. Runtime Python dependencies are pinned in `backend/requirements.lock`; npm versions are pinned in `frontend/package-lock.json`.
+The test stack uses a separate PostgreSQL container with temporary storage and no production credentials or OpenAI calls. Backend tests cover SQLite migration/rollback, feedback history and restart persistence, database failures, coach serialization/validation, imports, caching, replay, and the existing graph workflow. For local pytest, install `backend/requirements-dev.txt` and set `TEST_DATABASE_URL` to a disposable PostgreSQL database; tests create and remove isolated schemas there. `npm run build` performs TypeScript checking before bundling. App Python dependencies are pinned in `backend/requirements.lock`, and `backend/requirements-studio.txt` adds pinned Studio CLI/API/runtime versions; npm versions are pinned in `frontend/package-lock.json`.
 
 ## Project layout
 

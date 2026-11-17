@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 
 from backend.chess_games import normalize_game
-from backend.coach import Coach, CoachAnalysis, CoachPosition, CoachResponseError, InvalidPositionError
+from backend.coach import Coach, CoachAnalysis, CoachPosition, CoachResponseError, CoachSettings, InvalidPositionError
 from backend.coach.graph import build_coach_graph
 from backend.coach.responses import MOVE_PROMPT_PATH
 from backend.coach.stockfish import StockfishAnalysisError
@@ -39,16 +39,19 @@ def evidence(review):
             "top_moves": [candidate], "played_move": candidate, "played_move_in_top": True}
 
 
-def test_second_responses_request_gets_exact_prior_output_board_move_and_evidence():
+@pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-terra"])
+def test_second_responses_request_gets_exact_prior_output_board_move_and_evidence(model):
     requests = []
     board = chess.Board()
     board.push_uci("e2e4")
     fen = board.fen()
 
     def upstream(request):
+        assert request.method == "POST"
+        assert str(request.url) == "https://api.openai.com/v1/responses"
         body = json.loads(request.content)
         requests.append(body)
-        return httpx2.Response(200, json=completed_response() if len(requests) == 1 else move_response())
+        return httpx2.Response(200, json=completed_response(model=model) if len(requests) == 1 else move_response(model=model))
 
     def engine(review):
         assert len(requests) == 1  # First analysis precedes engine-backed review.
@@ -58,7 +61,7 @@ def test_second_responses_request_gets_exact_prior_output_board_move_and_evidenc
 
     async def run():
         async with mock_client(upstream) as client:
-            return await Coach(client, engine=engine).analyze(fen, played_move="e7e5")
+            return await Coach(client, CoachSettings(model=model), engine=engine).analyze(fen, played_move="e7e5")
 
     result = asyncio.run(run())
     assert len(requests) == 2
@@ -73,11 +76,13 @@ def test_second_responses_request_gets_exact_prior_output_board_move_and_evidenc
     assert payload["previous_analysis"] == FIRST
     assert payload["played_move"] == {"uci": "e7e5", "san": "e5"}
     assert payload["stockfish"] == result.stockfish
-    assert second["model"] == "gpt-6-astra" and second["reasoning"] == {"effort": "xhigh"}
+    assert requests[0]["model"] == second["model"] == model
+    assert requests[0]["reasoning"] == second["reasoning"] == {"effort": "xhigh"}
     assert second["store"] is False and "previous_response_id" not in second
     assert result.text == FIRST + "\n\n" + SECOND
     assert result.played_move == "e7e5"
     assert result.position_analysis["response_id"] == "resp_test"
+    assert result.position_analysis["model"] == result.move_analysis["model"] == result.model == model
     assert result.move_analysis["response_id"] == result.response_id == "resp_move"
     assert result.usage["total_tokens"] == 320
     assert result.usage["output_tokens_details"]["reasoning_tokens"] == 40
@@ -160,7 +165,8 @@ def test_engine_failure_prevents_second_model_request():
     assert len(requests) == 1
 
 
-def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_db_url):
+@pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-terra"])
+def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_db_url, model):
     db = Database(test_db_url)
     game = normalize_game(raw_game(), "alice")
     different = normalize_game(raw_game(2, pgn='[White "alice"]\n[Black "bob"]\n[Result "1-0"]\n\n1. d4 d5 1-0'), "alice")
@@ -169,15 +175,17 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
 
     def upstream(request):
         calls.append(json.loads(request.content))
-        return httpx2.Response(200, json=completed_response() if len(calls) % 2 else move_response())
+        assert calls[-1]["model"] == model
+        return httpx2.Response(200, json=completed_response(model=model) if len(calls) % 2 else move_response(model=model))
 
     factory = mock_coach_factory(upstream, engine=evidence)
     with TestClient(create_app(test_db_url, coach_factory=factory)) as client:
-        result = client.post('/api/coach/analyze', json={"game_id": game["id"], "ply": 0})
+        result = client.post('/api/coach/analyze', json={"game_id": game["id"], "ply": 0, "model": model})
         assert result.status_code == 200
         saved = result.json()
         assert saved["text"] == FIRST + "\n\n" + SECOND
         assert saved["played_move"] == "e2e4"
+        assert saved["model"] == model
         assert client.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN}).json() is None
         assert client.get(f'/api/games/{different["id"]}').json()["coach_responses"] == {}
     with TestClient(create_app(test_db_url, coach_factory=factory)) as restarted:
@@ -188,6 +196,7 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
         row = conn.execute("SELECT position_analysis, move_analysis, stockfish, usage FROM coach_feedback").fetchone()
         assert row["position_analysis"]["text"] == FIRST
         assert row["move_analysis"]["text"] == SECOND
+        assert row["position_analysis"]["model"] == row["move_analysis"]["model"] == model
         assert row["stockfish"]["played_move"]["uci"] == "e2e4"
         assert row["usage"]["total_tokens"] == 320
 

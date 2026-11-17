@@ -1,0 +1,4 @@
+-r requirements.lock
+langgraph-cli[inmem]==0.4.43
+langgraph-api==0.18.2
+langgraph-runtime-inmem==0.38.2

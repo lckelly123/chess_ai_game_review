@@ -134,6 +134,19 @@ def test_invalid_environment_settings(monkeypatch, name, value):
         CoachSettings.from_env()
 
 
+def test_model_settings_are_scoped_and_preserve_runtime_limits(monkeypatch):
+    monkeypatch.setenv("COACH_MAX_OUTPUT_TOKENS", "4096")
+    monkeypatch.setenv("COACH_TIMEOUT_SECONDS", "45")
+    terra = CoachSettings.from_env(model="gpt-6.1-terra")
+    assert terra.max_output_tokens == 4096 and terra.timeout_seconds == 45
+    request = build_request(chess.STARTING_FEN, settings=terra)
+    assert request["model"] == "gpt-6.1-terra"
+    assert request["reasoning"] == {"effort": "xhigh"}
+    assert CoachSettings.from_env().model == CoachSettings().model == "gpt-6-astra"
+    with pytest.raises(CoachConfigurationError, match="Unsupported coach model"):
+        CoachSettings(model="unknown-model")
+
+
 def test_cli_dry_run_without_credentials():
     env = {k: v for k, v in os.environ.items() if not k.startswith(("OPENAI_", "COACH_"))}
     result = subprocess.run(

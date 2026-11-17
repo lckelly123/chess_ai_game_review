@@ -1,3 +1,22 @@
+x-app-image: &app-image
+  image: "${COMPOSE_PROJECT_NAME:-chess_ai_game_review}-app"
+  build: .
+  pull_policy: never
+
+x-coach-environment: &coach-environment
+  OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+  COACH_MAX_OUTPUT_TOKENS: "${COACH_MAX_OUTPUT_TOKENS:-32768}"
+  COACH_TIMEOUT_SECONDS: "${COACH_TIMEOUT_SECONDS:-600}"
+  STOCKFISH_DEPTH: "${STOCKFISH_DEPTH:-18}"
+  STOCKFISH_TIME_LIMIT: "${STOCKFISH_TIME_LIMIT:-10}"
+  STOCKFISH_THREADS: "${STOCKFISH_THREADS:-2}"
+  STOCKFISH_HASH_MB: "${STOCKFISH_HASH_MB:-128}"
+  LANGSMITH_TRACING: "${LANGSMITH_TRACING:-false}"
+  LANGSMITH_API_KEY: "${LANGSMITH_API_KEY:-}"
+  LANGSMITH_PROJECT: "${LANGSMITH_PROJECT:-chess-coach}"
+  LANGSMITH_ENDPOINT: "${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}"
+  LANGSMITH_WORKSPACE_ID: "${LANGSMITH_WORKSPACE_ID:-}"
+
 services:
   db:
     image: postgres:18-bookworm
@@ -14,13 +33,14 @@ services:
       retries: 12
     restart: unless-stopped
   app:
-    build: .
+    <<: *app-image
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "127.0.0.1:${PORT:-8000}:8000"
     environment:
+      <<: *coach-environment
       PGHOST: db
       PGPORT: "5432"
       PGUSER: chess
@@ -28,24 +48,31 @@ services:
       PGPASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
       LEGACY_SQLITE_PATH: /legacy/chess.db
       CHESSCOM_USER_AGENT: "${CHESSCOM_USER_AGENT:-ChessStudy/0.1 (local game library)}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
-      COACH_MAX_OUTPUT_TOKENS: "${COACH_MAX_OUTPUT_TOKENS:-32768}"
-      COACH_TIMEOUT_SECONDS: "${COACH_TIMEOUT_SECONDS:-600}"
-      STOCKFISH_DEPTH: "${STOCKFISH_DEPTH:-18}"
-      STOCKFISH_TIME_LIMIT: "${STOCKFISH_TIME_LIMIT:-10}"
-      STOCKFISH_THREADS: "${STOCKFISH_THREADS:-2}"
-      STOCKFISH_HASH_MB: "${STOCKFISH_HASH_MB:-128}"
-      LANGSMITH_TRACING: "${LANGSMITH_TRACING:-false}"
-      LANGSMITH_API_KEY: "${LANGSMITH_API_KEY:-}"
-      LANGSMITH_PROJECT: "${LANGSMITH_PROJECT:-chess-coach}"
-      LANGSMITH_ENDPOINT: "${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}"
-      LANGSMITH_WORKSPACE_ID: "${LANGSMITH_WORKSPACE_ID:-}"
     volumes:
       - chess-data:/legacy:ro
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
+  studio:
+    <<: *app-image
+    command: ["langgraph", "dev", "--host", "0.0.0.0", "--port", "2024", "--no-browser", "--no-reload"]
+    ports:
+      - "127.0.0.1:${STUDIO_PORT:-2024}:2024"
+    environment:
+      <<: *coach-environment
+    volumes:
+      - studio-data:/app/.langgraph_api
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:2024/ok', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
 
 volumes:
   chess-data:
   postgres-data:
+  studio-data:

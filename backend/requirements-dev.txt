@@ -1,3 +1,2 @@
--r requirements.lock
+-r requirements-studio.txt
 pytest>=8,<10
-langgraph-cli[inmem]==0.4.43

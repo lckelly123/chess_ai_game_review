@@ -1,6 +1,6 @@
 # Position and move coach
 
-A standalone async LangGraph workflow using the OpenAI Responses API, `gpt-6-astra`, and `reasoning.effort="xhigh"`. The replay screen calls it through `POST /api/coach/analyze` when Run coach is pressed. The Python interface, CLI, and LangSmith Studio use the same graph definition.
+A standalone async LangGraph workflow using the OpenAI Responses API with `gpt-6-astra` (default) or `gpt-6.1-terra`, and `reasoning.effort="xhigh"`. The replay screen calls it through `POST /api/coach/analyze` when Run coach is pressed. The Python interface, CLI, and LangSmith Studio use the same graph definition.
 
 ```mermaid
 flowchart LR
@@ -17,7 +17,7 @@ Input is `fen` plus optional `played_move` in UCI. The board is always derived f
 2. Validate it with python-chess and generate a coordinate-labeled ASCII board. White is always at the bottom; letter case identifies piece color.
 3. Send the exact contents of `system_prompt.md` as a system message, followed by a user message containing the FEN, ASCII board, and side to move.
 4. If a played move exists, run Stockfish off the event loop to obtain up to eight root candidates plus the played move when outside the eight.
-5. Send `move_prompt.md` as the second call's system message, with the first response verbatim, the same FEN/ASCII board, the played move in UCI/SAN, and engine evidence as user input. Both calls use GPT-6 Astra with xhigh reasoning and `store=False`; prior output is sent explicitly rather than via a stored response ID.
+5. Send `move_prompt.md` as the second call's system message, with the first response verbatim, the same FEN/ASCII board, the played move in UCI/SAN, and engine evidence as user input. Both calls use the selected model with xhigh reasoning and `store=False`; prior output is sent explicitly rather than via a stored response ID.
 6. Append the second response to the first. Without a played move, return only the first response. Invalid moves are rejected before either model call.
 
 An optional ASCII board can also be supplied. It must match the FEN, either as the coordinate-labeled output of `CoachPosition.from_fen(fen).ascii_board` or the plain eight rows from `str(chess.Board(fen))`. Whitespace differences are accepted. The canonical board is always sent to OpenAI, preventing mismatched or flipped inputs.
@@ -25,6 +25,8 @@ An optional ASCII board can also be supplied. It must match the FEN, either as t
 The first call receives no played move or engine information. The second receives only the reviewed move and supplied engine evidence, not the full PGN, result, or game history. The module does not rewrite the generated Markdown; the two prompts specify the section structure.
 
 ## Web endpoint
+
+Both request modes accept optional `model`: `gpt-6-astra` (default) or `gpt-6.1-terra`. The endpoint validates this allowlist before starting work and passes a fresh `CoachSettings` to the existing coach factory. Its Responses adapter uses that model for both LangGraph nodes; there is no alternate API path or mutable global model. The same credentials, timeout, output budget, prompts, and engine settings apply. Model-access errors identify the requested model.
 
 `POST /api/coach/analyze` accepts either `{ "game_id": "<saved game ID>", "ply": 0 }` for a recorded-move review, or `{ "fen": "<complete selected-position FEN>" }` for position-only coaching. `ply` counts half-moves already played; the next PGN move is reviewed. At the final recorded position, the game request runs only the first pass. Mixed modes and extra fields (including student questions) are rejected. The server derives the FEN/ASCII and played move and keeps prompts and credentials out of the browser. Only a complete successful run is saved; the response includes `fen`, nullable `played_move`, combined `text`, `model`, `response_id`, and `created_at`.
 
@@ -39,7 +41,7 @@ The UI pauses autoplay when Run coach is pressed and shows progress. Moving to a
 - `system_prompt.md`: the user's supplied prompt, copied byte for byte.
 - `move_prompt.md`: the user's supplied second-pass prompt, copied byte for byte.
 - `position.py`: FEN validation, ASCII rendering, and the position message.
-- `settings.py`: fixed model/reasoning settings and runtime limits.
+- `settings.py`: supported models, default model, fixed reasoning effort, and runtime limits.
 - `graph.py`: input/state schemas, both nodes, conditional routing, and Studio export.
 - `responses.py`: request construction, traced async SDK adapter, and response handling.
 - `service.py`: compatible Python interface that invokes the graph.
@@ -60,6 +62,8 @@ async def analyze_selected_position(fen: str, played_move: str | None = None):
 ```
 
 The context manager owns and closes the SDK client. It can be kept open for multiple calls. To integrate with a future application lifespan or a test transport, construct `Coach(existing_async_openai_client)` instead; the caller then owns the client.
+
+For Terra, pass `CoachSettings.from_env(model="gpt-6.1-terra")` to `open_coach(settings)` or `Coach(existing_async_openai_client, settings)`. A settings instance belongs to that coach and applies to both passes. The CLI and standalone Studio graph continue to default to Astra. The UI remembers its selection in browser storage and disables it while a run is pending. Switching the selection does not fetch or generate another answer: the latest successful answer for the position/move remains visible with its actual model, and a subsequent successful run appends to the existing feedback history.
 
 `coach.graph` exposes the compiled graph for streaming/debugging. `coach.analyze(fen, config={"tags": ["replay"], "metadata": {"game_id": "..."}})` accepts optional LangGraph run configuration; keep credentials out of metadata and graph state.
 
@@ -84,21 +88,27 @@ LANGSMITH_PROJECT=chess-coach
 LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 ```
 
-Use your LangSmith region's endpoint if different. Set `LANGSMITH_WORKSPACE_ID` if your key is linked to multiple workspaces. Restart the backend or Studio server after changing these values. For Docker, rebuild with `docker compose up --build -d`; Compose passes the tracing variables to the backend.
+Use your LangSmith region's endpoint if different. Set `LANGSMITH_WORKSPACE_ID` if your key is linked to multiple workspaces. Restart the backend or Studio server after changing these values. For Docker, run `docker compose up -d` after editing `.env`; Compose applies the same coach and tracing settings to both `app` and `studio`. Use `docker compose up --build -d` when code or dependencies have also changed. A plain container restart does not reread Compose's `.env` settings.
+
+For an agent-based LangSmith workspace, first [connect the agent and retrieve its Local environment's `tracer_session_name`](https://docs.langchain.com/langsmith/create-an-agent#configure-integrations-that-require-a-project-name). Use that compatibility value for `LANGSMITH_PROJECT` instead of `chess-coach`.
 
 The example configuration defaults to `LANGSMITH_TRACING=false`, so the coach and game library work without LangSmith credentials. With tracing enabled, prompts (including the selected position), answers, timing, errors, and usage are sent to LangSmith. OpenAI's `store=False` setting does not disable LangSmith trace storage.
 
 ## Run in LangSmith Studio
 
-From the repository root on Windows, install the development dependencies and start the local Agent Server:
+### Docker (default)
 
-```powershell
-.\.venv\Scripts\python -m pip install -r backend\requirements-dev.txt
-$env:PYTHONUTF8 = "1"
-.\.venv\Scripts\langgraph dev --host 127.0.0.1 --port 2024
+The ordinary app startup command also starts the local Agent Server:
+
+```sh
+docker compose up --build -d
 ```
 
-The UTF-8 setting also prevents the CLI's Unicode banner from failing in Windows terminals/pipes. `langgraph.json` exports `backend.coach.graph:graph` as `chess_coach` and loads `.env`. Graph loading and inspection require no OpenAI key; running a valid position requires `OPENAI_API_KEY`.
+`app` and `studio` run separate processes from the same image. That image includes the Studio CLI, runtime dependencies, `langgraph.json`, and Stockfish. Compose supplies credentials from `.env` at runtime; `.env` is excluded from the image. No local Python installation, `.venv`, or separate Studio command is needed. The Studio service starts independently of PostgreSQL and publishes only loopback port 2024 (configurable with `STUDIO_PORT`). It has its own `/ok` health check and saves development sessions under `/app/.langgraph_api` in the `studio-data` named volume. Ordinary restarts and `docker compose down` keep that data; `docker compose down -v` deletes it along with the app's named volumes.
+
+Both services use the code built into the image. After source or dependency edits, rerun `docker compose up --build -d`. Inspect startup errors with `docker compose logs -f studio`. The container runs with browser auto-opening and source watching disabled; open the Studio link below in your host browser.
+
+`langgraph.json` exports `backend.coach.graph:graph` as `chess_coach`. Graph loading and inspection require no OpenAI key; running a valid position requires `OPENAI_API_KEY`.
 
 Open [Studio connected to the local server](https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024), select **chess_coach**, and submit:
 
@@ -109,9 +119,21 @@ Open [Studio connected to the local server](https://smith.langchain.com/studio/?
 }
 ```
 
-Use graph mode to inspect both nodes, inputs, outputs, and state. This workflow does not expose a chat/messages interface. A run with `played_move` makes two paid Responses calls; omit it for one position-only call. No automatic retries are made. Agent Server manages Studio threads/checkpoints, with local development data in ignored `.langgraph_api/`. Each new invocation clears old move-review output; the optional move input is consumed for that invocation only, including when a prior run failed.
+If `STUDIO_PORT` differs from 2024, change the port in the link's `baseUrl`. Use graph mode to inspect both nodes, inputs, outputs, and state. This workflow does not expose a chat/messages interface. A run with `played_move` makes two paid Responses calls; omit it for one position-only call. No automatic retries are made. Agent Server manages Studio threads/checkpoints. Each new invocation clears old move-review output; the optional move input is consumed for that invocation only, including when a prior run failed.
 
 The existing FastAPI app executes the graph directly; it does not need this second server. Both entry points emit LangSmith traces when enabled, but app requests do not create Studio threads. Studio's server is a separate development surface and does not share FastAPI's single-request concurrency guard.
+
+### Local Python (optional)
+
+To develop with live source reloading outside Docker, stop the Docker Studio service first with `docker compose stop studio` to free port 2024, then run from the repository root on Windows:
+
+```powershell
+.\.venv\Scripts\python -m pip install -r backend\requirements-dev.txt
+$env:PYTHONUTF8 = "1"
+.\.venv\Scripts\langgraph dev --host 127.0.0.1 --port 2024
+```
+
+The UTF-8 setting prevents the CLI's Unicode banner from failing in Windows terminals/pipes. This mode reads `.env` directly and stores development data in the ignored local `.langgraph_api/` directory. It uses a local Stockfish installation for the second node.
 
 ## Move review and engine evidence
 

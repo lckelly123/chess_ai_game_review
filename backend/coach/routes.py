@@ -16,7 +16,7 @@ from ..chess_games import replay
 from .move_review import MoveReview
 from .position import CoachPosition, InvalidPositionError
 from .service import CoachResponseError, open_coach
-from .settings import CoachConfigurationError
+from .settings import CoachConfigurationError, CoachModel, CoachSettings, DEFAULT_COACH_MODEL
 from .stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
 
 
@@ -25,6 +25,7 @@ class AnalyzePositionRequest(BaseModel):
     fen: str | None = Field(default=None, min_length=1, max_length=256)
     game_id: str | None = Field(default=None, min_length=1, max_length=64)
     ply: int | None = Field(default=None, ge=0, strict=True)
+    model: CoachModel = DEFAULT_COACH_MODEL
 
     @model_validator(mode="after")
     def input_mode(self):
@@ -87,7 +88,7 @@ def create_coach_router(coach_factory=open_coach) -> APIRouter:
             # Avoid starting a paid request when persistence is already down.
             await run_in_threadpool(database.health)
             try:
-                async with coach_factory() as coach:
+                async with coach_factory(CoachSettings.from_env(model=request.model)) as coach:
                     result = await coach.analyze(position.fen, played_move=played_move) if played_move is not None else await coach.analyze(position.fen)
                 if result.position.fen != position.fen or result.played_move != played_move:
                     raise CoachResponseError("The coach returned a different position.", result.response_id)
@@ -107,7 +108,7 @@ def create_coach_router(coach_factory=open_coach) -> APIRouter:
             except AuthenticationError as exc:
                 raise HTTPException(503, "OpenAI rejected the configured API key. Check OPENAI_API_KEY in .env, then restart the app.") from exc
             except (PermissionDeniedError, NotFoundError) as exc:
-                raise HTTPException(502, "The configured OpenAI project cannot access GPT-6 Astra. Check model access for this API key.") from exc
+                raise HTTPException(502, f"The configured OpenAI project cannot access {request.model}. Check model access for this API key.") from exc
             except RateLimitError as exc:
                 raise HTTPException(429, "OpenAI's rate limit or usage quota was reached. Check your API usage, then try again.") from exc
             except APITimeoutError as exc:
