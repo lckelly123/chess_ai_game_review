@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LoaderCircle, Pause, Play } from 'lucide-react';
 import Board from './Board';
+import CoachCards, { type CoachTab } from './CoachCards';
 import type { CoachResponse, GameDetail } from './types';
 import { api, perspective, readStored, store, timeControl } from './types';
+import { AUTOPLAY_TURN_MS, BETWEEN_TURNS_MS, playerTurnStops, replayNavigation, restoreReplay } from './replayNavigation';
+import { visibleCandidate, type CandidateSelection } from './boardAnnotations';
 
 const COACH_MODELS = [
   { value: 'gpt-6-astra', label: 'GPT-6 Astra' },
@@ -14,12 +16,13 @@ const coachModelLabel = (model: string) => COACH_MODELS.find(option => option.va
 
 export default function Replay({ game, username }: { game: GameDetail; username: string }) {
   const player = perspective(game, username);
-  const [ply, setPly] = useState(() => {
-    const saved = readStored(`position:${game.id}`);
-    return Math.max(0, Math.min(Number(saved) || 0, game.moves.length));
-  });
+  const [navigation, dispatch] = useReducer(replayNavigation, undefined, () =>
+    restoreReplay(playerTurnStops(game.positions, player.isWhite), Number(readStored(`position:${game.id}`))));
+  const { ply, transition, playing, stops } = navigation;
+  const controlPly = transition?.to ?? ply;
+  const boardPosition = game.positions[transition?.via ?? ply];
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [flipped, setFlipped] = useState(!player.isWhite);
-  const [playing, setPlaying] = useState(false);
   const [question, setQuestion] = useState(() => readStored(`coach-question:${game.id}`));
   const [coachModel, setCoachModel] = useState<CoachModel>(() =>
     COACH_MODELS.find(option => option.value === readStored('coach-model'))?.value ?? COACH_MODELS[0].value);
@@ -29,6 +32,11 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const coachRequest = useRef<AbortController | null>(null);
   const position = game.positions[ply];
   const coachResponse = coachResponses[String(ply)];
+  const [coachTab, setCoachTab] = useState<CoachTab>('position');
+  const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null);
+  const boardColumn = useRef<HTMLDivElement>(null);
+  const candidate = coachTab === 'position' ? visibleCandidate(candidateSelection, coachResponse, position.fen, transition !== null) : undefined;
+  const candidateName = candidate ? coachResponse?.candidate_san?.[candidate.uci] ?? candidate.uci : undefined;
   const nextMove = game.moves[ply];
   const currentCoachError = coachError?.ply === ply ? coachError.message : null;
   const savedAt = coachResponse ? new Date(coachResponse.created_at).toLocaleString(undefined, {
@@ -52,7 +60,31 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const turn = position.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
-  const seek = (value: number) => { setPlaying(false); setPly(Math.max(0, Math.min(value, game.moves.length))); };
+  const seek = (value: number) => dispatch({ type: 'seek', ply: value });
+  const step = (direction: 1 | -1) => dispatch({ type: 'step', direction, animate: !reducedMotion });
+
+  useEffect(() => { setCandidateSelection(null); }, [ply, transition, coachResponse?.response_id]);
+
+  function selectCandidate(uci: string) {
+    if (!coachResponse || transition) return;
+    dispatch({ type: 'pause' });
+    setCandidateSelection(candidate?.uci === uci ? null : { fen: position.fen, responseId: coachResponse.response_id, uci });
+    if (candidate?.uci !== uci && boardColumn.current && boardColumn.current.getBoundingClientRect().bottom < 0) {
+      boardColumn.current.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'start' });
+    }
+  }
+
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(preference.matches);
+    preference.addEventListener('change', update);
+    return () => preference.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    if (!transition) return;
+    const timer = window.setTimeout(() => dispatch({ type: 'settle', transition }), reducedMotion ? 0 : BETWEEN_TURNS_MS);
+    return () => window.clearTimeout(timer);
+  }, [transition, reducedMotion]);
 
   useEffect(() => { store(`position:${game.id}`, String(ply)); }, [game.id, ply]);
   useEffect(() => { store(`coach-question:${game.id}`, question); }, [game.id, question]);
@@ -61,13 +93,13 @@ export default function Replay({ game, username }: { game: GameDetail; username:
 
   async function runCoach() {
     // Guard synchronously against double-clicks before React updates the button.
-    if (coachRequest.current) return;
+    if (coachRequest.current || transition) return;
     const fen = position.fen;
     const requestedPly = ply;
     const playedMove = nextMove?.uci ?? null;
     const controller = new AbortController();
     coachRequest.current = controller;
-    setPlaying(false);
+    dispatch({ type: 'pause' });
     setPendingPly(requestedPly);
     setCoachError(null);
     try {
@@ -86,26 +118,27 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     }
   }
   useEffect(() => {
-    if (!playing) return;
-    if (ply >= game.moves.length) { setPlaying(false); return; }
-    const timer = window.setTimeout(() => setPly(p => p + 1), 850);
+    if (!playing || transition) return;
+    if (ply >= game.moves.length) { dispatch({ type: 'pause' }); return; }
+    const timer = window.setTimeout(() => dispatch({ type: 'step', direction: 1, animate: !reducedMotion, automatic: true }), AUTOPLAY_TURN_MS);
     return () => window.clearTimeout(timer);
-  }, [playing, ply, game.moves.length]);
+  }, [playing, ply, transition, reducedMotion, game.moves.length]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
-      if (target.closest('input, textarea, select, .coach-response, [contenteditable="true"]') || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (target.closest('input, textarea, select, .coach-cards, [contenteditable="true"]') || event.ctrlKey || event.altKey || event.metaKey) return;
       // Space keeps its native action on focused controls. Navigation keys still
       // work after using a replay button, without interrupting question typing.
       if (event.key === ' ' && target.closest('button, a')) return;
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', ' '].includes(event.key)) return;
       event.preventDefault();
-      if (event.key === ' ') { if (ply === game.moves.length) setPly(0); setPlaying(p => !p); }
-      else { setPlaying(false); setPly(p => event.key === 'Home' ? 0 : event.key === 'End' ? game.moves.length : Math.max(0, Math.min(game.moves.length, p + (event.key === 'ArrowRight' ? 1 : -1)))); }
+      if (event.key === ' ') dispatch({ type: 'toggle-play' });
+      else if (event.key === 'Home' || event.key === 'End') dispatch({ type: 'seek', ply: event.key === 'Home' ? 0 : game.moves.length });
+      else dispatch({ type: 'step', direction: event.key === 'ArrowRight' ? 1 : -1, animate: !reducedMotion });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ply, game.moves.length]);
+  }, [reducedMotion, game.moves.length]);
 
   const playerBar = (color: 'white' | 'black') => <div className="player-bar">
     <span className={`color-token ${color}`} aria-label={`${color} pieces`}/>
@@ -119,41 +152,40 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       <span className={`result-label ${player.result}`}>{player.result === 'win' ? 'You won' : player.result === 'loss' ? 'You lost' : 'Draw'}</span>
     </div>
     <div className="replay-columns">
-      <div className="board-column">
+      <div className="board-column" ref={boardColumn}>
         {playerBar(top)}
-        <Board position={position} flipped={flipped}/>
+        <Board position={boardPosition} flipped={flipped} candidate={candidate} candidateName={candidateName}/>
+        {candidate && <div className="board-idea" role="status"><span><strong>{candidateName}</strong> · {candidate.reason}</span><button type="button" onClick={() => setCandidateSelection(null)}>Clear</button></div>}
         {playerBar(bottom)}
         <div className="board-controls">
           <button className="icon-button" onClick={() => setFlipped(f => !f)} title="Flip board" aria-label="Flip board"><ArrowDownUp size={19}/></button>
           <div className="transport">
-            <button className="icon-button" disabled={ply === 0} onClick={() => seek(0)} title="First position (Home)" aria-label="First position"><ChevronsLeft size={21}/></button>
-            <button className="icon-button" disabled={ply === 0} onClick={() => seek(ply - 1)} title="Previous move (left arrow)" aria-label="Previous move"><ChevronLeft size={22}/></button>
-            <button className="play-button" onClick={() => { if (ply === game.moves.length) setPly(0); setPlaying(p => !p); }} title="Autoplay (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
-            <button className="icon-button" disabled={ply === game.moves.length} onClick={() => seek(ply + 1)} title="Next move (right arrow)" aria-label="Next move"><ChevronRight size={22}/></button>
-            <button className="icon-button" disabled={ply === game.moves.length} onClick={() => seek(game.moves.length)} title="Final position (End)" aria-label="Final position"><ChevronsRight size={21}/></button>
+            <button className="icon-button" disabled={controlPly === 0} onClick={() => seek(0)} title="First position (Home)" aria-label="First position"><ChevronsLeft size={21}/></button>
+            <button className="icon-button" disabled={controlPly === 0} onClick={() => step(-1)} title="Previous turn (left arrow)" aria-label="Previous turn"><ChevronLeft size={22}/></button>
+            <button className="play-button" onClick={() => dispatch({ type: 'toggle-play' })} title="Autoplay your turns (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
+            <button className="icon-button" disabled={controlPly === game.moves.length} onClick={() => step(1)} title="Next turn (right arrow)" aria-label="Next turn"><ChevronRight size={22}/></button>
+            <button className="icon-button" disabled={controlPly === game.moves.length} onClick={() => seek(game.moves.length)} title="Final position (End)" aria-label="Final position"><ChevronsRight size={21}/></button>
           </div>
           <span className="position-count">{ply} / {game.moves.length}</span>
         </div>
-        <input className="position-slider" type="range" min={0} max={game.moves.length} value={ply} onChange={e => seek(Number(e.target.value))} aria-label="Replay position" aria-valuetext={ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].san}, half-move ${ply}`}/>
+        <input className="position-slider" type="range" min={0} max={stops.length - 1} value={stops.indexOf(controlPly)} onChange={e => seek(stops[Number(e.target.value)])} aria-label="Replay position" aria-valuetext={controlPly === 0 ? 'Starting position' : `After ${game.moves[controlPly - 1].san}, half-move ${controlPly}`}/>
         <div className="position-caption" aria-live="polite">{ply === game.moves.length ? `Final position · ${game.result}` : `${turn} to move${position.check_square ? ' · Check' : ''}`}<span>{positionLabel}</span></div>
       </div>
       <aside className="coach-panel" aria-labelledby="coach-title">
         <div className="coach-heading">
           <h2 id="coach-title">Coach</h2>
           <div className="coach-actions">
-            <button className="primary-button coach-run" onClick={runCoach} disabled={pendingPly !== null}>{pendingPly !== null ? <><LoaderCircle size={15} className="spin"/> Thinking…</> : <><Play size={14}/> Run coach</>}</button>
             <select className="coach-model" aria-label="OpenAI model" value={coachModel} onChange={event => setCoachModel(event.target.value as CoachModel)} disabled={pendingPly !== null}>
               {COACH_MODELS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
+            <button className="primary-button coach-run" onClick={runCoach} disabled={pendingPly !== null || transition !== null}>{pendingPly !== null ? <><LoaderCircle size={15} className="spin"/> Thinking…</> : <><Play size={14}/> Run coach</>}</button>
           </div>
         </div>
         <p className="coach-status" id="coach-status" role="status">{coachStatus}</p>
         {currentCoachError && <p className="coach-error" role="alert">{currentCoachError}</p>}
         <div className="coach-field" aria-busy={pendingPly === ply}>
           <div className="coach-response-label"><span id="coach-response-label">Coach response</span><span>{coachResponse && `${coachModelLabel(coachResponse.model)} · `}{positionLabel}</span></div>
-          <div key={position.fen} id="coach-response" className="coach-response" role="region" tabIndex={0} aria-labelledby="coach-response-label" aria-describedby="coach-status">
-            {coachResponse ? <div className="coach-prose"><Markdown skipHtml disallowedElements={['img']} components={{ h1: 'h3', h2: 'h3' }}>{coachResponse.text}</Markdown></div> : <p className="coach-placeholder">{pendingPly === ply ? 'Your coach is thinking…' : "Your coach's feedback will appear here."}</p>}
-          </div>
+          <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null} activeTab={coachTab} onTabChange={setCoachTab}/>
         </div>
         <div className="coach-field">
           <label htmlFor="coach-question">Your question</label>
@@ -161,6 +193,6 @@ export default function Replay({ game, username }: { game: GameDetail; username:
         </div>
       </aside>
     </div>
-    <p className="keyboard-tip"><span>Use <kbd>←</kbd> <kbd>→</kbd> to move through the game.</span></p>
+    <p className="keyboard-tip"><span>Reviewing your turns as {player.isWhite ? 'White' : 'Black'}.</span><span>Use <kbd>←</kbd> <kbd>→</kbd> to step between decisions.</span></p>
   </section>;
 }

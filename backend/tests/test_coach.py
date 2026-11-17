@@ -15,9 +15,29 @@ from backend.coach import (
     CoachSettings, InvalidPositionError, build_request, open_coach,
 )
 from backend.coach.service import SYSTEM_PROMPT_PATH
+from backend.coach.teaching import TeachingAnalysis
 
 
-def completed_response(**overrides):
+def teaching_output(fen=chess.STARTING_FEN):
+    board = chess.Board(fen)
+    move = next(iter(board.legal_moves), None)
+    return {
+        "position_character": "quiet", "positional_thesis": "Test analysis.",
+        "needs_of_position": "Test plan.",
+        "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning.",
+                             "highlight_squares": [chess.square_name(move.from_square), chess.square_name(move.to_square)]}] if move else [],
+    }
+
+
+def teaching_text(fen=chess.STARTING_FEN):
+    return TeachingAnalysis.model_validate(teaching_output(fen)).as_markdown(fen)
+
+
+def completed_response(*, request=None, fen=chess.STARTING_FEN, **overrides):
+    if request is not None:
+        content = json.loads(request.content)["input"][1]["content"]
+        if "FEN:\n" in content:
+            fen = content.split("FEN:\n", 1)[1].splitlines()[0]
     return {
         "id": "resp_test", "object": "response", "created_at": 1,
         "status": "completed", "model": "gpt-6-astra", "error": None,
@@ -25,7 +45,7 @@ def completed_response(**overrides):
         "output": [
             {"type": "reasoning", "id": "rs_test", "summary": []},
             {"type": "message", "id": "msg_test", "role": "assistant", "status": "completed",
-             "content": [{"type": "output_text", "text": "### 1. Understand the Position\nTest analysis.\n\n### 2. Develop a Plan\nTest plan.", "annotations": []}]},
+             "content": [{"type": "output_text", "text": json.dumps(teaching_output(fen)), "annotations": []}]},
         ],
         "usage": {"input_tokens": 120, "output_tokens": 40, "total_tokens": 160,
                   "input_tokens_details": {"cached_tokens": 0},
@@ -56,10 +76,12 @@ def test_responses_request_and_output_through_real_sdk():
         body = json.loads(request.content)
         received.append(body)
         assert body["model"] == "gpt-6-astra"
-        assert body["reasoning"] == {"effort": "xhigh"}
+        assert body["reasoning"] == {"effort": "medium"}
         assert body["store"] is False
         assert body["max_output_tokens"] == 32768
-        assert set(body) == {"model", "reasoning", "input", "max_output_tokens", "store"}
+        assert set(body) == {"model", "reasoning", "input", "max_output_tokens", "store", "text"}
+        assert body["text"]["format"]["strict"] is True
+        assert body["text"]["format"]["type"] == "json_schema"
         assert body["input"][0] == {"role": "system", "content": SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")}
         message = body["input"][1]
         assert message["role"] == "user"
@@ -69,13 +91,14 @@ def test_responses_request_and_output_through_real_sdk():
         assert "4  . . . . P . . ." in message["content"]
         assert "1  R N B Q K B N R" in message["content"]
         assert "a b c d e f g h" in message["content"]
-        return httpx2.Response(200, json=completed_response())
+        return httpx2.Response(200, json=completed_response(request=request))
 
     result = analyze_with_transport(upstream, fen)
     assert len(received) == 1
     assert result.response_id == "resp_test"
     assert result.position.fen == fen
-    assert result.text == completed_response()["output"][1]["content"][0]["text"]
+    assert result.text == teaching_text(fen)
+    assert result.position_analysis["structured"] == teaching_output(fen)
     assert result.usage["output_tokens_details"]["reasoning_tokens"] == 20
 
 
@@ -141,8 +164,9 @@ def test_model_settings_are_scoped_and_preserve_runtime_limits(monkeypatch):
     assert terra.max_output_tokens == 4096 and terra.timeout_seconds == 45
     request = build_request(chess.STARTING_FEN, settings=terra)
     assert request["model"] == "gpt-6.1-terra"
-    assert request["reasoning"] == {"effort": "xhigh"}
+    assert request["reasoning"] == {"effort": "medium"}
     assert CoachSettings.from_env().model == CoachSettings().model == "gpt-6-astra"
+    assert build_request(chess.STARTING_FEN)["reasoning"] == {"effort": "medium"}
     with pytest.raises(CoachConfigurationError, match="Unsupported coach model"):
         CoachSettings(model="unknown-model")
 
@@ -158,6 +182,6 @@ def test_cli_dry_run_without_credentials():
     )
     assert result.returncode == 0, result.stderr
     body = json.loads(result.stdout)
-    assert body["reasoning"]["effort"] == "xhigh"
+    assert body["reasoning"]["effort"] == "medium"
     assert body["input"][0]["role"] == "system"
     assert chess.STARTING_FEN in body["input"][1]["content"]

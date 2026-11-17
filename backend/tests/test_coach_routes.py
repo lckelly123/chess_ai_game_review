@@ -40,11 +40,11 @@ def test_coach_endpoint_calls_responses_with_only_selected_position(test_db_url,
         body = json.loads(request.content)
         requests.append(body)
         assert body["model"] == (model or "gpt-6-astra")
-        assert body["reasoning"] == {"effort": "xhigh"}
+        assert body["reasoning"] == {"effort": "medium"}
         assert fen in body["input"][1]["content"]
         assert "for Black" in body["input"][1]["content"]
         assert "ASCII board" in body["input"][1]["content"]
-        return httpx2.Response(200, json=completed_response(model=body["model"]))
+        return httpx2.Response(200, json=completed_response(request=request, model=body["model"]))
     app = create_app(test_db_url, coach_factory=mock_coach_factory(upstream))
     with TestClient(app) as client:
         response = client.post("/api/coach/analyze", json={"fen": fen, **({"model": model} if model else {})})
@@ -53,7 +53,10 @@ def test_coach_endpoint_calls_responses_with_only_selected_position(test_db_url,
         assert result["fen"] == fen
         assert result["model"] == (model or "gpt-6-astra")
         assert result["text"].startswith("### 1. Understand the Position")
-        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at"}
+        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at", "stockfish", "teaching", "candidate_san"}
+        assert result["teaching"]["candidate_moves"][0]["uci"] == "g8h6"
+        assert result["candidate_san"] == {"g8h6": "Nh6"}
+        assert result["stockfish"] is None
         assert len(requests) == 1
         # Question content cannot silently become part of a paid request.
         assert client.post("/api/coach/analyze", json={"fen": fen, "question": "What now?"}).status_code == 422
@@ -77,8 +80,9 @@ def test_model_selection_does_not_leak_into_later_requests(mode, passes):
     def upstream(request):
         assert str(request.url) == "https://api.openai.com/v1/responses"
         model = json.loads(request.content)["model"]
+        assert json.loads(request.content)["reasoning"] == {"effort": "medium"}
         models.append(model)
-        return httpx2.Response(200, json=completed_response(model=model))
+        return httpx2.Response(200, json=completed_response(request=request, model=model))
 
     # Exercise the HTTP -> settings -> graph -> SDK boundary independently of
     # PostgreSQL; the integration tests below verify durable storage separately.

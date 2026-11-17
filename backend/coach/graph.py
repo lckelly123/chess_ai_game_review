@@ -46,7 +46,7 @@ async def _analyze_from_environment(fen: str) -> CoachAnalysis:
         return await ResponsesCoach(client, settings).analyze(position.fen)
 
 
-async def _evaluate_from_environment(review: MoveReview, previous: str, evidence: dict) -> CoachAnalysis:
+async def _evaluate_from_environment(review: MoveReview, previous: dict | str, evidence: dict) -> CoachAnalysis:
     settings = CoachSettings.from_env()
     async with open_response_client(settings) as client:
         return await ResponsesCoach(client, settings).evaluate_move(review, previous, evidence)
@@ -67,7 +67,7 @@ def _sum_usage(first: dict | None, second: dict | None) -> dict | None:
 
 def build_coach_graph(
     analyze: Callable[[str], Awaitable[CoachAnalysis]] | None = None,
-    evaluate: Callable[[MoveReview, str, dict], Awaitable[CoachAnalysis]] | None = None,
+    evaluate: Callable[[MoveReview, dict | str, dict], Awaitable[CoachAnalysis]] | None = None,
     engine: Callable[[MoveReview], dict] | None = None,
 ):
     """Inject an adapter for app/test client reuse; Studio resolves it lazily."""
@@ -101,7 +101,7 @@ def build_coach_graph(
                 or evidence.get("played_move", {}).get("uci") != review.played_move_uci):
             raise StockfishAnalysisError("Engine evidence did not match the reviewed move.")
         first = state["position_analysis"]
-        result = await evaluate(review, first["text"], evidence)
+        result = await evaluate(review, first.get("structured", first["text"]), evidence)
         return {
             "text": first["text"] + "\n\n" + result.text,
             "response_id": result.response_id, "model": result.model,

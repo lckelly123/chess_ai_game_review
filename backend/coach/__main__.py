@@ -34,7 +34,7 @@ def main() -> int:
     # Keep Markdown (including arrows in the system prompt) intact in Windows pipes.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="Coach one chess position with GPT-6 Astra (xhigh).")
+    parser = argparse.ArgumentParser(description="Coach one chess position with GPT-6 Astra (medium reasoning).")
     parser.add_argument("--fen", required=True, help="Complete six-field FEN of the selected position.")
     parser.add_argument("--ascii-file", help="Optional matching ASCII board; otherwise generated from the FEN.")
     parser.add_argument("--move", help="Optional recorded move in UCI; enables the second coaching pass.")

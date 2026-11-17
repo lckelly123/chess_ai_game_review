@@ -64,7 +64,8 @@ class Database:
                 """INSERT INTO coach_feedback
                    (fen, text, model, response_id, usage, played_move, position_analysis, move_analysis, stockfish)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   RETURNING fen, NULLIF(played_move, '') AS played_move, text, model, response_id, created_at""",
+                   RETURNING fen, NULLIF(played_move, '') AS played_move, text, model, response_id, created_at, stockfish,
+                             position_analysis -> 'structured' AS teaching""",
                 (analysis.position.fen, analysis.text, analysis.model, analysis.response_id,
                  Jsonb(analysis.usage) if analysis.usage is not None else None, analysis.played_move or '',
                  Jsonb(analysis.position_analysis) if analysis.position_analysis is not None else None,
@@ -82,7 +83,7 @@ class Database:
         with self.connection() as db:
             rows = db.execute(
                 """SELECT DISTINCT ON (cf.fen, cf.played_move) cf.fen, NULLIF(cf.played_move, '') AS played_move,
-                          text, model, response_id, created_at
+                          text, model, response_id, created_at, stockfish, position_analysis -> 'structured' AS teaching
                    FROM coach_feedback cf WHERE cf.fen = ANY(%s) AND cf.played_move = ANY(%s)
                    ORDER BY cf.fen, cf.played_move, created_at DESC, id DESC""",
                 (list({fen for fen, _ in reviews}), list({move or '' for _, move in reviews})),

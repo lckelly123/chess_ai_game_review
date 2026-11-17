@@ -3,7 +3,7 @@
 import math
 import os
 from dataclasses import dataclass
-from typing import ClassVar, Literal, get_args
+from typing import Literal, get_args
 
 CoachModel = Literal["gpt-6-astra", "gpt-6.1-terra"]
 DEFAULT_COACH_MODEL: CoachModel = "gpt-6-astra"
@@ -15,10 +15,13 @@ class CoachConfigurationError(ValueError):
 
 @dataclass(frozen=True)
 class CoachSettings:
-    reasoning_effort: ClassVar[Literal["xhigh"]] = "xhigh"
     max_output_tokens: int = 32768
     timeout_seconds: float = 600.0
     model: CoachModel = DEFAULT_COACH_MODEL
+
+    @property
+    def reasoning_effort(self) -> Literal["medium"]:
+        return "medium"
 
     def __post_init__(self):
         if self.model not in get_args(CoachModel):

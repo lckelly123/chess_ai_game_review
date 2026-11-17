@@ -14,6 +14,7 @@ from langsmith.wrappers import wrap_openai
 from .position import CoachPosition
 from .move_review import MoveReview
 from .settings import CoachSettings, require_api_key
+from .teaching import TeachingAnalysis
 
 SYSTEM_PROMPT_PATH = Path(__file__).with_name("system_prompt.md")
 MOVE_PROMPT_PATH = Path(__file__).with_name("move_prompt.md")
@@ -38,15 +39,23 @@ class CoachAnalysis:
     position_analysis: dict[str, Any] | None = None
     move_analysis: dict[str, Any] | None = None
     stockfish: dict[str, Any] | None = None
+    structured: dict[str, Any] | None = None
 
     def as_pass(self) -> dict[str, Any]:
-        return {"text": self.text, "response_id": self.response_id, "model": self.model, "usage": self.usage}
+        result = {"text": self.text, "response_id": self.response_id, "model": self.model, "usage": self.usage}
+        if self.structured is not None:
+            result["structured"] = self.structured
+        return result
 
 
 def _request_for(position: CoachPosition, settings: CoachSettings) -> dict[str, Any]:
     return {
         "model": settings.model,
         "reasoning": {"effort": settings.reasoning_effort},
+        "text": {"format": {
+            "type": "json_schema", "name": "position_teaching", "strict": True,
+            "schema": TeachingAnalysis.model_json_schema(),
+        }},
         "input": [
             {"role": "system", "content": SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")},
             {"role": "user", "content": position.as_user_message()},
@@ -64,8 +73,9 @@ def build_request(
     return _request_for(position, settings or CoachSettings())
 
 
-def build_move_request(review: MoveReview, previous_analysis: str, evidence: dict, settings: CoachSettings) -> dict:
+def build_move_request(review: MoveReview, previous_analysis: dict | str, evidence: dict, settings: CoachSettings) -> dict:
     request = _request_for(review.position, settings)
+    request.pop("text")  # The second pass retains its Markdown move review.
     payload = {**review.as_dict(), "previous_analysis": previous_analysis, "stockfish": evidence}
     request["input"] = [
         {"role": "system", "content": MOVE_PROMPT_PATH.read_text(encoding="utf-8")},
@@ -100,7 +110,7 @@ class ResponsesCoach:
         request = await asyncio.to_thread(_request_for, position, self.settings)
         return await self._complete(request, position)
 
-    async def evaluate_move(self, review: MoveReview, previous_analysis: str, evidence: dict) -> CoachAnalysis:
+    async def evaluate_move(self, review: MoveReview, previous_analysis: dict | str, evidence: dict) -> CoachAnalysis:
         request = await asyncio.to_thread(build_move_request, review, previous_analysis, evidence, self.settings)
         return await self._complete(request, review.position)
 
@@ -117,12 +127,19 @@ class ResponsesCoach:
             raise CoachResponseError("The model declined to provide coaching for this request.", response.id)
         if not response.output_text.strip():
             raise CoachResponseError("The model returned an empty coaching answer.", response.id)
+        teaching = None
+        if "text" in request:
+            try:
+                teaching = TeachingAnalysis.model_validate_json(response.output_text).validate_position(position.fen)
+            except ValueError as exc:
+                raise CoachResponseError("The model returned invalid position teaching or candidate moves.", response.id) from exc
         return CoachAnalysis(
-            text=response.output_text,
+            text=teaching.as_markdown(position.fen) if teaching is not None else response.output_text,
             response_id=response.id,
             model=response.model,
             position=position,
             usage=response.usage.model_dump() if response.usage else None,
+            structured=teaching.model_dump() if teaching is not None else None,
         )
 
 

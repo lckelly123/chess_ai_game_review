@@ -1,6 +1,6 @@
 # Position and move coach
 
-A standalone async LangGraph workflow using the OpenAI Responses API with `gpt-6-astra` (default) or `gpt-6.1-terra`, and `reasoning.effort="xhigh"`. The replay screen calls it through `POST /api/coach/analyze` when Run coach is pressed. The Python interface, CLI, and LangSmith Studio use the same graph definition.
+A standalone async LangGraph workflow using the OpenAI Responses API with `gpt-6-astra` (default, `reasoning.effort="medium"`) or `gpt-6.1-terra` (`reasoning.effort="medium"`). The replay screen calls it through `POST /api/coach/analyze` when Run coach is pressed. The Python interface, CLI, and LangSmith Studio use the same graph definition.
 
 ```mermaid
 flowchart LR
@@ -9,20 +9,26 @@ flowchart LR
     analyze_position -->|no played move| END
 ```
 
-Input is `fen` plus optional `played_move` in UCI. The board is always derived from that FEN. `analyze_position` produces the first two coaching sections; `evaluate_move` produces section 3 and appends it with a blank line. State retains separate `position_analysis`, `move_analysis`, and `stockfish` objects, plus combined `text` and total `usage`. Each pass retains its own model, response ID, and usage. The top-level response ID/model identify the final completed pass. The normalized played move is available as `move_uci` in graph output and `played_move` in `CoachAnalysis` and HTTP responses.
+Input is `fen` plus optional `played_move` in UCI. The board is always derived from that FEN. `analyze_position` returns structured position teaching; `evaluate_move` produces section 3 as Markdown. State retains separate `position_analysis`, `move_analysis`, and `stockfish` objects, plus readable combined `text` and total `usage`. Each pass retains its own model, response ID, and usage. The first pass also retains the validated JSON under `position_analysis.structured`. The top-level response ID/model identify the final completed pass. The normalized played move is available as `move_uci` in graph output and `played_move` in `CoachAnalysis` and HTTP responses.
 
 ## Flow
 
 1. Receive the selected position's complete FEN.
 2. Validate it with python-chess and generate a coordinate-labeled ASCII board. White is always at the bottom; letter case identifies piece color.
-3. Send the exact contents of `system_prompt.md` as a system message, followed by a user message containing the FEN, ASCII board, and side to move.
+3. Send `system_prompt.md` as a system message, followed by a user message containing the FEN, ASCII board, and side to move. Require a strict Responses API `text.format` JSON schema. Validate the returned structure, legal candidate moves, and two distinct highlight squares per candidate before continuing.
 4. If a played move exists, run Stockfish off the event loop to obtain up to eight root candidates plus the played move when outside the eight.
-5. Send `move_prompt.md` as the second call's system message, with the first response verbatim, the same FEN/ASCII board, the played move in UCI/SAN, and engine evidence as user input. Both calls use the selected model with xhigh reasoning and `store=False`; prior output is sent explicitly rather than via a stored response ID.
-6. Append the second response to the first. Without a played move, return only the first response. Invalid moves are rejected before either model call.
+5. Send `move_prompt.md` as the second call's system message, with the first pass's validated JSON object, the same FEN/ASCII board, the played move in UCI/SAN, and engine evidence as user input. Both calls use the selected model with medium reasoning for both Astra and Terra, and `store=False`; prior output is sent explicitly rather than via a stored response ID. The second call has no JSON response format.
+6. Append the second response to a readable Markdown rendering of the first pass for CLI/export compatibility. Without a played move, return only the first analysis. Invalid played moves are rejected before either model call; invalid generated teaching stops the graph before Stockfish, a second model call, or persistence.
 
 An optional ASCII board can also be supplied. It must match the FEN, either as the coordinate-labeled output of `CoachPosition.from_fen(fen).ascii_board` or the plain eight rows from `str(chess.Board(fen))`. Whitespace differences are accepted. The canonical board is always sent to OpenAI, preventing mismatched or flipped inputs.
 
-The first call receives no played move or engine information. The second receives only the reviewed move and supplied engine evidence, not the full PGN, result, or game history. The module does not rewrite the generated Markdown; the two prompts specify the section structure.
+The first call receives no played move or engine information. The second receives only the reviewed move and supplied engine evidence, not the full PGN, result, or game history. Its generated Markdown is retained as returned.
+
+## Structured position teaching
+
+The first response contains exactly `position_character` (`quiet`, `tense`, or `forcing`), `positional_thesis`, `needs_of_position`, and `candidate_moves`. Each candidate contains `uci`, `reason`, and exactly two distinct `highlight_squares`. One to three distinct legal moves are required when moves exist; an empty array is accepted only when the side to move has no legal moves, including checkmate and stalemate. Word counts in the prompt are guidance rather than rejection rules. Position character describes the thinking required, not an engine evaluation.
+
+Structured data is saved inside the existing `position_analysis` JSONB column without a migration. HTTP responses expose it as nullable `teaching`, alongside `candidate_san` labels derived by python-chess. These fields also survive feedback retrieval and game reload. The model does not generate SAN labels or arrow coordinates. The UI derives an arrow from UCI and uses the two supplied squares as instructional highlights; selecting a candidate pauses autoplay without playing the move. Navigation and new responses clear the selection, and flipping the board transforms the overlay. Old rows without structured data retain their original Markdown presentation. Rerun coaching to generate candidate annotations for an old position.
 
 ## Web endpoint
 
@@ -38,10 +44,11 @@ The UI pauses autoplay when Run coach is pressed and shows progress. Moving to a
 
 ## Files
 
-- `system_prompt.md`: the user's supplied prompt, copied byte for byte.
-- `move_prompt.md`: the user's supplied second-pass prompt, copied byte for byte.
+- `system_prompt.md`: the user's compact teaching prompt, with the authorized no-legal-moves exception.
+- `move_prompt.md`: the move-review prompt, adapted to consume structured first-pass teaching.
+- `teaching.py`: strict output schema, legal-move validation, SAN labels, and readable fallback rendering.
 - `position.py`: FEN validation, ASCII rendering, and the position message.
-- `settings.py`: supported models, default model, fixed reasoning effort, and runtime limits.
+- `settings.py`: supported models, default model, reasoning effort per model, and runtime limits.
 - `graph.py`: input/state schemas, both nodes, conditional routing, and Studio export.
 - `responses.py`: request construction, traced async SDK adapter, and response handling.
 - `service.py`: compatible Python interface that invokes the graph.

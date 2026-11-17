@@ -9,7 +9,29 @@ export type Move = { ply: number; san: string; uci: string; color: string; numbe
 export type GameDetail = Game & { pgn: string; positions: Position[]; moves: Move[]; coach_responses: Record<string, CoachResponse> };
 export type Profile = { username: string; last_synced: number; game_count: number };
 export type ImportJob = { id: string; username: string; status: 'queued' | 'running' | 'completed' | 'failed'; found: number; added: number; skipped: number; message: string };
-export type CoachResponse = { fen: string; played_move: string | null; text: string; model: string; response_id: string; created_at: string };
+export type EngineMove = {
+  uci: string; san: string; rank: number | null; depth: number;
+  score: { cp: number | null; mate: number | null; bound: 'exact' | 'lower' | 'upper' };
+};
+export type EngineAnalysis = {
+  engine: string;
+  perspective: 'White' | 'Black';
+  played_move: EngineMove;
+  top_moves?: EngineMove[];
+};
+export type CandidateMove = { uci: string; reason: string; highlight_squares: [string, string] };
+export type PositionTeaching = {
+  position_character: 'quiet' | 'tense' | 'forcing';
+  positional_thesis: string;
+  needs_of_position: string;
+  candidate_moves: CandidateMove[];
+};
+export type CoachResponse = {
+  fen: string; played_move: string | null; text: string; model: string; response_id: string; created_at: string;
+  stockfish?: EngineAnalysis | null;
+  teaching?: PositionTeaching | null;
+  candidate_san?: Record<string, string>;
+};
 
 export function perspective(game: Game, username: string) {
   const isWhite = game.white.toLowerCase() === username.toLowerCase();

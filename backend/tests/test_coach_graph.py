@@ -55,7 +55,7 @@ def test_studio_graph_uses_same_adapter_and_closes_client(monkeypatch):
 
     def upstream(request):
         requests.append(json.loads(request.content))
-        return httpx2.Response(200, json=completed_response())
+        return httpx2.Response(200, json=completed_response(request=request))
 
     @asynccontextmanager
     async def client_factory(settings):
@@ -79,7 +79,7 @@ def test_reused_studio_thread_does_not_send_previous_board_or_analysis():
 
     def upstream(request):
         requests.append(json.loads(request.content))
-        return httpx2.Response(200, json=completed_response())
+        return httpx2.Response(200, json=completed_response(request=request))
 
     async def run():
         async with mock_client(upstream) as client:

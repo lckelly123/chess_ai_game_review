@@ -12,7 +12,7 @@ User-approved React/TypeScript frontend, Python/FastAPI backend, and PostgreSQL 
 Chess players reviewing their own completed games to understand positions and plans.
 
 ## Product Purpose
-Import public Chess.com games, browse the library, and replay exact positions. The coach teaches position evaluation and planning, then reviews the next recorded move against that plan and Stockfish evidence through two LangGraph nodes using the OpenAI Responses API (GPT-6 Astra, xhigh). The second response is appended to the first in the coach panel. Final positions receive position-only coaching; student questions remain disconnected.
+Import public Chess.com games, browse the library, and replay exact positions. The coach teaches position evaluation and planning, then reviews the next recorded move against that plan and Stockfish evidence through two LangGraph nodes using the OpenAI Responses API (GPT-6 Astra with medium reasoning or GPT-6.1 Terra with medium reasoning). The Coach response is one box with two tabs: Position & plan groups the position character, concise thesis, needs, and selectable candidate moves; Evaluate your move contains the move review and colour-coded saved engine evaluations. Candidate selection illustrates one arrow and two important squares without advancing the board. Empty candidate lists are allowed when no legal moves exist. Older saved Markdown reviews retain their content within the same two tabs. Final positions receive position-only coaching; student questions remain disconnected.
 
 ## Operating Context
 Initial local, single-user application. Username-based import is public data access, not authenticated account linking. Chess.com is an external provider; availability and freshness are not guaranteed.

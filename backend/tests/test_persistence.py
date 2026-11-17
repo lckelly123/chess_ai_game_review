@@ -95,7 +95,7 @@ def test_feedback_restores_after_restart_and_is_position_specific(test_db_url):
     db.save_import("alice", [game], 123)
     def upstream(request):
         calls.append(request)
-        return httpx2.Response(200, json=completed_response())
+        return httpx2.Response(200, json=completed_response(request=request))
     factory = mock_coach_factory(upstream)
     with TestClient(create_app(test_db_url, coach_factory=factory)) as client:
         detail = client.get(f'/api/games/{game["id"]}').json()

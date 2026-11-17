@@ -16,12 +16,12 @@ from backend.coach.stockfish import StockfishAnalysisError
 from backend.database import Database
 from backend.main import create_app
 from backend.tests.test_app import raw_game
-from backend.tests.test_coach import completed_response
+from backend.tests.test_coach import completed_response, teaching_output, teaching_text
 from backend.tests.test_coach_graph import mock_client
 from backend.tests.test_coach_routes import mock_coach_factory
 
 
-FIRST = completed_response()["output"][1]["content"][0]["text"]
+FIRST = teaching_text()
 SECOND = "### 3. Evaluate Your Move\n\n**Your Move**\nThis move follows the plan."
 
 
@@ -51,7 +51,7 @@ def test_second_responses_request_gets_exact_prior_output_board_move_and_evidenc
         assert str(request.url) == "https://api.openai.com/v1/responses"
         body = json.loads(request.content)
         requests.append(body)
-        return httpx2.Response(200, json=completed_response(model=model) if len(requests) == 1 else move_response(model=model))
+        return httpx2.Response(200, json=completed_response(request=request, model=model) if len(requests) == 1 else move_response(model=model))
 
     def engine(review):
         assert len(requests) == 1  # First analysis precedes engine-backed review.
@@ -73,13 +73,14 @@ def test_second_responses_request_gets_exact_prior_output_board_move_and_evidenc
     payload = json.loads(second["input"][1]["content"].split("\n\n", 1)[1])
     assert payload["fen"] == fen
     assert payload["ascii_board"] == CoachPosition.from_fen(fen).ascii_board
-    assert payload["previous_analysis"] == FIRST
+    assert payload["previous_analysis"] == teaching_output(fen)
+    assert "text" in requests[0] and "text" not in second
     assert payload["played_move"] == {"uci": "e7e5", "san": "e5"}
     assert payload["stockfish"] == result.stockfish
     assert requests[0]["model"] == second["model"] == model
-    assert requests[0]["reasoning"] == second["reasoning"] == {"effort": "xhigh"}
+    assert requests[0]["reasoning"] == second["reasoning"] == {"effort": "medium"}
     assert second["store"] is False and "previous_response_id" not in second
-    assert result.text == FIRST + "\n\n" + SECOND
+    assert result.text == teaching_text(fen) + "\n\n" + SECOND
     assert result.played_move == "e7e5"
     assert result.position_analysis["response_id"] == "resp_test"
     assert result.position_analysis["model"] == result.move_analysis["model"] == result.model == model
@@ -106,7 +107,7 @@ def test_checkpointed_runs_do_not_reuse_move_or_append_old_text():
         body = json.loads(request.content)
         requests.append(body)
         is_second = body["input"][0]["content"] == MOVE_PROMPT_PATH.read_text(encoding="utf-8")
-        return httpx2.Response(200, json=move_response() if is_second else completed_response())
+        return httpx2.Response(200, json=move_response() if is_second else completed_response(request=request))
 
     async def run():
         async with mock_client(upstream) as client:
@@ -118,7 +119,8 @@ def test_checkpointed_runs_do_not_reuse_move_or_append_old_text():
             board.push_uci("e2e4")
             plain = await graph.ainvoke({"fen": board.fen()}, config)
             assert plain["move_uci"] is None and plain["stockfish"] is None and plain["move_analysis"] is None
-            assert plain["text"] == FIRST
+            assert plain["text"] == teaching_text(board.fen())
+            assert plain["position_analysis"]["structured"] == teaching_output(board.fen())
             rerun = await graph.ainvoke({"fen": chess.STARTING_FEN, "played_move": "d2d4"}, config)
             assert rerun["text"] == FIRST + "\n\n" + SECOND
             assert rerun["stockfish"]["played_move"]["uci"] == "d2d4"
@@ -186,6 +188,11 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
         assert saved["text"] == FIRST + "\n\n" + SECOND
         assert saved["played_move"] == "e2e4"
         assert saved["model"] == model
+        assert saved["teaching"] == teaching_output()
+        assert saved["candidate_san"] == {"g1h3": "Nh3"}
+        assert saved["stockfish"]["perspective"] == "White"
+        assert saved["stockfish"]["played_move"]["score"] == {"cp": 30, "mate": None, "bound": "exact"}
+        assert saved["stockfish"]["played_move"]["depth"] == 18
         assert client.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN}).json() is None
         assert client.get(f'/api/games/{different["id"]}').json()["coach_responses"] == {}
     with TestClient(create_app(test_db_url, coach_factory=factory)) as restarted:
@@ -195,6 +202,7 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
     with db.connection() as conn:
         row = conn.execute("SELECT position_analysis, move_analysis, stockfish, usage FROM coach_feedback").fetchone()
         assert row["position_analysis"]["text"] == FIRST
+        assert row["position_analysis"]["structured"] == teaching_output()
         assert row["move_analysis"]["text"] == SECOND
         assert row["position_analysis"]["model"] == row["move_analysis"]["model"] == model
         assert row["stockfish"]["played_move"]["uci"] == "e2e4"
@@ -243,7 +251,7 @@ def test_final_position_runs_only_first_pass_and_invalid_game_context_never_runs
 
     def upstream(request):
         calls.append(request)
-        return httpx2.Response(200, json=completed_response())
+        return httpx2.Response(200, json=completed_response(request=request))
 
     def no_engine(review):
         pytest.fail("A final recorded position must not run Stockfish")
@@ -251,7 +259,7 @@ def test_final_position_runs_only_first_pass_and_invalid_game_context_never_runs
     with TestClient(create_app(test_db_url, coach_factory=mock_coach_factory(upstream, engine=no_engine))) as client:
         result = client.post('/api/coach/analyze', json={"game_id": game["id"], "ply": game["ply_count"]})
         assert result.status_code == 200
-        assert result.json()["text"] == FIRST and result.json()["played_move"] is None
+        assert result.json()["text"] == teaching_text(result.json()["fen"]) and result.json()["played_move"] is None
         for payload, code in [
             ({"game_id": "missing", "ply": 0}, 404),
             ({"game_id": game["id"], "ply": 999}, 422),

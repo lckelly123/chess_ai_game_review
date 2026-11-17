@@ -10,7 +10,7 @@ from openai import (
     APIConnectionError, APIStatusError, APITimeoutError, AuthenticationError,
     NotFoundError, PermissionDeniedError, RateLimitError,
 )
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from ..chess_games import replay
 from .move_review import MoveReview
@@ -18,6 +18,7 @@ from .position import CoachPosition, InvalidPositionError
 from .service import CoachResponseError, open_coach
 from .settings import CoachConfigurationError, CoachModel, CoachSettings, DEFAULT_COACH_MODEL
 from .stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
+from .teaching import TeachingAnalysis
 
 
 class AnalyzePositionRequest(BaseModel):
@@ -43,6 +44,13 @@ class AnalyzePositionResponse(BaseModel):
     model: str
     response_id: str
     created_at: datetime
+    stockfish: dict | None = None
+    teaching: TeachingAnalysis | None = None
+
+    @computed_field
+    @property
+    def candidate_san(self) -> dict[str, str]:
+        return self.teaching.candidate_san(self.fen) if self.teaching is not None else {}
 
 
 def create_coach_router(coach_factory=open_coach) -> APIRouter:
