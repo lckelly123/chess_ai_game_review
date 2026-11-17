@@ -15,12 +15,13 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const [playing, setPlaying] = useState(false);
   const [question, setQuestion] = useState(() => readStored(`coach-question:${game.id}`));
   const [coachResponses, setCoachResponses] = useState<Record<string, CoachResponse>>(() => game.coach_responses ?? {});
-  const [pendingFen, setPendingFen] = useState<string | null>(null);
-  const [coachError, setCoachError] = useState<{ fen: string; message: string } | null>(null);
+  const [pendingPly, setPendingPly] = useState<number | null>(null);
+  const [coachError, setCoachError] = useState<{ ply: number; message: string } | null>(null);
   const coachRequest = useRef<AbortController | null>(null);
   const position = game.positions[ply];
-  const coachResponse = coachResponses[position.fen];
-  const currentCoachError = coachError?.fen === position.fen ? coachError.message : null;
+  const coachResponse = coachResponses[String(ply)];
+  const nextMove = game.moves[ply];
+  const currentCoachError = coachError?.ply === ply ? coachError.message : null;
   const positionLabel = ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].number}${game.moves[ply - 1].color === 'white' ? '.' : '…'} ${game.moves[ply - 1].san}`;
   const turn = position.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
@@ -35,24 +36,26 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     // Guard synchronously against double-clicks before React updates the button.
     if (coachRequest.current) return;
     const fen = position.fen;
+    const requestedPly = ply;
+    const playedMove = nextMove?.uci ?? null;
     const controller = new AbortController();
     coachRequest.current = controller;
     setPlaying(false);
-    setPendingFen(fen);
+    setPendingPly(requestedPly);
     setCoachError(null);
     try {
       const response = await api<CoachResponse>('/api/coach/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen }), signal: controller.signal,
+        body: JSON.stringify({ game_id: game.id, ply: requestedPly }), signal: controller.signal,
       });
       if (!controller.signal.aborted) {
-        if (response.fen !== fen) throw new Error('The coach returned a different position. Please try again.');
-        setCoachResponses(responses => ({ ...responses, [fen]: response }));
+        if (response.fen !== fen || response.played_move !== playedMove) throw new Error('The coach returned a different position or move. Please try again.');
+        setCoachResponses(responses => ({ ...responses, [String(requestedPly)]: response }));
       }
     } catch (error) {
-      if (!controller.signal.aborted) setCoachError({ fen, message: error instanceof Error ? error.message : 'Could not reach the coach. Please try again.' });
+      if (!controller.signal.aborted) setCoachError({ ply: requestedPly, message: error instanceof Error ? error.message : 'Could not reach the coach. Please try again.' });
     } finally {
-      if (!controller.signal.aborted) { coachRequest.current = null; setPendingFen(null); }
+      if (!controller.signal.aborted) { coachRequest.current = null; setPendingPly(null); }
     }
   }
   useEffect(() => {
@@ -109,13 +112,13 @@ export default function Replay({ game, username }: { game: GameDetail; username:
         <div className="game-links"><a href={`/api/games/${game.id}/pgn`} download><Download size={15}/> Download PGN</a><a href={game.url} target="_blank" rel="noreferrer">View on Chess.com <ExternalLink size={14}/></a></div>
       </div>
       <aside className="coach-panel" aria-labelledby="coach-title">
-        <div className="coach-heading"><h2 id="coach-title">Coach</h2><button className="primary-button coach-run" onClick={runCoach} disabled={pendingFen !== null}>{pendingFen ? <><LoaderCircle size={15} className="spin"/> Thinking…</> : <><Play size={14}/> Run coach</>}</button></div>
-        <p className="coach-status" id="coach-status" role="status">{pendingFen ? pendingFen === position.fen ? 'Reviewing this position. This can take a few minutes.' : 'Reviewing another position. Return to it to see the response.' : coachResponse ? 'Coaching for the position on the board.' : 'Run the coach to explore the position on the board.'}</p>
+        <div className="coach-heading"><h2 id="coach-title">Coach</h2><button className="primary-button coach-run" onClick={runCoach} disabled={pendingPly !== null}>{pendingPly !== null ? <><LoaderCircle size={15} className="spin"/> Thinking…</> : <><Play size={14}/> Run coach</>}</button></div>
+        <p className="coach-status" id="coach-status" role="status">{pendingPly !== null ? pendingPly === ply ? 'Reviewing this position. This can take a few minutes.' : 'Reviewing another position. Return to it to see the response.' : nextMove ? `Review this position and the recorded move ${nextMove.san}.` : 'Final position: position analysis only; no next recorded move.'}</p>
         {currentCoachError && <p className="coach-error" role="alert">{currentCoachError}</p>}
-        <div className="coach-field" aria-busy={pendingFen === position.fen}>
+        <div className="coach-field" aria-busy={pendingPly === ply}>
           <div className="coach-response-label"><span id="coach-response-label">Coach response</span><span>{positionLabel}</span></div>
           <div key={position.fen} id="coach-response" className="coach-response" role="region" tabIndex={0} aria-labelledby="coach-response-label" aria-describedby="coach-status">
-            {coachResponse ? <div className="coach-prose"><Markdown skipHtml disallowedElements={['img']} components={{ h1: 'h3', h2: 'h3' }}>{coachResponse.text}</Markdown></div> : <p className="coach-placeholder">{pendingFen === position.fen ? 'Your coach is thinking…' : "Your coach's feedback will appear here."}</p>}
+            {coachResponse ? <div className="coach-prose"><Markdown skipHtml disallowedElements={['img']} components={{ h1: 'h3', h2: 'h3' }}>{coachResponse.text}</Markdown></div> : <p className="coach-placeholder">{pendingPly === ply ? 'Your coach is thinking…' : "Your coach's feedback will appear here."}</p>}
           </div>
         </div>
         <div className="coach-field">

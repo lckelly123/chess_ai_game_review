@@ -139,7 +139,9 @@ def test_cli_dry_run_without_credentials():
     result = subprocess.run(
         [sys.executable, "-m", "backend.coach", "--fen", chess.STARTING_FEN, "--dry-run"],
         cwd=Path(__file__).resolve().parents[2], env=env, text=True, encoding="utf-8",
-        capture_output=True, timeout=15,
+        # Cold SDK imports on Windows can exceed 15 seconds. This checks the
+        # request contract and absence of network use, not startup latency.
+        capture_output=True, timeout=60 if sys.platform == "win32" else 15,
     )
     assert result.returncode == 0, result.stderr
     body = json.loads(result.stdout)

@@ -15,14 +15,14 @@ from backend.database import Database
 from backend.tests.test_coach import completed_response
 
 
-def mock_coach_factory(handler):
+def mock_coach_factory(handler, *, engine=None):
     @asynccontextmanager
     async def factory():
         async with AsyncOpenAI(
             api_key="test-key", max_retries=0,
             http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
         ) as client:
-            yield Coach(client)
+            yield Coach(client, engine=engine)
     return factory
 
 
@@ -47,7 +47,7 @@ def test_coach_endpoint_calls_responses_with_only_selected_position(test_db_url)
         result = response.json()
         assert result["fen"] == fen
         assert result["text"].startswith("### 1. Understand the Position")
-        assert set(result) == {"fen", "text", "model", "response_id", "created_at"}
+        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at"}
         assert len(requests) == 1
         # Question content cannot silently become part of a paid request.
         assert client.post("/api/coach/analyze", json={"fen": fen, "question": "What now?"}).status_code == 422

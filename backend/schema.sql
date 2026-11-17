@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS coach_feedback (
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
 );
 CREATE INDEX IF NOT EXISTS coach_feedback_position ON coach_feedback(fen, created_at DESC, id DESC);
+-- Additive upgrade: existing answers remain position-only (empty played_move).
+ALTER TABLE coach_feedback ADD COLUMN IF NOT EXISTS played_move VARCHAR(5) NOT NULL DEFAULT '';
+ALTER TABLE coach_feedback ADD COLUMN IF NOT EXISTS position_analysis JSONB;
+ALTER TABLE coach_feedback ADD COLUMN IF NOT EXISTS move_analysis JSONB;
+ALTER TABLE coach_feedback ADD COLUMN IF NOT EXISTS stockfish JSONB;
+CREATE INDEX IF NOT EXISTS coach_feedback_move ON coach_feedback(fen, played_move, created_at DESC, id DESC);
 CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()

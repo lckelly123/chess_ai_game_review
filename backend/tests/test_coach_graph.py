@@ -34,9 +34,10 @@ def test_studio_config_loads_without_credentials(monkeypatch):
     module, variable = config["graphs"]["chess_coach"].split(":")
     loaded = getattr(importlib.import_module(module), variable)
     assert loaded is graph
-    assert set(loaded.get_input_jsonschema()["properties"]) == {"fen"}
+    assert set(loaded.get_input_jsonschema()["properties"]) == {"fen", "played_move"}
     assert {(edge.source, edge.target) for edge in loaded.get_graph().edges} == {
         ("__start__", "analyze_position"), ("analyze_position", "__end__"),
+        ("analyze_position", "evaluate_move"), ("evaluate_move", "__end__"),
     }
 
     async def run():

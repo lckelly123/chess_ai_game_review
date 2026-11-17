@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from .chess_games import replay
 from .coach.routes import AnalyzePositionResponse, create_coach_router
+from .coach.preparation_routes import create_preparation_router
 from .coach.service import open_coach
 from .database import Database
 from .importer import ChessComImporter
@@ -53,6 +54,7 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
 
     app = FastAPI(title="Chess Study API", lifespan=lifespan)
     app.include_router(create_coach_router(coach_factory))
+    app.include_router(create_preparation_router())
 
     @app.exception_handler(psycopg.Error)
     async def database_error(request, exc):
@@ -78,9 +80,14 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
         if not record:
             raise HTTPException(404, "Game not found.")
         detail = replay(record["pgn"])
-        feedback = app.state.db.coach_feedback_for_positions([position["fen"] for position in detail["positions"]])
+        reviews = [(position["fen"], detail["moves"][ply]["uci"] if ply < len(detail["moves"]) else None)
+                   for ply, position in enumerate(detail["positions"])]
+        feedback = app.state.db.coach_feedback_for_reviews(reviews + [(fen, None) for fen, _ in reviews])
+        # Legacy position-only answers remain visible until a move review exists.
         return {**record, **detail, "coach_responses": {
-            fen: AnalyzePositionResponse(**answer).model_dump(mode="json") for fen, answer in feedback.items()
+            str(ply): AnalyzePositionResponse(**answer).model_dump(mode="json")
+            for ply, (fen, move) in enumerate(reviews)
+            if (answer := feedback.get((fen, move)) or feedback.get((fen, None))) is not None
         }}
 
     @app.get("/api/games/{game_id}/pgn")

@@ -1,6 +1,6 @@
 # Chess study
 
-A local game library and replay workspace built with React, TypeScript, FastAPI, and PostgreSQL. Import completed standard-chess games from a public Chess.com username, search and filter your library, and replay positions on the board. Run coach requests position analysis from OpenAI and saves it for future replay visits. Engine analysis is outside this version.
+A local game library and replay workspace built with React, TypeScript, FastAPI, and PostgreSQL. Import completed standard-chess games from a public Chess.com username, search and filter your library, and replay positions on the board. Run coach explains the position and plan, then evaluates the next recorded move using Stockfish evidence. Both passes appear together in the coach response and are saved for future visits.
 
 ## Run with Docker
 
@@ -27,7 +27,7 @@ On the first PostgreSQL startup, the app imports games, profiles, profile associ
 
 ### Stored coaching
 
-`coach_feedback` contains the complete six-field FEN, Markdown answer, model, OpenAI response ID, token usage, and creation timestamp. Every successful run adds a row, preserving earlier versions. The replay loads the latest answer for each exact FEN automatically, including after a refresh, another visit, or a container restart. Matching includes side to move, castling and en-passant rights, and the move counters. No new OpenAI call is made merely to read saved coaching. Student question drafts still remain in browser storage only.
+`coach_feedback` contains the complete six-field FEN, played move in UCI, combined Markdown answer, both passes' text/model/response IDs/token usage, Stockfish evidence, and creation timestamp. Every successful run adds a row, preserving earlier versions. The replay loads the latest answer for each exact FEN plus played move, including after a refresh or restart. Position-only answers use an empty move internally; existing feedback is preserved by an additive schema upgrade and remains visible until a move review replaces it for that position. Failed second passes do not save a partial review or erase an earlier answer. No new OpenAI call is made merely to read saved coaching. Student question drafts remain in browser storage only.
 
 For a SQL session inside Docker:
 
@@ -58,6 +58,32 @@ Open the Vite URL (normally http://127.0.0.1:5173). Vite proxies `/api` to the b
 
 ## Replay
 
+### Stockfish and move review
+
+Docker builds install the checksum-pinned official Stockfish 19 release automatically. Rebuild with `docker compose up --build -d` to include it; no separate Windows engine installation is needed when the backend runs in Docker.
+
+The preparation endpoint `POST /api/coach/prepare-move` accepts `{ "game_id": "<saved game ID>", "ply": 0 }`. `ply` is the number of half-moves already played, matching the replay slider: position 0 reviews White's first move, position 1 reviews Black's reply. The server derives the pre-move FEN, ASCII board, and next recorded move from the saved PGN. The final recorded position returns 422 because there is no next move, including games that ended by resignation or agreement. Explore the endpoint at http://localhost:8000/docs.
+
+It returns the validated move in UCI and SAN, a key derived from the complete FEN plus move, and Stockfish's top eight legal candidates (or fewer when fewer legal moves exist). The played move is evaluated separately from the same root position only when it is absent from the eight. Scores are from the side-to-move player's perspective, with centipawns and mate scores kept separate; principal variations and achieved search depths accompany the scores. The default search stops at depth 18 or 10 seconds per search, with two threads and 128 MB hash. Configure these limits through the `STOCKFISH_*` settings in `.env.example`.
+
+The preparation endpoint makes no OpenAI calls and does not save feedback. Run coach uses the same engine adapter inside the second LangGraph node and makes two Responses API calls when a next move exists. At the final recorded position, Run coach performs only the position analysis. Engine analysis currently uses the supplied FEN without earlier repetition history.
+
+For a locally running Windows Python backend, install the engine once:
+
+```powershell
+.\.venv\Scripts\python scripts\install_stockfish.py
+```
+
+The backend discovers the ignored `.tools/stockfish` installation automatically. Alternatively, set `STOCKFISH_PATH` to an existing engine executable. A standalone engine check works without an OpenAI key or a database:
+
+```powershell
+.\.venv\Scripts\python -m backend.coach.stockfish --fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" --move e2e4
+```
+
+In Docker, use `docker compose exec app python -m backend.coach.stockfish` with the same `--fen` and `--move` arguments. This CLI loads `.env` for local engine settings.
+
+### Replay controls
+
 - Click **Analyze** beside a saved game to open its dedicated replay screen, then use the replay buttons and slider.
 - **Back to games** returns to the library with your filters, scroll position, and keyboard focus restored. Browser Back/Forward and replay links also work.
 - Left/right arrows step through moves; Home/End jump to the beginning/end; Space toggles autoplay. Shortcuts do not intercept form fields. Space retains its native action on focused buttons and links.
@@ -68,7 +94,7 @@ Open the Vite URL (normally http://127.0.0.1:5173). Vite proxies `/api` to the b
 
 ## Coach backend
 
-`backend/coach/` contains a LangGraph workflow using the OpenAI Responses API with GPT-6 Astra and xhigh reasoning. Its first node, `analyze_position`, validates a selected FEN, generates the matching ASCII board, and sends both with the supplied system prompt. The replay screen calls `POST /api/coach/analyze` when Run coach is pressed. Only the selected FEN is accepted; student questions are not connected.
+`backend/coach/` contains a LangGraph workflow using the OpenAI Responses API with GPT-6 Astra and xhigh reasoning for both passes. `analyze_position` receives only the selected FEN and derived ASCII board. `evaluate_move` receives its complete output, the same board, the next recorded move, and Stockfish's candidates and played-move evaluation, using the separate supplied move-review prompt. Its section 3 is appended to the first response. The replay sends `{ "game_id": "...", "ply": 0 }` to `POST /api/coach/analyze`; the server derives the position and move from the saved PGN. `{ "fen": "..." }` remains available for position-only coaching. Student questions are not connected.
 
 See [backend/coach/README.md](backend/coach/README.md) for the Python interface, command-line dry run, credentials, and Docker usage. Set `OPENAI_API_KEY` in the ignored project `.env`, then restart the app (`docker compose up -d` for Docker). The key is used only by the backend. The existing game library works without a key.
 
@@ -104,4 +130,4 @@ The test stack uses a separate PostgreSQL container with temporary storage and n
 - `backend/coach/`: extensible LangGraph coach, traced Responses adapter, prompt, validation, and CLI.
 - `langgraph.json`: local Agent Server/Studio graph registration and environment configuration.
 
-This project is independent of Chess.com. See `THIRD_PARTY_NOTICES.md` for dependency licensing. The future AI product needs a separate review of Chess.com's API guidance and AI-use terms; only pressing Run coach (or explicitly invoking the service/CLI) sends a selected position to OpenAI; student questions are not sent.
+This project is independent of Chess.com. See `THIRD_PARTY_NOTICES.md` for dependency licensing. The future AI product needs a separate review of Chess.com's API guidance and AI-use terms; only pressing Run coach (or explicitly invoking the service/CLI) sends the selected position and, when available, the played move and engine evidence to OpenAI; student questions are not sent.

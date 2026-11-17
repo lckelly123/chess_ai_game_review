@@ -61,20 +61,32 @@ class Database:
         # Append successful generations; a failed rerun never erases an answer.
         with self.connection() as db:
             return db.execute(
-                """INSERT INTO coach_feedback (fen, text, model, response_id, usage)
-                   VALUES (%s, %s, %s, %s, %s)
-                   RETURNING fen, text, model, response_id, created_at""",
+                """INSERT INTO coach_feedback
+                   (fen, text, model, response_id, usage, played_move, position_analysis, move_analysis, stockfish)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING fen, NULLIF(played_move, '') AS played_move, text, model, response_id, created_at""",
                 (analysis.position.fen, analysis.text, analysis.model, analysis.response_id,
-                 Jsonb(analysis.usage) if analysis.usage is not None else None),
+                 Jsonb(analysis.usage) if analysis.usage is not None else None, analysis.played_move or '',
+                 Jsonb(analysis.position_analysis) if analysis.position_analysis is not None else None,
+                 Jsonb(analysis.move_analysis) if analysis.move_analysis is not None else None,
+                 Jsonb(analysis.stockfish) if analysis.stockfish is not None else None),
             ).fetchone()
 
     def coach_feedback_for_positions(self, fens: list[str]) -> dict[str, dict]:
-        if not fens:
+        rows = self.coach_feedback_for_reviews([(fen, None) for fen in fens])
+        return {fen: row for (fen, _), row in rows.items()}
+
+    def coach_feedback_for_reviews(self, reviews: list[tuple[str, str | None]]) -> dict[tuple[str, str | None], dict]:
+        if not reviews:
             return {}
         with self.connection() as db:
             rows = db.execute(
-                """SELECT DISTINCT ON (fen) fen, text, model, response_id, created_at
-                   FROM coach_feedback WHERE fen = ANY(%s)
-                   ORDER BY fen, created_at DESC, id DESC""", (fens,),
+                """SELECT DISTINCT ON (cf.fen, cf.played_move) cf.fen, NULLIF(cf.played_move, '') AS played_move,
+                          text, model, response_id, created_at
+                   FROM coach_feedback cf WHERE cf.fen = ANY(%s) AND cf.played_move = ANY(%s)
+                   ORDER BY cf.fen, cf.played_move, created_at DESC, id DESC""",
+                (list({fen for fen, _ in reviews}), list({move or '' for _, move in reviews})),
             ).fetchall()
-            return {row["fen"]: row for row in rows}
+            requested = set(reviews)
+            return {(row["fen"], row["played_move"]): row for row in rows
+                    if (row["fen"], row["played_move"]) in requested}

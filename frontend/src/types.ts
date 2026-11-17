@@ -9,7 +9,7 @@ export type Move = { ply: number; san: string; uci: string; color: string; numbe
 export type GameDetail = Game & { pgn: string; positions: Position[]; moves: Move[]; coach_responses: Record<string, CoachResponse> };
 export type Profile = { username: string; last_synced: number; game_count: number };
 export type ImportJob = { id: string; username: string; status: 'queued' | 'running' | 'completed' | 'failed'; found: number; added: number; skipped: number; message: string };
-export type CoachResponse = { fen: string; text: string; model: string; response_id: string; created_at: string };
+export type CoachResponse = { fen: string; played_move: string | null; text: string; model: string; response_id: string; created_at: string };
 
 export function perspective(game: Game, username: string) {
   const isWhite = game.white.toLowerCase() === username.toLowerCase();

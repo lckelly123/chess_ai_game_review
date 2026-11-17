@@ -5,6 +5,7 @@ The replay board uses Chess.com's Classic piece set and Icy Sea board texture to
 Dependencies retain their upstream licenses, available in their installed packages and source repositories:
 
 - python-chess (`chess`): GPL-3.0-or-later, https://github.com/niklasf/python-chess. Its copyleft obligations need to be respected when distributing the application/container; no proprietary-license claim is made for this project.
+- Stockfish 19: GPL-3.0, https://github.com/official-stockfish/Stockfish/tree/sf_19. The installer verifies the official release archive's SHA-256 and retains its license and source files alongside the executable (`/opt/stockfish` in Docker, `.tools/stockfish` locally). Corresponding release source: https://github.com/official-stockfish/Stockfish/releases/tag/sf_19.
 - React: MIT, https://github.com/facebook/react.
 - react-markdown: MIT, https://github.com/remarkjs/react-markdown.
 - FastAPI: MIT, https://github.com/fastapi/fastapi.

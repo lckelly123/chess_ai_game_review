@@ -1,6 +1,7 @@
 """OpenAI Responses API adapter, deliberately independent of the web app."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,9 +12,11 @@ from langsmith.run_helpers import is_traceable_function
 from langsmith.wrappers import wrap_openai
 
 from .position import CoachPosition
+from .move_review import MoveReview
 from .settings import CoachSettings, require_api_key
 
 SYSTEM_PROMPT_PATH = Path(__file__).with_name("system_prompt.md")
+MOVE_PROMPT_PATH = Path(__file__).with_name("move_prompt.md")
 
 
 class CoachResponseError(RuntimeError):
@@ -31,6 +34,13 @@ class CoachAnalysis:
     model: str
     position: CoachPosition
     usage: dict[str, Any] | None
+    played_move: str | None = None
+    position_analysis: dict[str, Any] | None = None
+    move_analysis: dict[str, Any] | None = None
+    stockfish: dict[str, Any] | None = None
+
+    def as_pass(self) -> dict[str, Any]:
+        return {"text": self.text, "response_id": self.response_id, "model": self.model, "usage": self.usage}
 
 
 def _request_for(position: CoachPosition, settings: CoachSettings) -> dict[str, Any]:
@@ -54,6 +64,22 @@ def build_request(
     return _request_for(position, settings or CoachSettings())
 
 
+def build_move_request(review: MoveReview, previous_analysis: str, evidence: dict, settings: CoachSettings) -> dict:
+    request = _request_for(review.position, settings)
+    payload = {**review.as_dict(), "previous_analysis": previous_analysis, "stockfish": evidence}
+    request["input"] = [
+        {"role": "system", "content": MOVE_PROMPT_PATH.read_text(encoding="utf-8")},
+        {"role": "user", "content": (
+            "Evaluate the recorded move from this pre-move position using the supplied previous analysis and engine evidence. "
+            "Scores are from the side-to-move player's perspective: positive favors that player. "
+            "cp is centipawns; mate is signed moves to mate, not centipawns. "
+            "Respect score bounds and actual search depths; small differences need not imply mistakes.\n\n"
+            + json.dumps(payload, ensure_ascii=False)
+        )},
+    ]
+    return request
+
+
 class ResponsesCoach:
     """Reuse an injected SDK client; the caller owns its lifecycle."""
 
@@ -72,6 +98,13 @@ class ResponsesCoach:
         position = CoachPosition.from_fen(fen, ascii_board=ascii_board)
         # Prompt reads must not block Agent Server's event loop in Studio.
         request = await asyncio.to_thread(_request_for, position, self.settings)
+        return await self._complete(request, position)
+
+    async def evaluate_move(self, review: MoveReview, previous_analysis: str, evidence: dict) -> CoachAnalysis:
+        request = await asyncio.to_thread(build_move_request, review, previous_analysis, evidence, self.settings)
+        return await self._complete(request, review.position)
+
+    async def _complete(self, request: dict, position: CoachPosition) -> CoachAnalysis:
         response = await self.client.responses.create(**request)
         if response.status != "completed":
             reason = response.incomplete_details.reason if response.incomplete_details else response.status

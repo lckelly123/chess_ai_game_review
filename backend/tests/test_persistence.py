@@ -106,7 +106,7 @@ def test_feedback_restores_after_restart_and_is_position_specific(test_db_url):
     with TestClient(create_app(test_db_url, coach_factory=factory)) as restarted:
         assert restarted.get('/api/coach/feedback', params={"fen": fen}).json() == saved
         detail = restarted.get(f'/api/games/{game["id"]}').json()
-        assert detail["coach_responses"] == {fen: saved}
+        assert detail["coach_responses"] == {"1": saved}
         assert restarted.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN}).json() is None
         assert restarted.get('/api/coach/feedback', params={"fen": "invalid"}).status_code == 422
     assert len(calls) == 1  # Reading/reopening never generates another paid answer.

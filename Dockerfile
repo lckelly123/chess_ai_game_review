@@ -10,6 +10,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     FRONTEND_DIST=/app/frontend/dist
 WORKDIR /app
+COPY scripts/install_stockfish.py /tmp/install_stockfish.py
+RUN python /tmp/install_stockfish.py --destination /opt/stockfish --link /usr/local/bin/stockfish
 COPY backend/requirements.lock ./requirements.lock
 RUN pip install --no-cache-dir -r requirements.lock \
     && groupadd --gid 10001 app \

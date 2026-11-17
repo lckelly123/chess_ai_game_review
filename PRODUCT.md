@@ -6,13 +6,13 @@
 web
 
 ## Stack
-User-approved React/TypeScript frontend, Python/FastAPI backend, and PostgreSQL storage. Docker Compose runs the application and a PostgreSQL container with persistent storage. Successful coach feedback is saved by complete FEN and restored when revisiting a position.
+User-approved React/TypeScript frontend, Python/FastAPI backend, and PostgreSQL storage. Docker Compose runs the application with Stockfish and a PostgreSQL container with persistent storage. Successful move reviews are saved by complete FEN plus played move and restored when revisiting a position; older position-only feedback is preserved.
 
 ## Users
 Chess players reviewing their own completed games to understand positions and plans.
 
 ## Product Purpose
-Import public Chess.com games, browse the library, and replay exact positions. Future coaching will teach position evaluation and planning. A standalone backend coach now supports explicit position requests through the OpenAI Responses API (GPT-6 Astra, xhigh). The replay screen can explicitly run the coach for its current position; student questions remain disconnected.
+Import public Chess.com games, browse the library, and replay exact positions. The coach teaches position evaluation and planning, then reviews the next recorded move against that plan and Stockfish evidence through two LangGraph nodes using the OpenAI Responses API (GPT-6 Astra, xhigh). The second response is appended to the first in the coach panel. Final positions receive position-only coaching; student questions remain disconnected.
 
 ## Operating Context
 Initial local, single-user application. Username-based import is public data access, not authenticated account linking. Chess.com is an external provider; availability and freshness are not guaranteed.
