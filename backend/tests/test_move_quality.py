@@ -6,6 +6,7 @@ import chess.engine
 import pytest
 
 from backend.coach.move_quality import assess_move, analyze_played_move, prepare_position_evidence, _played_candidate
+from backend.coach.player_move_quality import assess_player_move, PLAYER_QUALITY_POLICY
 from backend.coach.move_review import MoveReview
 from backend.coach.position_classification import analyze_position
 from backend.coach.stockfish import StockfishSettings, StockfishUnavailableError
@@ -66,7 +67,8 @@ def test_in_pool_played_moves_reuse_search_without_engine_process(monkeypatch):
     snapshot = deepcopy(original)
     for move in original["top_moves"]:
         result = analyze_played_move(MoveReview.from_fen(chess.STARTING_FEN, move["uci"]), original)
-        assert result["played_move_in_top"] and result["move_quality"]["status"] == "acceptable"
+        assert result["played_move_in_top"] and result["move_quality"]["status"] == "good"
+        assert result["move_quality_policy"] == PLAYER_QUALITY_POLICY
         assert result["played_move"]["uci"] == move["uci"]
     assert original == snapshot
 
@@ -100,7 +102,8 @@ def test_outside_pool_search_stays_on_original_board_and_perspective(monkeypatch
     assert args[0].fen() == board.fen() and args[1].depth == 12
     assert kwargs == {"root_moves": [played]}
     assert result["perspective"] == "Black" and result["played_move"]["score"]["cp"] == 50
-    assert result["move_quality"] == {"status": "acceptable", "expected_score_loss_pp": 5}
+    assert result["move_quality"] == assess_player_move(position["top_moves"][0], result["played_move"])
+    assert result["move_quality"]["status"] == "good"
     assert not result["played_move_in_top"]
     engine.__exit__.assert_called_once()
 
@@ -109,13 +112,13 @@ def test_feedback_reuses_reason_only_for_acceptable_selected_move():
     data = teaching_output()
     data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": None, "better_candidate_uci": None}
     teaching = TeachingOutput.model_validate(data)
-    evidence = {"move_quality": {"status": "acceptable"}}
+    evidence = {"move_quality": {"status": "good"}}
     teaching.validate_move_evaluation(played_move="g1h3", evidence=evidence)
     teaching.move_evaluation.explanation = "A duplicate reason."
     with pytest.raises(ValueError):
         teaching.validate_move_evaluation(played_move="g1h3", evidence=evidence)
     teaching.move_evaluation.explanation = None
-    for move, quality in [("e2e4", "acceptable"), ("g1h3", "uncertain"), ("g1h3", "meaningfully_inferior"), (None, "acceptable")]:
+    for move, quality in [("e2e4", "good"), ("g1h3", "uncertain"), ("g1h3", "inaccuracy"), (None, "good")]:
         with pytest.raises(ValueError):
             teaching.validate_move_evaluation(played_move=move, evidence={"move_quality": {"status": quality}})
 
@@ -124,13 +127,13 @@ def test_better_move_reference_requires_selected_candidate_and_meaningful_improv
     data = teaching_output()
     data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": "The idea is useful, but the execution loses material.", "better_candidate_uci": "g1h3"}
     teaching = TeachingOutput.model_validate(data)
-    evidence = {"move_quality": {"status": "meaningfully_inferior"}, "top_moves": [{"uci": "g1h3", **candidate()}],
-                "played_move": {"uci": "e2e4", **candidate(500, 100, 50)}}
+    evidence = {"move_quality": {"status": "inaccuracy"}, "top_moves": [{"uci": "g1h3", **candidate()}],
+                "played_move": {"uci": "e2e4", **candidate(500, 100, 0)}}
     teaching.validate_move_evaluation(played_move="e2e4", evidence=evidence)
     evidence["played_move"].update(candidate(550, 100, 50))
     with pytest.raises(ValueError):
         teaching.validate_move_evaluation(played_move="e2e4", evidence=evidence)
-    evidence["played_move"].update(candidate(500, 100, 50))
+    evidence["played_move"].update(candidate(500, 100, 0))
     teaching.move_evaluation.better_candidate_uci = "d2d4"
     with pytest.raises(ValueError):
         teaching.validate_move_evaluation(played_move="e2e4", evidence=evidence)

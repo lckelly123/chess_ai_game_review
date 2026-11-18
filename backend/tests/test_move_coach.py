@@ -34,11 +34,11 @@ def move_response(**overrides):
 
 def evidence(review, position):
     from copy import deepcopy
-    from backend.coach.move_quality import assess_move
+    from backend.coach.player_move_quality import assess_player_move
     candidate = deepcopy(position["top_moves"][0])
     candidate.update(uci=review.played_move_uci, san=review.played_move_san,
                      pv_uci=[review.played_move_uci], pv_san=[review.played_move_san])
-    quality = assess_move(position["top_moves"][0], candidate)
+    quality = assess_player_move(position["top_moves"][0], candidate)
     return {"fen": review.position.fen, "engine": "Stockfish test", "perspective": review.position.side_to_move,
             "top_moves": position["top_moves"], "played_move": candidate, "played_move_in_top": False,
             "move_quality": quality}

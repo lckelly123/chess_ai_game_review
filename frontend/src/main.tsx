@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import '@fontsource-variable/dm-sans';
-import '@fontsource/newsreader/500.css';
 import App from './App';
 import './styles.css';
 

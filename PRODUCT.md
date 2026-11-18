@@ -21,7 +21,7 @@ Initial local, single-user application. Username-based import is public data acc
 Recent standard-chess imports, a library-first opening screen with search and filters, and a separate game replay screen opened by Analyze. Returning to the library retains filters and list position. Replay includes position navigation and orientation controls. A Coach panel replaces the move list, with a read-only response area and an editable question draft saved per game; Run coach displays a response for the selected FEN while question drafts remain local. Original PGN and exact half-move indexes remain available for future coaching. No invented game data in the library. User approved proceeding directly in code.
 
 ## Brand Commitments
-User selected a quiet light workspace with a blue-grey board and compact game list. On November 15, 2026, the user supplied a specific board reference and requested matching artwork: Icy Sea texture and Classic black-and-white pieces. The rest of the interface retains its existing identity; no implied affiliation with Chess.com.
+User approved replacing the light workspace with a focused charcoal theme: near-black canvas, dark panels, soft white text and primary actions, muted blue selection, and DM Sans throughout. Retain the blue-grey board and compact game list. On November 15, 2026, the user supplied a specific board reference and requested matching artwork: Icy Sea texture and Classic black-and-white pieces. These assets remain unchanged; no implied affiliation with Chess.com.
 
 ## Product Principles
 - Make the selected position and side to move unambiguous.

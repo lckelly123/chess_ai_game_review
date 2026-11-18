@@ -10,7 +10,7 @@ from openai import (
     APIConnectionError, APIStatusError, APITimeoutError, AuthenticationError,
     NotFoundError, PermissionDeniedError, RateLimitError,
 )
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from ..chess_games import replay
 from .move_review import MoveReview
@@ -19,6 +19,7 @@ from .service import CoachResponseError, open_coach
 from .settings import CoachConfigurationError, CoachModel, CoachSettings, DEFAULT_COACH_MODEL
 from .stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
 from .teaching import TeachingAnalysis
+from .player_move_quality import with_player_move_quality
 
 
 class AnalyzePositionRequest(BaseModel):
@@ -47,6 +48,11 @@ class AnalyzePositionResponse(BaseModel):
     stockfish: dict | None = None
     teaching: TeachingAnalysis | None = None
     position_evidence: dict | None = None
+
+    @field_validator("stockfish")
+    @classmethod
+    def current_player_quality(cls, evidence):
+        return with_player_move_quality(evidence) if evidence is not None else None
 
     @computed_field
     @property

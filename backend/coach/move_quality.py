@@ -8,9 +8,10 @@ import chess
 import chess.engine
 
 from .move_review import MoveReview
+from .player_move_quality import PLAYER_QUALITY_POLICY, assess_player_move
 from .stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError, StockfishUnavailableError, _candidate
 
-# This is a move-quality policy, separate from decision classification. A large
+# This is the candidate-approval policy, separate from player-move severity. A large
 # CP gap alone must not turn two winning continuations into a serious mistake.
 ACCEPTABLE_LOSS_PP = 5
 QUALITY_POLICY = {
@@ -39,6 +40,7 @@ def improvement_pp(better: dict, other: dict) -> Fraction | None:
 
 
 def assess_move(best: dict, move: dict) -> dict:
+    """Existing WDL candidate policy, not the player-move severity classifier."""
     loss = improvement_pp(best, move)
     # A separately searched root may contradict the initial MultiPV ranking.
     # Do not convert conflicting evidence into praise or a severity label.
@@ -115,7 +117,7 @@ def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishS
             raise StockfishAnalysisError("Stockfish could not evaluate the played move.") from exc
     if played["uci"] != review.played_move_uci:
         raise StockfishAnalysisError("Stockfish evaluated a different played move.")
-    played = {**played, "quality": assess_move(candidates[0], played)}
+    played = {**played, "quality": assess_player_move(candidates[0], played)}
     return {"fen": review.position.fen, "engine": engine_name, "perspective": review.position.side_to_move,
             "top_moves": candidates, "played_move": played, "played_move_in_top": in_top,
-            "move_quality": played["quality"], "move_quality_policy": QUALITY_POLICY.copy()}
+            "move_quality": played["quality"], "move_quality_policy": PLAYER_QUALITY_POLICY.copy()}

@@ -15,7 +15,7 @@ Input is `fen` plus optional `played_move` in UCI. The only active node, `analyz
 1. Validate the FEN and optional move before engine work or model calls; derive the canonical board and SAN using python-chess.
 2. Run an independent top-five Stockfish search with native WDL, evaluations, PVs, outlook, and deterministic position classification. The played move never affects this search, ranking, or approved pool.
 3. Approve candidates with expected-score loss at most **5 percentage points** from the best move. Keep all five lines available for comparison. This move-quality policy is separate from the unchanged Flexible/Clear preference/Critical classifier. Large centipawn gaps in winning positions do not alone make alternatives unacceptable.
-4. Reuse a played move already in that search. Otherwise evaluate only that move from the same pre-move root, with WDL and the completed position search's depth. Depth mismatches, missing WDL, bounded scores, or contradictory ordering yield uncertain quality. Engine failures stop before the model call.
+4. Reuse a played move already in that search. Otherwise evaluate only that move from the same pre-move root and completed search depth. Grade the player with the Lichess logistic centipawn rule described below. Depth mismatches, missing scores, bounded scores, or contradictory ordering yield uncertain quality. Engine failures stop before the model call.
 5. Send the supplied `system_prompt.md`, position evidence with `decision_mode`, and separately labeled player-move evidence through the same Responses API. The prompt reserves player-specific information for `move_evaluation`; position teaching and candidate selection must remain independent. This is a prompt constraint within one generation, not a guarantee of identical prose across separate model runs.
 6. Validate the four-field structured answer and save only a complete successful result. Usage and response IDs describe this single call. The CLI/export text is a readable rendering of the same answer, with no appended second response.
 
@@ -25,7 +25,15 @@ An optional ASCII board must match the FEN, either as the coordinate-labeled out
 
 The response contains exactly `positional_thesis`, `needs_of_position`, `candidate_moves`, and `move_evaluation`. Each candidate has `uci`, `reason`, and exactly two distinct `highlight_squares`. Nonterminal positions require one to three legal, distinct, approved moves; terminal positions require an empty array. Word counts are guidance. The model cannot change the Stockfish classification or assign its own quality labels.
 
-`move_evaluation` contains `plan_alignment`, nullable `explanation`, and nullable `better_candidate_uci`. Null explanations require an acceptable, aligned played move already in the recommendations, allowing the UI to reuse its reason. A better-move reference must identify a selected candidate with a demonstrable improvement greater than 5 expected-score percentage points. Missing or conflicting quality evidence cannot produce positive indicators. With no recorded move, return an unclear alignment, an explicit no-move explanation, and no better candidate.
+`move_evaluation` contains `plan_alignment`, nullable `explanation`, and nullable `better_candidate_uci`. Null explanations require a `good`, aligned played move already in the recommendations, allowing the UI to reuse its reason. A better-move reference requires a player error and a selected candidate improving logistic winning chances by at least 5 percentage points, or a stronger result under the mate-transition policy. Missing or conflicting quality evidence cannot produce positive indicators. With no recorded move, return an unclear alignment, an explicit no-move explanation, and no better candidate.
+
+### Player-move severity
+
+This policy is independent of the unchanged position classifier and WDL-based candidate approval. From the player's perspective, clamp CP to [-1000, 1000] and compute `W(cp) = 100 / (1 + exp(-0.00368208 * cp))`. Compare best and played moves at the same root and depth using `loss = W(best_cp) - W(played_cp)`. Loss below 5 pp is **Good**, [5, 10) **Inaccuracy**, [10, 15) **Mistake**, and >=15 **Blunder**. Do not round before classification. Native WDL is not an input to player severity; missed opportunities use the same thresholds. Severity does not establish a tactical or positional cause.
+
+Forced mates follow the separate [Lichess Advice rules](https://github.com/lichess-org/lila/blob/master/modules/tree/src/main/Advice.scala): allowing mate is a blunder, reduced to a mistake when the prior CP is below -700 or an inaccuracy below -999; losing a forced mate is a blunder, reduced to a mistake when the resulting CP exceeds 700 or an inaccuracy above 999. Keeping a forced mate, or remaining in an already forced loss, gets no error annotation (shown as Good). Mate distance changes alone are not penalized. Mate comparisons have null `winning_chances_loss_pp`, never invented CP values. The curve is documented in [scalachess eval.scala](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/eval.scala).
+
+Saved HTTP responses reclassify the player's stored scores on read, without engine work, model calls, or database writes. Stored prose and position evidence are preserved; rerun the coach to regenerate an explanation under the new severity policy.
 
 Structured data and position evidence use the existing `position_analysis` JSONB field, while played-move evidence uses `stockfish`; no migration is needed. HTTP responses expose `teaching`, `position_evidence`, `stockfish`, and server-derived `candidate_san`. Old three-field teaching remains readable and obsolete `position_character` labels stay hidden. The combined UI displays the thesis, needs, candidates, and move feedback in one card. The played move appears once in the shared moves list with a blue Player move badge. Positive quality feedback requires acceptable engine quality. Other played moves get their own row with concise feedback and an optional link to a stronger selected candidate. Old second-node essays are not displayed; rerun coaching for the new combined feedback.
 
@@ -47,7 +55,8 @@ The UI pauses autoplay when Run coach is pressed and shows progress. Moving to a
 
 - `system_prompt.md`: the user's supplied engine-informed teaching prompt. The request's position context describes unclassified and terminal edge cases.
 - `move_prompt.md`: the disconnected legacy move-review prompt.
-- `move_quality.py`: candidate approval, played-root WDL search, and deterministic move-quality policy.
+- `move_quality.py`: unchanged WDL candidate approval and played-root engine search.
+- `player_move_quality.py`: independent player severity, mate handling, and saved-label recalculation.
 - `teaching.py`: strict output schema, legal-move validation, SAN labels, and readable fallback rendering.
 - `position.py`: FEN validation, ASCII rendering, and the position message.
 - `settings.py`: supported models, default model, reasoning effort per model, and runtime limits.

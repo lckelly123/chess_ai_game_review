@@ -18,7 +18,11 @@ export type EngineAnalysis = {
   perspective: 'White' | 'Black';
   played_move: EngineMove;
   top_moves?: EngineMove[];
-  move_quality?: { status: 'acceptable' | 'meaningfully_inferior' | 'uncertain'; expected_score_loss_pp: number | null };
+  move_quality?: {
+    status: 'good' | 'inaccuracy' | 'mistake' | 'blunder' | 'uncertain';
+    winning_chances_loss_pp: number | null;
+    reason?: string;
+  };
 };
 export type CandidateMove = { uci: string; reason: string; highlight_squares: [string, string] };
 export type PositionTeaching = {

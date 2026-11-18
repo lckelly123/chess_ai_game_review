@@ -20,6 +20,14 @@ const unclassifiedDescriptions = {
   mate_score: { label: 'Unclassified', description: 'Mate scores prevent a centipawn comparison.' },
 };
 
+const qualityLabels = { good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder', uncertain: 'Quality uncertain' };
+const mateQualityDescriptions: Record<string, string> = {
+  mate_created: 'Allows a forced checkmate against you.',
+  mate_lost: 'Gives up a forced checkmate.',
+  mate_retained: 'Keeps a forced checkmate.',
+  already_forced_loss: 'The engine already found a forced loss; no new error is assigned.',
+};
+
 export default function CoachCards({ response, nextMove, pending, selectedUci, onSelectCandidate, transitioning }: {
   response?: CoachResponse; nextMove?: Move; pending: boolean;
   selectedUci?: string; onSelectCandidate: (uci: string) => void; transitioning: boolean;
@@ -36,8 +44,12 @@ export default function CoachCards({ response, nextMove, pending, selectedUci, o
   const scoreContext = engine ?? (response ? { perspective: response.fen.split(' ')[1] === 'w' ? 'White' as const : 'Black' as const } : undefined);
   const moveFeedback = teaching?.move_evaluation;
   const quality = engine?.move_quality?.status ?? 'uncertain';
-  const qualityLabel = quality === 'acceptable' ? 'Sound' : quality === 'meaningfully_inferior' ? 'Better available' : 'Quality uncertain';
-  const betterUci = moveFeedback?.better_candidate_uci;
+  const qualityLabel = qualityLabels[quality] ?? qualityLabels.uncertain;
+  const qualityLoss = engine?.move_quality?.winning_chances_loss_pp;
+  const qualityDescription = qualityLoss != null
+    ? `Winning chances lost: ${qualityLoss.toFixed(2)} percentage points from your perspective. Less than 5: Good; 5 to less than 10: Inaccuracy; 10 to less than 15: Mistake; 15 or more: Blunder.`
+    : mateQualityDescriptions[engine?.move_quality?.reason ?? ''] ?? 'The available engine scores do not support a reliable comparison.';
+  const betterUci = ['inaccuracy', 'mistake', 'blunder'].includes(quality) ? moveFeedback?.better_candidate_uci : undefined;
   const waiting = pending ? 'Your coach is thinking…' : 'Run coach to explore this position.';
 
   return <div className="coach-cards">
@@ -84,10 +96,12 @@ export default function CoachCards({ response, nextMove, pending, selectedUci, o
               <button type="button" className="candidate-move" aria-label={`${selected ? 'Hide' : 'Show'} ${move.san} on board${move.isPlayed ? ', player move' : ''}`} aria-describedby={`${id}-${move.uci}-reason${score ? ` ${id}-${move.uci}-score` : ''}`} aria-pressed={selected} disabled={transitioning} onClick={() => onSelectCandidate(move.uci)}>
                 <span className="candidate-heading">
                   <span className="move-labels"><strong>{move.san}</strong>
-                    {score && <span id={`${id}-${move.uci}-score`} className={`engine-score ${score.tone}`} title={`${score.label} · ${score.perspective}'s perspective · depth ${move.engineMove?.depth}`} aria-label={`Evaluation ${score.value}, ${score.label}, ${score.perspective}'s perspective`}>{score.value}</span>}
-                    {move.isPlayed && <><span className="player-move-badge">Player move</span><span className={`move-quality ${quality}`}>{quality === 'acceptable' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span></>}
+                    {move.isPlayed && <><span className="player-move-badge">Player move</span><span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{quality === 'good' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span></>}
                   </span>
-                  <span className="move-board-action" title={selected ? 'Shown on board' : 'Show on board'}>{selected ? <Check size={15} aria-hidden="true"/> : <ArrowUpRight size={15} aria-hidden="true"/>}</span>
+                  <span className="candidate-meta">
+                    {score && <span id={`${id}-${move.uci}-score`} className={`engine-score ${score.tone}`} title={`${score.label} · ${score.perspective}'s perspective · depth ${move.engineMove?.depth}`} aria-label={`Evaluation ${score.value}, ${score.label}, ${score.perspective}'s perspective`}>{score.value}</span>}
+                    <span className="move-board-action" title={selected ? 'Shown on board' : 'Show on board'}>{selected ? <Check size={15} aria-hidden="true"/> : <ArrowUpRight size={15} aria-hidden="true"/>}</span>
+                  </span>
                 </span>
                 <span className="candidate-reason" id={`${id}-${move.uci}-reason`}>{move.reason}</span>
                 {move.feedback && move.feedback !== move.reason && <span className="candidate-feedback">{move.feedback}</span>}

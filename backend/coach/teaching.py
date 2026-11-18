@@ -81,18 +81,18 @@ class TeachingOutput(BaseModel):
         return self
 
     def validate_move_evaluation(self, *, played_move: str | None, evidence: dict | None) -> "TeachingOutput":
-        from .move_quality import ACCEPTABLE_LOSS_PP, improvement_pp
+        from .player_move_quality import ERROR_STATUSES, assess_player_move
 
         evaluation = self.move_evaluation
         candidates = {candidate.uci for candidate in self.candidate_moves}
         quality = evidence.get("move_quality", {}).get("status") if evidence else None
-        if played_move in candidates and quality == "acceptable" and (
+        if played_move in candidates and quality == "good" and (
             evaluation.plan_alignment != "aligned" or evaluation.explanation is not None
             or evaluation.better_candidate_uci is not None
         ):
             raise ValueError("An acceptable selected move must reuse its candidate explanation without correction.")
         if evaluation.explanation is None and not (
-            played_move in candidates and quality == "acceptable" and evaluation.plan_alignment == "aligned"
+            played_move in candidates and quality == "good" and evaluation.plan_alignment == "aligned"
         ):
             raise ValueError("Only an aligned, acceptable recommended move may omit its explanation.")
         if played_move is None and (evaluation.plan_alignment != "unclear" or evaluation.better_candidate_uci is not None):
@@ -100,9 +100,9 @@ class TeachingOutput(BaseModel):
         if evaluation.better_candidate_uci is not None:
             better = next((move for move in evidence.get("top_moves", [])
                            if move["uci"] == evaluation.better_candidate_uci), None) if evidence else None
-            gap = improvement_pp(better, evidence["played_move"]) if better else None
-            if (evaluation.better_candidate_uci not in candidates or quality != "meaningfully_inferior"
-                    or gap is None or gap <= ACCEPTABLE_LOSS_PP):
+            comparison = assess_player_move(better, evidence["played_move"]) if better else None
+            if (evaluation.better_candidate_uci not in candidates or quality not in ERROR_STATUSES
+                    or comparison is None or comparison["status"] not in ERROR_STATUSES):
                 raise ValueError("A better candidate must be selected and demonstrably stronger than the played move.")
         return self
 
