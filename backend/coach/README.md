@@ -5,40 +5,39 @@ A standalone async LangGraph workflow using the OpenAI Responses API with `gpt-6
 ```mermaid
 flowchart LR
     START --> analyze_position
-    analyze_position -->|played move supplied| evaluate_move --> END
-    analyze_position -->|no played move| END
+    analyze_position --> END
 ```
 
-Input is `fen` plus optional `played_move` in UCI. The board is always derived from that FEN. `analyze_position` returns structured position teaching; `evaluate_move` produces section 3 as Markdown. State retains separate `position_analysis`, `move_analysis`, and `stockfish` objects, plus readable combined `text` and total `usage`. Each pass retains its own model, response ID, and usage. The first pass also retains the validated JSON under `position_analysis.structured`. The top-level response ID/model identify the final completed pass. The normalized played move is available as `move_uci` in graph output and `played_move` in `CoachAnalysis` and HTTP responses.
+Input is `fen` plus optional `played_move` in UCI. The only active node, `analyze_position`, returns one combined coaching card. The former `evaluate_move` adapter and prompt remain in the repository for future use, but the node is absent from the compiled graph and is never called by the app, CLI, or Studio. Each run makes one Responses request. State retains `position_analysis` and played-move `stockfish` evidence; `move_analysis` is always null and old checkpoint values are cleared.
 
 ## Flow
 
-1. Receive the selected position's complete FEN.
-2. Validate it with python-chess and generate a coordinate-labeled ASCII board. White is always at the bottom; letter case identifies piece color.
-3. Inside the first node, run `position_classification.analyze_position(fen)` off the event loop to obtain the top five Stockfish moves (or fewer when fewer are legal), their evaluations/WDL/PVs, relative losses, position outlook, and deterministic decision classification. Send the user's supplied `system_prompt.md`, the FEN/ASCII board, and this evidence through the same Responses API with a strict JSON schema. Validate that every recommended move belongs to the supplied pool and has two distinct highlight squares. Engine failures stop before any model call.
-4. If a played move exists, run Stockfish off the event loop to obtain up to eight root candidates plus the played move when outside the eight.
-5. Send `move_prompt.md` as the second call's system message, with the first pass's validated JSON object, the same FEN/ASCII board, the played move in UCI/SAN, and engine evidence as user input. Both calls use the selected model with medium reasoning for both Astra and Terra, and `store=False`; prior output is sent explicitly rather than via a stored response ID. The second call has no JSON response format.
-6. Append the second response to a readable Markdown rendering of the first pass for CLI/export compatibility. Without a played move, return only the first analysis. Invalid played moves are rejected before engine work or model calls; invalid generated teaching stops the graph before the second node's engine search, model call, or persistence.
+1. Validate the FEN and optional move before engine work or model calls; derive the canonical board and SAN using python-chess.
+2. Run an independent top-five Stockfish search with native WDL, evaluations, PVs, outlook, and deterministic position classification. The played move never affects this search, ranking, or approved pool.
+3. Approve candidates with expected-score loss at most **5 percentage points** from the best move. Keep all five lines available for comparison. This move-quality policy is separate from the unchanged Flexible/Clear preference/Critical classifier. Large centipawn gaps in winning positions do not alone make alternatives unacceptable.
+4. Reuse a played move already in that search. Otherwise evaluate only that move from the same pre-move root, with WDL and the completed position search's depth. Depth mismatches, missing WDL, bounded scores, or contradictory ordering yield uncertain quality. Engine failures stop before the model call.
+5. Send the supplied `system_prompt.md`, position evidence with `decision_mode`, and separately labeled player-move evidence through the same Responses API. The prompt reserves player-specific information for `move_evaluation`; position teaching and candidate selection must remain independent. This is a prompt constraint within one generation, not a guarantee of identical prose across separate model runs.
+6. Validate the four-field structured answer and save only a complete successful result. Usage and response IDs describe this single call. The CLI/export text is a readable rendering of the same answer, with no appended second response.
 
-An optional ASCII board can also be supplied. It must match the FEN, either as the coordinate-labeled output of `CoachPosition.from_fen(fen).ascii_board` or the plain eight rows from `str(chess.Board(fen))`. Whitespace differences are accepted. The canonical board is always sent to OpenAI, preventing mismatched or flipped inputs.
+An optional ASCII board must match the FEN, either as the coordinate-labeled output of `CoachPosition.from_fen(fen).ascii_board` or the plain eight rows from `str(chess.Board(fen))`. Neither the full PGN nor the game result is sent to the model.
 
-The first call receives independently computed position evidence and never receives the player's recorded move. The second node retains its existing prompt, top-eight-plus-played-move search, request structure, and Markdown output. Its previous-analysis input is the first node's new validated teaching JSON. Neither node receives the full PGN, result, or game history.
+## Structured coaching
 
-## Structured position teaching
+The response contains exactly `positional_thesis`, `needs_of_position`, `candidate_moves`, and `move_evaluation`. Each candidate has `uci`, `reason`, and exactly two distinct `highlight_squares`. Nonterminal positions require one to three legal, distinct, approved moves; terminal positions require an empty array. Word counts are guidance. The model cannot change the Stockfish classification or assign its own quality labels.
 
-The first response contains exactly `positional_thesis`, `needs_of_position`, and `candidate_moves`. Each candidate contains `uci`, `reason`, and exactly two distinct `highlight_squares`. One to three distinct moves from the supplied top-five pool are required in nonterminal positions. All five are eligible for consideration; their ranks, CP/mate scores, WDL expectations, PVs, and relative losses let the model select sound instructional examples without adding an invented move-quality threshold. An empty array is required for terminal positions. Word counts are guidance rather than rejection rules. The model cannot output or override a classification.
+`move_evaluation` contains `plan_alignment`, nullable `explanation`, and nullable `better_candidate_uci`. Null explanations require an acceptable, aligned played move already in the recommendations, allowing the UI to reuse its reason. A better-move reference must identify a selected candidate with a demonstrable improvement greater than 5 expected-score percentage points. Missing or conflicting quality evidence cannot produce positive indicators. With no recorded move, return an unclear alignment, an explicit no-move explanation, and no better candidate.
 
-Structured data is saved inside the existing `position_analysis.structured` JSONB field without a migration. The exact first-pass engine evidence is saved beside it as `position_analysis.engine_evidence`, independently of the second pass's `stockfish` data. HTTP responses expose nullable `teaching`, `position_evidence`, and server-derived `candidate_san` labels; these survive feedback retrieval and game reload. The UI shows Flexible, Clear preference, or Critical from `position_evidence.decision_classification`, never from model output. Undefined classifications explain terminal, single-move, or mate-score cases. Old teaching with `position_character` remains readable, but its old label is omitted. Old reviews acquire engine classification on their next successful rerun; reading them triggers no new engine or model calls.
+Structured data and position evidence use the existing `position_analysis` JSONB field, while played-move evidence uses `stockfish`; no migration is needed. HTTP responses expose `teaching`, `position_evidence`, `stockfish`, and server-derived `candidate_san`. Old three-field teaching remains readable and obsolete `position_character` labels stay hidden. The combined UI displays the thesis, needs, candidates, and move feedback in one card. The played move appears once in the shared moves list with a blue Player move badge. Positive quality feedback requires acceptable engine quality. Other played moves get their own row with concise feedback and an optional link to a stronger selected candidate. Old second-node essays are not displayed; rerun coaching for the new combined feedback.
 
-The model does not generate SAN labels or arrow coordinates. The UI derives an arrow from UCI and uses the two supplied squares as instructional highlights; selecting a candidate pauses autoplay without playing the move. Navigation and new responses clear the selection, and flipping the board transforms the overlay. Old rows without structured data retain their original Markdown presentation.
+Candidate selection pauses autoplay and draws the UCI-derived arrow and two highlights on the unchanged board. Navigation and new responses clear selection; flipping transforms the overlay. Reading saved feedback never triggers engine or model work.
 
 ## Web endpoint
 
-Both request modes accept optional `model`: `gpt-6-astra` (default) or `gpt-6.1-terra`. The endpoint validates this allowlist before starting work and passes a fresh `CoachSettings` to the existing coach factory. Its Responses adapter uses that model for both LangGraph nodes; there is no alternate API path or mutable global model. The same credentials, timeout, output budget, prompts, and engine settings apply. Model-access errors identify the requested model.
+Both request modes accept optional `model`: `gpt-6-astra` (default) or `gpt-6.1-terra`. The endpoint validates this allowlist before starting work and passes a fresh `CoachSettings` to the existing coach factory. Its Responses adapter uses that model for the single active LangGraph node; there is no alternate API path or mutable global model. The same credentials, timeout, output budget, prompts, and engine settings apply. Model-access errors identify the requested model.
 
-`POST /api/coach/analyze` accepts either `{ "game_id": "<saved game ID>", "ply": 0 }` for a recorded-move review, or `{ "fen": "<complete selected-position FEN>" }` for position-only coaching. `ply` counts half-moves already played; the next PGN move is reviewed. At the final recorded position, the game request runs only the first pass. Mixed modes and extra fields (including student questions) are rejected. The server derives the FEN/ASCII and played move and keeps prompts and credentials out of the browser. Only a complete successful run is saved; the response includes `fen`, nullable `played_move`, combined `text`, `model`, `response_id`, and `created_at`.
+`POST /api/coach/analyze` accepts either `{ "game_id": "<saved game ID>", "ply": 0 }` for a recorded-move review, or `{ "fen": "<complete selected-position FEN>" }` for position-only coaching. `ply` counts half-moves already played; the next PGN move is reviewed. At the final recorded position, the game request runs the same node without player-move evidence. Mixed modes and extra fields (including student questions) are rejected. The server derives the FEN/ASCII and played move and keeps prompts and credentials out of the browser. Only a complete successful run is saved; the response includes `fen`, nullable `played_move`, combined `text`, `model`, `response_id`, and `created_at`.
 
-`GET /api/coach/feedback?fen=<URL-encoded FEN>&played_move=e2e4` returns the latest answer for that exact FEN plus move or `null`. Omitting the move selects position-only coaching. Game detail `coach_responses` are keyed by replay ply as a string; each selects the correct FEN/move pair, with legacy position-only feedback as a fallback. The table retains all successful generations and both passes' metadata and engine evidence. Schema upgrades add columns without deleting existing answers. Reruns append rows; failed second passes leave previous feedback untouched. Database failure returns 503 and never claims an unsaved answer was saved. Python/CLI/Studio calls remain independent of database storage.
+`GET /api/coach/feedback?fen=<URL-encoded FEN>&played_move=e2e4` returns the latest answer for that exact FEN plus move or `null`. Omitting the move selects position-only coaching. Game detail `coach_responses` are keyed by replay ply as a string; each selects the correct FEN/move pair, with legacy position-only feedback as a fallback. The table retains all successful generations and generation metadata and engine evidence. Schema upgrades add columns without deleting existing answers. Reruns append rows; failed generations leave previous feedback untouched. Database failure returns 503 and never claims an unsaved answer was saved. Python/CLI/Studio calls remain independent of database storage.
 
 The backend allows one active coach request per application process, returning 409 for overlapping requests. Invalid positions return 422, configuration/authentication problems 503, provider limits 429, timeouts 504, and other upstream failures 502. Provider error bodies are not exposed. Requests are not automatically retried.
 
@@ -47,11 +46,12 @@ The UI pauses autoplay when Run coach is pressed and shows progress. Moving to a
 ## Files
 
 - `system_prompt.md`: the user's supplied engine-informed teaching prompt. The request's position context describes unclassified and terminal edge cases.
-- `move_prompt.md`: the move-review prompt, adapted to consume structured first-pass teaching.
+- `move_prompt.md`: the disconnected legacy move-review prompt.
+- `move_quality.py`: candidate approval, played-root WDL search, and deterministic move-quality policy.
 - `teaching.py`: strict output schema, legal-move validation, SAN labels, and readable fallback rendering.
 - `position.py`: FEN validation, ASCII rendering, and the position message.
 - `settings.py`: supported models, default model, reasoning effort per model, and runtime limits.
-- `graph.py`: input/state schemas, both nodes, conditional routing, and Studio export.
+- `graph.py`: input/state schemas, single-node routing, and Studio export.
 - `responses.py`: request construction, traced async SDK adapter, and response handling.
 - `service.py`: compatible Python interface that invokes the graph.
 - `routes.py`: position and move-review HTTP endpoint, concurrency guard, and safe error mapping.
@@ -72,7 +72,7 @@ async def analyze_selected_position(fen: str, played_move: str | None = None):
 
 The context manager owns and closes the SDK client. It can be kept open for multiple calls. To integrate with a future application lifespan or a test transport, construct `Coach(existing_async_openai_client)` instead; the caller then owns the client.
 
-For Terra, pass `CoachSettings.from_env(model="gpt-6.1-terra")` to `open_coach(settings)` or `Coach(existing_async_openai_client, settings)`. A settings instance belongs to that coach and applies to both passes. The CLI and standalone Studio graph continue to default to Astra. The UI remembers its selection in browser storage and disables it while a run is pending. Switching the selection does not fetch or generate another answer: the latest successful answer for the position/move remains visible with its actual model, and a subsequent successful run appends to the existing feedback history.
+For Terra, pass `CoachSettings.from_env(model="gpt-6.1-terra")` to `open_coach(settings)` or `Coach(existing_async_openai_client, settings)`. A settings instance belongs to that coach and applies to the single call. The CLI and standalone Studio graph continue to default to Astra. The UI remembers its selection in browser storage and disables it while a run is pending. Switching the selection does not fetch or generate another answer: the latest successful answer for the position/move remains visible with its actual model, and a subsequent successful run appends to the existing feedback history.
 
 `coach.graph` exposes the compiled graph for streaming/debugging. `coach.analyze(fen, config={"tags": ["replay"], "metadata": {"game_id": "..."}})` accepts optional LangGraph run configuration; keep credentials out of metadata and graph state.
 
@@ -83,8 +83,6 @@ The Responses client uses LangSmith's `wrap_openai`. When tracing is enabled, a 
 ```text
 chess_coach
   analyze_position
-    OpenAI Responses (LLM request, output, token usage)
-  evaluate_move (when a played move exists)
     OpenAI Responses (LLM request, output, token usage)
 ```
 
@@ -128,7 +126,7 @@ Open [Studio connected to the local server](https://smith.langchain.com/studio/?
 }
 ```
 
-If `STUDIO_PORT` differs from 2024, change the port in the link's `baseUrl`. Use graph mode to inspect both nodes, inputs, outputs, and state. This workflow does not expose a chat/messages interface. A run with `played_move` makes two paid Responses calls; omit it for one position-only call. No automatic retries are made. Agent Server manages Studio threads/checkpoints. Each new invocation clears old move-review output; the optional move input is consumed for that invocation only, including when a prior run failed.
+If `STUDIO_PORT` differs from 2024, change the port in the link's `baseUrl`. Use graph mode to inspect the active node, inputs, outputs, and state. This workflow does not expose a chat/messages interface. Every run makes one paid Responses call, with or without `played_move`. No automatic retries are made. Agent Server manages Studio threads/checkpoints. Each new invocation clears old move-review output; the optional move input is consumed for that invocation only, including when a prior run failed.
 
 The existing FastAPI app executes the graph directly; it does not need this second server. Both entry points emit LangSmith traces when enabled, but app requests do not create Studio threads. Studio's server is a separate development surface and does not share FastAPI's single-request concurrency guard.
 
@@ -142,11 +140,11 @@ $env:PYTHONUTF8 = "1"
 .\.venv\Scripts\langgraph dev --host 127.0.0.1 --port 2024
 ```
 
-The UTF-8 setting prevents the CLI's Unicode banner from failing in Windows terminals/pipes. This mode reads `.env` directly and stores development data in the ignored local `.langgraph_api/` directory. It uses a local Stockfish installation for the second node.
+The UTF-8 setting prevents the CLI's Unicode banner from failing in Windows terminals/pipes. This mode reads `.env` directly and stores development data in the ignored local `.langgraph_api/` directory. It uses a local Stockfish installation for the coaching node.
 
 ## Move review and engine evidence
 
-The second node uses these engine helpers:
+The active node uses `position_classification.py` and `move_quality.py`. These existing preparation helpers remain available independently:
 
 - `move_review.py`: `MoveReview.from_game(pgn, ply)` pairs the current replay position with the next recorded move, validates legality, derives ASCII/SAN, and provides a FEN-plus-UCI `review_key`. `from_fen(fen, played_move)` accepts a standalone pre-move position and UCI move. The final recorded position has no move to review.
 - `stockfish.py`: `analyze_move(review)` runs local Stockfish and returns JSON-compatible evidence. It requests up to eight root candidates and performs an additional root-restricted search only if the played move is missing. All scores use the reviewed side's perspective; `score.cp` is in centipawns and `score.mate` in signed moves to mate (one is null). `score.bound` distinguishes exact search scores from lower/upper bounds. These are finite-depth engine estimates, not proofs of move quality. Each candidate includes UCI/SAN, legal principal variations, and actual depth. The two searches use the same depth/time caps but can reach different depths.
@@ -154,7 +152,7 @@ The second node uses these engine helpers:
 
 Stockfish 19 is installed and checksum-verified during the Docker build. Local Windows development can run `python scripts/install_stockfish.py` from the repository root; the resulting `.tools/stockfish` directory is ignored by Git and Docker. An existing installation can instead be selected with `STOCKFISH_PATH`. Depth, seconds per search, threads, and hash MB default to 18, 10, 2, and 128 and are configurable in `.env.example`. Each analysis owns and closes its engine process. The engine receives the FEN only, without earlier repetition history. A local CLI preview is available through `python -m backend.coach.stockfish --fen "..." --move e2e4`; it loads `.env` and prints the complete preparation JSON without OpenAI or PostgreSQL.
 
-The replay invokes the complete coaching graph; the separate preparation endpoint remains useful for inspecting move-review engine inputs without a model call. The first node uses an independent top-five position search and classification. The second node still gets fresh top-eight/move-review evidence and only the current run's first response.
+The replay invokes the complete coaching graph; the separate preparation endpoint remains useful for inspecting move-review engine inputs without a model call. The coaching node uses an independent top-five search and, only when needed, one restricted search for the played move. The legacy top-eight preparation endpoint is not part of the active graph.
 
 Keep clients/settings outside graph state and create any needed clients lazily. Do not hard-code a checkpointer in the exported graph: Studio supplies one, while direct application calls currently remain independent. A new FEN in a reused Studio thread generates a fresh board and does not send old analysis to OpenAI.
 
@@ -203,7 +201,7 @@ From the repository root, preview the first-pass request without credentials or 
 .\.venv\Scripts\python -m backend.coach --fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" --dry-run
 ```
 
-To make real, billable requests, set `OPENAI_API_KEY` in your local environment and omit `--dry-run`. Add `--move e2e4` to run the second pass, or omit it for position-only coaching. Add `--ascii-file path/to/board.txt` to validate an existing ASCII representation alongside the FEN. Dry runs validate the optional move and run local Stockfish to preview the complete first request; they make no OpenAI calls. The CLI prints the combined answer to stdout; errors go to stderr with a nonzero exit status.
+To make real, billable requests, set `OPENAI_API_KEY` in your local environment and omit `--dry-run`. Add `--move e2e4` to include move feedback in the same call, or omit it for position-only coaching. Add `--ascii-file path/to/board.txt` to validate an existing ASCII representation alongside the FEN. Dry runs validate the optional move and run local Stockfish to preview the complete first request; they make no OpenAI calls. The CLI prints the combined answer to stdout; errors go to stderr with a nonzero exit status.
 
 Docker Compose passes `OPENAI_API_KEY`, `COACH_MAX_OUTPUT_TOKENS`, and `COACH_TIMEOUT_SECONDS` from the shell or the project's ignored `.env` file. After rebuilding the image, the same command can be run in a one-off container:
 
@@ -216,7 +214,7 @@ The FastAPI application loads the project `.env` at startup without overriding e
 ## Limits and failures
 
 - Output budget defaults to 32,768 tokens per model call, including internal reasoning and visible output. `COACH_MAX_OUTPUT_TOKENS` overrides it.
-- Timeout defaults to 600 seconds per model call; `COACH_TIMEOUT_SECONDS` overrides it. A two-pass run can take longer than one call's timeout.
+- Timeout defaults to 600 seconds per model call; `COACH_TIMEOUT_SECONDS` overrides it. Engine preparation has its own bounded search deadlines.
 - Automatic retries are disabled to avoid another paid generation after an ambiguous timeout. The caller can explicitly retry.
 - `store=False` requests that the response not be stored for later API retrieval. This is not a claim of zero data retention.
 - Invalid FEN or mismatched ASCII raises `InvalidPositionError` before any API call.

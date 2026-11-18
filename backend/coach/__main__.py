@@ -23,7 +23,7 @@ async def run(args: argparse.Namespace) -> None:
     if args.move is not None:
         MoveReview.from_fen(args.fen, args.move)
     if args.dry_run:
-        request = await asyncio.to_thread(build_request, args.fen, ascii_board=ascii_board, settings=settings)
+        request = await asyncio.to_thread(build_request, args.fen, ascii_board=ascii_board, settings=settings, played_move=args.move)
         print(json.dumps(request, indent=2, ensure_ascii=False))
         return
     async with open_coach(settings) as coach:
@@ -38,7 +38,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Coach one chess position with GPT-6 Astra (medium reasoning).")
     parser.add_argument("--fen", required=True, help="Complete six-field FEN of the selected position.")
     parser.add_argument("--ascii-file", help="Optional matching ASCII board; otherwise generated from the FEN.")
-    parser.add_argument("--move", help="Optional recorded move in UCI; enables the second coaching pass.")
+    parser.add_argument("--move", help="Optional recorded move in UCI; evaluated in the same coaching response.")
     parser.add_argument("--dry-run", action="store_true", help="Run local Stockfish and print the first-pass request without calling OpenAI.")
     args = parser.parse_args()
     try:

@@ -81,7 +81,7 @@ export function parseCoachContent(markdown: string) {
   };
 }
 
-export function engineEvaluation(engine?: EngineAnalysis | null, move: EngineMove | undefined = engine?.played_move) {
+export function engineEvaluation(engine?: (Pick<EngineAnalysis, 'perspective'> & Partial<Pick<EngineAnalysis, 'played_move'>>) | null, move: EngineMove | undefined = engine?.played_move) {
   const score = move?.score;
   if (!engine || !score || !['White', 'Black'].includes(engine.perspective)) return null;
   const mate = typeof score.mate === 'number' && Number.isFinite(score.mate) ? score.mate : null;

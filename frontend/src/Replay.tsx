@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LoaderCircle, Pause, Play } from 'lucide-react';
+import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Info, LoaderCircle, Pause, Play } from 'lucide-react';
 import Board from './Board';
-import CoachCards, { type CoachTab } from './CoachCards';
+import CoachCards from './CoachCards';
 import type { CoachResponse, GameDetail } from './types';
 import { api, perspective, readStored, store, timeControl } from './types';
 import { AUTOPLAY_TURN_MS, BETWEEN_TURNS_MS, playerTurnStops, replayNavigation, restoreReplay } from './replayNavigation';
@@ -32,31 +32,25 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const coachRequest = useRef<AbortController | null>(null);
   const position = game.positions[ply];
   const coachResponse = coachResponses[String(ply)];
-  const [coachTab, setCoachTab] = useState<CoachTab>('position');
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null);
   const boardColumn = useRef<HTMLDivElement>(null);
-  const candidate = coachTab === 'position' ? visibleCandidate(candidateSelection, coachResponse, position.fen, transition !== null) : undefined;
-  const candidateName = candidate ? coachResponse?.candidate_san?.[candidate.uci] ?? candidate.uci : undefined;
+  const candidate = visibleCandidate(candidateSelection, coachResponse, position.fen, transition !== null);
+  const candidateName = candidate ? coachResponse?.candidate_san?.[candidate.uci]
+    ?? (coachResponse?.stockfish?.played_move.uci === candidate.uci ? coachResponse.stockfish.played_move.san : candidate.uci) : undefined;
   const nextMove = game.moves[ply];
   const currentCoachError = coachError?.ply === ply ? coachError.message : null;
   const savedAt = coachResponse ? new Date(coachResponse.created_at).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   }) : null;
-  const positionOnlyFeedback = !!coachResponse && !!nextMove && coachResponse.played_move === null;
   const coachStatus = pendingPly !== null
     ? pendingPly === ply
       ? `Reviewing this position${nextMove ? ` and ${nextMove.san}` : ''}. This can take a few minutes.${coachResponse ? ' The saved response remains below until this finishes.' : ''}`
       : 'Reviewing another position. Return to it to see the response.'
     : currentCoachError && coachResponse
       ? `The latest run did not complete. Showing the response saved ${savedAt}.`
-      : positionOnlyFeedback
-        ? `Position analysis saved ${savedAt}. No move review is saved yet. Run coach to evaluate ${nextMove.san}.`
-        : coachResponse
-          ? `Saved ${savedAt}.${nextMove ? ` Includes the move review for ${nextMove.san}.` : ' Position analysis only; no next recorded move.'}`
-          : nextMove
-            ? `Review this position and the recorded move ${nextMove.san}.`
-            : 'Final position: position analysis only; no next recorded move.';
+      : '';
   const positionLabel = ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].number}${game.moves[ply - 1].color === 'white' ? '.' : '…'} ${game.moves[ply - 1].san}`;
+  const coachDetails = coachResponse ? `${positionLabel} · ${coachModelLabel(coachResponse.model)} · Saved ${savedAt}` : positionLabel;
   const turn = position.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
@@ -173,7 +167,11 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       </div>
       <aside className="coach-panel" aria-labelledby="coach-title">
         <div className="coach-heading">
-          <h2 id="coach-title">Coach</h2>
+          <div className="coach-title-group"><h2 id="coach-title">Coach</h2>
+            <span className="coach-details" tabIndex={0} role="note" aria-label={coachDetails}>
+              <Info size={14} aria-hidden="true"/><span className="coach-tooltip" aria-hidden="true">{coachDetails}</span>
+            </span>
+          </div>
           <div className="coach-actions">
             <select className="coach-model" aria-label="OpenAI model" value={coachModel} onChange={event => setCoachModel(event.target.value as CoachModel)} disabled={pendingPly !== null}>
               {COACH_MODELS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -183,9 +181,8 @@ export default function Replay({ game, username }: { game: GameDetail; username:
         </div>
         <p className="coach-status" id="coach-status" role="status">{coachStatus}</p>
         {currentCoachError && <p className="coach-error" role="alert">{currentCoachError}</p>}
-        <div className="coach-field" aria-busy={pendingPly === ply}>
-          <div className="coach-response-label"><span id="coach-response-label">Coach response</span><span>{coachResponse && `${coachModelLabel(coachResponse.model)} · `}{positionLabel}</span></div>
-          <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null} activeTab={coachTab} onTabChange={setCoachTab}/>
+        <div className="coach-result" aria-busy={pendingPly === ply}>
+          <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}/>
         </div>
         <div className="coach-field">
           <label htmlFor="coach-question">Your question</label>

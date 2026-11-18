@@ -1,4 +1,5 @@
 import type { CoachResponse } from './types.ts';
+import { playedMoveAnnotation } from './coachMoves.ts';
 
 export type CandidateSelection = { fen: string; responseId: string; uci: string };
 
@@ -11,5 +12,6 @@ export function squareCenter(square: string, flipped: boolean): [number, number]
 
 export function visibleCandidate(selection: CandidateSelection | null, response: CoachResponse | undefined, fen: string, transitioning: boolean) {
   if (transitioning || !selection || !response || response.fen !== fen || selection.fen !== fen || selection.responseId !== response.response_id) return undefined;
-  return response.teaching?.candidate_moves.find(candidate => candidate.uci === selection.uci);
+  return response.teaching?.candidate_moves.find(candidate => candidate.uci === selection.uci)
+    ?? (response.played_move === selection.uci ? playedMoveAnnotation(response) : undefined);
 }

@@ -25,6 +25,7 @@ def teaching_output(fen=chess.STARTING_FEN):
     return {
         "positional_thesis": "Test analysis.",
         "needs_of_position": "Test plan.",
+        "move_evaluation": {"plan_alignment": "unclear", "explanation": "Test move feedback.", "better_candidate_uci": None},
         "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning.",
                              "highlight_squares": [chess.square_name(move.from_square), chess.square_name(move.to_square)]}] if move else [],
     }
@@ -83,7 +84,7 @@ def test_responses_request_and_output_through_real_sdk():
         assert set(body) == {"model", "reasoning", "input", "max_output_tokens", "store", "text"}
         assert body["text"]["format"]["strict"] is True
         assert body["text"]["format"]["type"] == "json_schema"
-        assert set(body["text"]["format"]["schema"]["properties"]) == {"positional_thesis", "needs_of_position", "candidate_moves"}
+        assert set(body["text"]["format"]["schema"]["properties"]) == {"positional_thesis", "needs_of_position", "candidate_moves", "move_evaluation"}
         assert body["input"][0] == {"role": "system", "content": SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")}
         message = body["input"][1]
         assert message["role"] == "user"
@@ -94,7 +95,7 @@ def test_responses_request_and_output_through_real_sdk():
         assert "1  R N B Q K B N R" in message["content"]
         assert "a b c d e f g h" in message["content"]
         payload = json.loads(message["content"].split("Stockfish position evidence:\n", 1)[1].split("\n\n", 1)[0])
-        assert payload["decision_classification"] == "flexible"
+        assert payload["decision_mode"] == "flexible"
         assert len(payload["engine_verified_moves"]) == 5
         assert payload["position_outlook"] == position_evidence(fen)["position_outlook"]
         assert "played_move" not in payload and "previous_analysis" not in payload

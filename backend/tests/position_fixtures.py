@@ -3,6 +3,7 @@
 import chess
 
 from backend.coach.position import CoachPosition
+from backend.coach.move_quality import prepare_position_evidence
 
 
 def position_evidence(fen, *, preferred=()):
@@ -21,7 +22,7 @@ def position_evidence(fen, *, preferred=()):
             "expected_score": .65 - .01 * index,
             "relative_quality": {"cp_loss_from_best": 10 * index, "expected_score_loss_pp": index},
         })
-    return {
+    return prepare_position_evidence({
         "fen": position.fen, "perspective": position.side_to_move, "engine": "Stockfish position test",
         "classification": "Flexible" if len(moves) > 1 else None,
         "decision_classification": "flexible" if len(moves) > 1 else None,
@@ -30,4 +31,4 @@ def position_evidence(fen, *, preferred=()):
         "legal_move_count": len(legal), "top_moves": candidates,
         "position_outlook": {key: candidates[0][key] for key in ("score", "wdl", "probabilities", "expected_score")} if candidates else None,
         "permitted_candidate_uci": [move.uci() for move in moves],
-    }
+    })

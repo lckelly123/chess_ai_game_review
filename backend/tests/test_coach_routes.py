@@ -68,7 +68,7 @@ def test_coach_endpoint_calls_responses_with_only_selected_position(test_db_url,
         assert len(requests) == 1
 
 
-@pytest.mark.parametrize("mode,passes", [("position", 1), ("move", 2), ("final", 1)])
+@pytest.mark.parametrize("mode,passes", [("position", 1), ("move", 1), ("final", 1)])
 def test_model_selection_does_not_leak_into_later_requests(mode, passes):
     models = []
     saved = []
@@ -93,9 +93,10 @@ def test_model_selection_does_not_leak_into_later_requests(mode, passes):
     app.state.db.game.return_value = {"pgn": '[White "alice"]\n[Black "bob"]\n[Result "1-0"]\n\n1. e4 e5 1-0'}
     app.state.db.save_coach_feedback.side_effect = save_feedback
 
-    def engine(review):
+    def engine(review, position):
         assert mode == "move"
-        return {"perspective": review.position.side_to_move, "played_move": {"uci": review.played_move_uci}}
+        return {"fen": review.position.fen, "perspective": review.position.side_to_move,
+                "played_move": {"uci": review.played_move_uci}}
 
     app.include_router(create_coach_router(mock_coach_factory(upstream, engine=engine)))
     payload = {"fen": chess.STARTING_FEN} if mode == "position" else {"game_id": "test-game", "ply": 0 if mode == "move" else 2}

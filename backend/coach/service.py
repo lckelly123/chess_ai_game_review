@@ -19,10 +19,10 @@ class Coach:
     """Reuse an injected SDK client; the caller owns its lifecycle."""
 
     def __init__(self, client: AsyncOpenAI, settings: CoachSettings | None = None, *, engine=None, position_engine=None):
-        adapter = ResponsesCoach(client, settings, position_engine=position_engine)
+        adapter = ResponsesCoach(client, settings, position_engine=position_engine, engine=engine)
         self.client = adapter.client
         self.settings = adapter.settings
-        self.graph = build_coach_graph(adapter.analyze, adapter.evaluate_move, engine)
+        self.graph = build_coach_graph(adapter.analyze)
 
     async def analyze(
         self, fen: str, *, ascii_board: str | None = None, played_move: str | None = None,

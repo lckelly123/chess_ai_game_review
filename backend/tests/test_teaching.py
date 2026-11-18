@@ -77,7 +77,7 @@ def invalid_outputs():
 
 
 @pytest.mark.parametrize("data", list(invalid_outputs()))
-def test_invalid_teaching_never_reaches_engine_or_second_call(data):
+def test_invalid_teaching_fails_without_a_second_call(data):
     calls = []
     def upstream(request):
         calls.append(request)
@@ -86,7 +86,7 @@ def test_invalid_teaching_never_reaches_engine_or_second_call(data):
     async def run():
         async with mock_client(upstream) as client:
             with pytest.raises(CoachResponseError, match="invalid position teaching"):
-                await Coach(client, engine=engine, position_engine=position_evidence).analyze(chess.STARTING_FEN, played_move="e2e4")
+                await Coach(client, engine=engine, position_engine=position_evidence).analyze(chess.STARTING_FEN)
     asyncio.run(run())
     assert len(calls) == 1
     engine.assert_not_called()

@@ -14,6 +14,7 @@ from langsmith.wrappers import wrap_openai
 from .position import CoachPosition
 from .position_classification import analyze_position
 from .move_review import MoveReview
+from .move_quality import analyze_played_move, prepare_position_evidence
 from .settings import CoachSettings, require_api_key
 from .stockfish import StockfishAnalysisError
 from .teaching import TeachingOutput
@@ -62,16 +63,17 @@ def _base_request(settings: CoachSettings) -> dict[str, Any]:
     }
 
 
-def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dict) -> dict[str, Any]:
+def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dict, move_evidence: dict | None = None) -> dict[str, Any]:
     if evidence.get("fen") != position.fen or evidence.get("perspective") != position.side_to_move:
         raise StockfishAnalysisError("Stockfish evidence did not match the selected position.")
     payload = {
-        "decision_classification": evidence["decision_classification"],
+        "decision_mode": evidence["decision_classification"],
         "unclassified_reason": evidence["unclassified_reason"],
         "position_outlook": evidence["position_outlook"],
         "engine_verified_moves": evidence["top_moves"],
         "permitted_candidate_uci": evidence["permitted_candidate_uci"],
         "delta_cp": evidence["delta_cp"], "delta_e_pp": evidence["delta_e_pp"],
+        "move_quality_policy": evidence["move_quality_policy"],
     }
     return {
         **_base_request(settings),
@@ -84,10 +86,13 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
             {"role": "user", "content": position.as_user_message() + (
                 "\n\nStockfish position evidence:\n" + json.dumps(payload, ensure_ascii=False)
                 + "\n\nScores and WDL are from the side to move. Relative losses are compared with the best move; "
-                "expected-score gaps are percentage points. All supplied moves are eligible for consideration, "
-                "but only recommend sound choices supported by their evaluations. Do not invent a decision classification "
+                "expected-score gaps are percentage points. Only moves in permitted_candidate_uci are approved for recommendation. "
+                "The top-five lines may also include unacceptable moves for comparison. Do not invent a decision mode "
                 "when it is null: use the stated reason. For terminal_position, return an empty candidate_moves array "
                 "and explain that play has ended. For single_legal_move, recommend the sole verified move."
+                "\n\nPlayer-move information (use only for move_evaluation):\n" + json.dumps(move_evidence, ensure_ascii=False)
+                + "\n\nWhen player-move information is null, set move_evaluation to plan_alignment unclear, "
+                "explanation 'No recorded move is available to evaluate.', and better_candidate_uci null."
             )},
         ],
     }
@@ -96,10 +101,14 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
 def build_request(
     fen: str, *, ascii_board: str | None = None, settings: CoachSettings | None = None,
     evidence: dict | None = None,
+    played_move: str | None = None,
 ) -> dict[str, Any]:
     """Preview the exact request using local Stockfish, without any model call."""
     position = CoachPosition.from_fen(fen, ascii_board=ascii_board)
-    return _request_for(position, settings or CoachSettings(), evidence if evidence is not None else analyze_position(position.fen))
+    review = MoveReview.from_fen(position.fen, played_move) if played_move is not None else None
+    evidence = prepare_position_evidence(evidence if evidence is not None else analyze_position(position.fen))
+    move_evidence = analyze_played_move(review, evidence) if review else None
+    return _request_for(position, settings or CoachSettings(), evidence, move_evidence)
 
 
 def build_move_request(review: MoveReview, previous_analysis: dict | str, evidence: dict, settings: CoachSettings) -> dict:
@@ -121,7 +130,7 @@ def build_move_request(review: MoveReview, previous_analysis: dict | str, eviden
 class ResponsesCoach:
     """Reuse an injected SDK client; the caller owns its lifecycle."""
 
-    def __init__(self, client: AsyncOpenAI, settings: CoachSettings | None = None, *, position_engine=None):
+    def __init__(self, client: AsyncOpenAI, settings: CoachSettings | None = None, *, position_engine=None, engine=None):
         # The wrapper mutates the client. An injected client may already be traced.
         if not (
             getattr(client.responses.create, "_coach_traced", False)
@@ -132,19 +141,28 @@ class ResponsesCoach:
         self.client = client
         self.settings = settings or CoachSettings()
         self.position_engine = position_engine or analyze_position
+        self.move_engine = engine or analyze_played_move
 
-    async def analyze(self, fen: str, *, ascii_board: str | None = None) -> CoachAnalysis:
+    async def analyze(self, fen: str, *, ascii_board: str | None = None, played_move: str | None = None) -> CoachAnalysis:
         position = CoachPosition.from_fen(fen, ascii_board=ascii_board)
-        evidence = await asyncio.to_thread(self.position_engine, position.fen)
+        review = MoveReview.from_fen(position.fen, played_move) if played_move is not None else None
+        evidence = prepare_position_evidence(await asyncio.to_thread(self.position_engine, position.fen))
+        if evidence.get("fen") != position.fen or evidence.get("perspective") != position.side_to_move:
+            raise StockfishAnalysisError("Stockfish evidence did not match the selected position.")
+        move_evidence = await asyncio.to_thread(self.move_engine, review, evidence) if review else None
+        if review and (move_evidence.get("fen") != position.fen or move_evidence.get("perspective") != position.side_to_move
+                       or move_evidence.get("played_move", {}).get("uci") != review.played_move_uci):
+            raise StockfishAnalysisError("Engine evidence did not match the reviewed move.")
         # Prompt reads must not block Agent Server's event loop in Studio.
-        request = await asyncio.to_thread(_request_for, position, self.settings, evidence)
-        return await self._complete(request, position, evidence=evidence)
+        request = await asyncio.to_thread(_request_for, position, self.settings, evidence, move_evidence)
+        return await self._complete(request, position, evidence=evidence, move_evidence=move_evidence)
 
     async def evaluate_move(self, review: MoveReview, previous_analysis: dict | str, evidence: dict) -> CoachAnalysis:
         request = await asyncio.to_thread(build_move_request, review, previous_analysis, evidence, self.settings)
         return await self._complete(request, review.position)
 
-    async def _complete(self, request: dict, position: CoachPosition, *, evidence: dict | None = None) -> CoachAnalysis:
+    async def _complete(self, request: dict, position: CoachPosition, *, evidence: dict | None = None,
+                        move_evidence: dict | None = None) -> CoachAnalysis:
         response = await self.client.responses.create(**request)
         if response.status != "completed":
             reason = response.incomplete_details.reason if response.incomplete_details else response.status
@@ -162,6 +180,8 @@ class ResponsesCoach:
             try:
                 teaching = TeachingOutput.model_validate_json(response.output_text).validate_position(
                     position.fen, permitted_moves=evidence["permitted_candidate_uci"])
+                teaching.validate_move_evaluation(played_move=move_evidence["played_move"]["uci"] if move_evidence else None,
+                                                  evidence=move_evidence)
             except ValueError as exc:
                 raise CoachResponseError("The model returned invalid position teaching or candidate moves.", response.id) from exc
         return CoachAnalysis(
@@ -172,6 +192,8 @@ class ResponsesCoach:
             usage=response.usage.model_dump() if response.usage else None,
             structured=teaching.model_dump() if teaching is not None else None,
             engine_evidence=evidence,
+            stockfish=move_evidence,
+            played_move=move_evidence["played_move"]["uci"] if move_evidence else None,
         )
 
 

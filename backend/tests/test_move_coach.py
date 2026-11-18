@@ -32,16 +32,24 @@ def move_response(**overrides):
     return result
 
 
-def evidence(review):
-    candidate = {"uci": review.played_move_uci, "san": review.played_move_san,
-                 "score": {"cp": 30, "mate": None, "bound": "exact"},
-                 "pv_uci": [review.played_move_uci], "pv_san": [review.played_move_san], "depth": 18}
-    return {"engine": "Stockfish test", "perspective": review.position.side_to_move,
-            "top_moves": [candidate], "played_move": candidate, "played_move_in_top": True}
+def evidence(review, position):
+    from copy import deepcopy
+    from backend.coach.move_quality import assess_move
+    candidate = deepcopy(position["top_moves"][0])
+    candidate.update(uci=review.played_move_uci, san=review.played_move_san,
+                     pv_uci=[review.played_move_uci], pv_san=[review.played_move_san])
+    quality = assess_move(position["top_moves"][0], candidate)
+    return {"fen": review.position.fen, "engine": "Stockfish test", "perspective": review.position.side_to_move,
+            "top_moves": position["top_moves"], "played_move": candidate, "played_move_in_top": False,
+            "move_quality": quality}
 
 
 @pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-terra"])
-def test_second_responses_request_gets_exact_prior_output_board_move_and_evidence(model):
+def test_one_request_contains_position_and_played_move_and_never_runs_second_adapter(model, monkeypatch):
+    from backend.coach.responses import ResponsesCoach, SYSTEM_PROMPT_PATH
+    from unittest.mock import AsyncMock
+    second = AsyncMock(side_effect=AssertionError("Second adapter must stay disconnected"))
+    monkeypatch.setattr(ResponsesCoach, "evaluate_move", second)
     requests = []
     board = chess.Board()
     board.push_uci("e2e4")
@@ -50,44 +58,39 @@ def test_second_responses_request_gets_exact_prior_output_board_move_and_evidenc
     def upstream(request):
         assert request.method == "POST"
         assert str(request.url) == "https://api.openai.com/v1/responses"
-        body = json.loads(request.content)
-        requests.append(body)
-        return httpx2.Response(200, json=completed_response(request=request, model=model) if len(requests) == 1 else move_response(model=model))
+        requests.append(json.loads(request.content))
+        return httpx2.Response(200, json=completed_response(request=request, model=model))
 
-    def engine(review):
-        assert len(requests) == 1  # First analysis precedes engine-backed review.
+    def engine(review, position):
+        assert not requests  # All engine evidence precedes the only model call.
         assert review.position.fen == fen
         assert review.played_move_uci == "e7e5"
-        return evidence(review)
+        return evidence(review, position)
 
     async def run():
         async with mock_client(upstream) as client:
             return await Coach(client, CoachSettings(model=model), engine=engine, position_engine=position_evidence).analyze(fen, played_move="e7e5")
 
     result = asyncio.run(run())
-    assert len(requests) == 2
-    assert "previous_analysis" not in json.dumps(requests[0])
-    assert "Stockfish position evidence" in json.dumps(requests[0])
-    assert "played_move" not in json.dumps(requests[0])
-    second = requests[1]
-    assert second["input"][0]["content"] == MOVE_PROMPT_PATH.read_text(encoding="utf-8")
-    payload = json.loads(second["input"][1]["content"].split("\n\n", 1)[1])
-    assert payload["fen"] == fen
-    assert payload["ascii_board"] == CoachPosition.from_fen(fen).ascii_board
-    assert payload["previous_analysis"] == teaching_output(fen)
-    assert "text" in requests[0] and "text" not in second
-    assert payload["played_move"] == {"uci": "e7e5", "san": "e5"}
-    assert payload["stockfish"] == result.stockfish
-    assert requests[0]["model"] == second["model"] == model
-    assert requests[0]["reasoning"] == second["reasoning"] == {"effort": "medium"}
-    assert second["store"] is False and "previous_response_id" not in second
-    assert result.text == teaching_text(fen) + "\n\n" + SECOND
+    assert len(requests) == 1
+    body = requests[0]
+    assert body["input"][0]["content"] == SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+    assert "previous_analysis" not in json.dumps(body)
+    message = body["input"][1]["content"]
+    position_payload = json.loads(message.split("Stockfish position evidence:\n", 1)[1].split("\n\n", 1)[0])
+    assert len(position_payload["engine_verified_moves"]) == 5
+    assert "played_move" not in position_payload
+    move_payload = json.loads(message.split("Player-move information (use only for move_evaluation):\n", 1)[1].split("\n\n", 1)[0])
+    assert move_payload["played_move"]["uci"] == "e7e5"
+    assert move_payload == result.stockfish
+    assert body["model"] == model and body["reasoning"] == {"effort": "medium"}
+    assert body["store"] is False and "previous_response_id" not in body
+    assert result.text == teaching_text(fen)
     assert result.played_move == "e7e5"
-    assert result.position_analysis["response_id"] == "resp_test"
-    assert result.position_analysis["model"] == result.move_analysis["model"] == result.model == model
-    assert result.move_analysis["response_id"] == result.response_id == "resp_move"
-    assert result.usage["total_tokens"] == 320
-    assert result.usage["output_tokens_details"]["reasoning_tokens"] == 40
+    assert result.move_analysis is None
+    assert result.response_id == result.position_analysis["response_id"] == "resp_test"
+    assert result.usage["total_tokens"] == 160
+    second.assert_not_awaited()
 
 
 def test_illegal_played_move_is_rejected_before_any_paid_request():
@@ -115,7 +118,7 @@ def test_checkpointed_runs_do_not_reuse_move_or_append_old_text():
             graph = Coach(client, engine=evidence, position_engine=position_evidence).graph.builder.compile(checkpointer=InMemorySaver())
             config = {"configurable": {"thread_id": "review"}}
             first = await graph.ainvoke({"fen": chess.STARTING_FEN, "played_move": "e2e4"}, config)
-            assert first["text"] == FIRST + "\n\n" + SECOND
+            assert first["text"] == FIRST
             board = chess.Board()
             board.push_uci("e2e4")
             plain = await graph.ainvoke({"fen": board.fen()}, config)
@@ -124,16 +127,16 @@ def test_checkpointed_runs_do_not_reuse_move_or_append_old_text():
             assert plain["position_analysis"]["structured"] == teaching_output(board.fen())
             assert plain["position_analysis"]["engine_evidence"] == position_evidence(board.fen())
             rerun = await graph.ainvoke({"fen": chess.STARTING_FEN, "played_move": "d2d4"}, config)
-            assert rerun["text"] == FIRST + "\n\n" + SECOND
+            assert rerun["text"] == FIRST
             assert rerun["stockfish"]["played_move"]["uci"] == "d2d4"
-            assert len(requests) == 5
+            assert len(requests) == 3
     asyncio.run(run())
 
 
 def test_new_input_after_failed_first_node_does_not_inherit_played_move():
     calls = []
 
-    async def first(fen):
+    async def first(fen, *, played_move=None):
         calls.append(fen)
         if len(calls) == 1:
             raise CoachResponseError("first pass failed", "resp_failed")
@@ -151,14 +154,14 @@ def test_new_input_after_failed_first_node_does_not_inherit_played_move():
     asyncio.run(run())
 
 
-def test_engine_failure_prevents_second_model_request():
+def test_engine_failure_prevents_any_model_request():
     requests = []
 
     def upstream(request):
         requests.append(request)
         return httpx2.Response(200, json=completed_response())
 
-    def failed_engine(review):
+    def failed_engine(review, position):
         raise StockfishAnalysisError("engine failed")
 
     async def run():
@@ -166,7 +169,7 @@ def test_engine_failure_prevents_second_model_request():
             with pytest.raises(StockfishAnalysisError):
                 await Coach(client, engine=failed_engine, position_engine=position_evidence).analyze(chess.STARTING_FEN, played_move="e2e4")
     asyncio.run(run())
-    assert len(requests) == 1
+    assert len(requests) == 0
 
 
 @pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-terra"])
@@ -180,40 +183,40 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
     def upstream(request):
         calls.append(json.loads(request.content))
         assert calls[-1]["model"] == model
-        return httpx2.Response(200, json=completed_response(model=model) if len(calls) % 2 else move_response(model=model))
+        return httpx2.Response(200, json=completed_response(model=model))
 
     factory = mock_coach_factory(upstream, engine=evidence)
     with TestClient(create_app(test_db_url, coach_factory=factory)) as client:
         result = client.post('/api/coach/analyze', json={"game_id": game["id"], "ply": 0, "model": model})
         assert result.status_code == 200
         saved = result.json()
-        assert saved["text"] == FIRST + "\n\n" + SECOND
+        assert saved["text"] == FIRST
         assert saved["played_move"] == "e2e4"
         assert saved["model"] == model
         assert saved["position_evidence"] == position_evidence(chess.STARTING_FEN)
         assert saved["teaching"] == teaching_output()
         assert saved["candidate_san"] == {"g1h3": "Nh3"}
         assert saved["stockfish"]["perspective"] == "White"
-        assert saved["stockfish"]["played_move"]["score"] == {"cp": 30, "mate": None, "bound": "exact"}
-        assert saved["stockfish"]["played_move"]["depth"] == 18
+        assert saved["stockfish"]["played_move"]["score"] == {"cp": 100, "mate": None, "bound": "exact"}
+        assert saved["stockfish"]["played_move"]["depth"] == 12
         assert client.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN}).json() is None
         assert client.get(f'/api/games/{different["id"]}').json()["coach_responses"] == {}
     with TestClient(create_app(test_db_url, coach_factory=factory)) as restarted:
         assert restarted.get(f'/api/games/{game["id"]}').json()["coach_responses"]["0"] == saved
         assert restarted.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN, "played_move": "e2e4"}).json() == saved
-    assert len(calls) == 2
+    assert len(calls) == 1
     with db.connection() as conn:
         row = conn.execute("SELECT position_analysis, move_analysis, stockfish, usage FROM coach_feedback").fetchone()
         assert row["position_analysis"]["text"] == FIRST
         assert row["position_analysis"]["structured"] == teaching_output()
-        assert row["move_analysis"]["text"] == SECOND
-        assert row["position_analysis"]["model"] == row["move_analysis"]["model"] == model
+        assert row["move_analysis"] is None
+        assert row["position_analysis"]["model"] == model
         assert row["stockfish"]["played_move"]["uci"] == "e2e4"
-        assert row["usage"]["total_tokens"] == 320
+        assert row["usage"]["total_tokens"] == 160
 
 
 @pytest.mark.parametrize("failure", ["incomplete", "refusal", "engine"])
-def test_failed_second_pass_preserves_previous_combined_feedback(test_db_url, failure):
+def test_failed_combined_call_preserves_previous_feedback(test_db_url, failure):
     db = Database(test_db_url)
     game = normalize_game(raw_game(), "alice")
     db.save_import("alice", [game], 1)
@@ -223,19 +226,17 @@ def test_failed_second_pass_preserves_previous_combined_feedback(test_db_url, fa
 
     def upstream(request):
         calls.append(request)
-        if len(calls) == 1:
-            result = completed_response()
-        elif failure == "incomplete":
+        if failure == "incomplete":
             result = move_response(status="incomplete", incomplete_details={"reason": "max_output_tokens"})
         else:
             result = move_response()
             result["output"][1]["content"] = [{"type": "refusal", "refusal": "No."}]
         return httpx2.Response(200, json=result)
 
-    def engine(review):
+    def engine(review, position):
         if failure == "engine":
             raise StockfishAnalysisError("private engine details")
-        return evidence(review)
+        return evidence(review, position)
 
     with TestClient(create_app(test_db_url, coach_factory=mock_coach_factory(upstream, engine=engine))) as client:
         response = client.post('/api/coach/analyze', json={"game_id": game["id"], "ply": 0})

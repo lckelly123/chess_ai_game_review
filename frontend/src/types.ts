@@ -18,12 +18,18 @@ export type EngineAnalysis = {
   perspective: 'White' | 'Black';
   played_move: EngineMove;
   top_moves?: EngineMove[];
+  move_quality?: { status: 'acceptable' | 'meaningfully_inferior' | 'uncertain'; expected_score_loss_pp: number | null };
 };
 export type CandidateMove = { uci: string; reason: string; highlight_squares: [string, string] };
 export type PositionTeaching = {
   positional_thesis: string;
   needs_of_position: string;
   candidate_moves: CandidateMove[];
+  move_evaluation?: {
+    plan_alignment: 'aligned' | 'partially_aligned' | 'alternative_plan' | 'not_aligned' | 'unclear';
+    explanation: string | null;
+    better_candidate_uci: string | null;
+  } | null;
 };
 export type DecisionClassification = 'flexible' | 'clear_preference' | 'critical';
 export type PositionEvidence = {

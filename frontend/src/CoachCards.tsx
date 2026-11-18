@@ -1,8 +1,9 @@
-import { useId, useMemo, useRef } from 'react';
+import { useId, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import { ArrowUpRight, Check, ChevronDown } from 'lucide-react';
 import type { CoachResponse, Move } from './types';
 import { engineEvaluation, parseCoachContent } from './coachContent';
+import { coachMoves } from './coachMoves';
 
 function Prose({ children }: { children: string }) {
   return <div className="coach-prose"><Markdown skipHtml disallowedElements={['img']} components={{ h1: 'h4', h2: 'h4', h3: 'h4' }}>{children}</Markdown></div>;
@@ -19,19 +20,11 @@ const unclassifiedDescriptions = {
   mate_score: { label: 'Unclassified', description: 'Mate scores prevent a centipawn comparison.' },
 };
 
-export type CoachTab = 'position' | 'move';
-const tabs: { value: CoachTab; label: string }[] = [
-  { value: 'position', label: 'Position & plan' },
-  { value: 'move', label: 'Evaluate your move' },
-];
-
-export default function CoachCards({ response, nextMove, pending, selectedUci, onSelectCandidate, transitioning, activeTab, onTabChange }: {
+export default function CoachCards({ response, nextMove, pending, selectedUci, onSelectCandidate, transitioning }: {
   response?: CoachResponse; nextMove?: Move; pending: boolean;
   selectedUci?: string; onSelectCandidate: (uci: string) => void; transitioning: boolean;
-  activeTab: CoachTab; onTabChange: (tab: CoachTab) => void;
 }) {
   const id = useId();
-  const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const content = useMemo(() => parseCoachContent(response?.text ?? ''), [response?.text]);
   const engine = response?.stockfish;
   const teaching = response?.teaching;
@@ -39,35 +32,23 @@ export default function CoachCards({ response, nextMove, pending, selectedUci, o
   const decision = positionEvidence?.decision_classification
     ? decisionDescriptions[positionEvidence.decision_classification]
     : positionEvidence?.unclassified_reason ? unclassifiedDescriptions[positionEvidence.unclassified_reason] : undefined;
-  const evaluation = engineEvaluation(engine);
-  const topMoves = engine?.top_moves?.slice(0, 5) ?? [];
+  const rows = coachMoves(response);
+  const scoreContext = engine ?? (response ? { perspective: response.fen.split(' ')[1] === 'w' ? 'White' as const : 'Black' as const } : undefined);
+  const moveFeedback = teaching?.move_evaluation;
+  const quality = engine?.move_quality?.status ?? 'uncertain';
+  const qualityLabel = quality === 'acceptable' ? 'Sound' : quality === 'meaningfully_inferior' ? 'Better available' : 'Quality uncertain';
+  const betterUci = moveFeedback?.better_candidate_uci;
   const waiting = pending ? 'Your coach is thinking…' : 'Run coach to explore this position.';
 
   return <div className="coach-cards">
-    <div className="coach-tabs" role="tablist" aria-label="Coach response sections">
-      {tabs.map((tab, index) => <button
-        key={tab.value} type="button" role="tab" id={`${id}-${tab.value}-tab`}
-        aria-controls={`${id}-${tab.value}-panel`} aria-selected={activeTab === tab.value}
-        tabIndex={activeTab === tab.value ? 0 : -1}
-        ref={element => { tabButtons.current[index] = element; }}
-        onClick={() => onTabChange(tab.value)}
-        onKeyDown={event => {
-          let next: number;
-          if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
-          else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
-          else if (event.key === 'Home') next = 0;
-          else if (event.key === 'End') next = tabs.length - 1;
-          else return;
-          event.preventDefault();
-          onTabChange(tabs[next].value);
-          tabButtons.current[next]?.focus();
-        }}
-      >{tab.label}</button>)}
-    </div>
-    <div className="coach-tabpanel" role="tabpanel" id={`${id}-position-panel`} aria-labelledby={`${id}-position-tab`} hidden={activeTab !== 'position'} tabIndex={0} aria-busy={pending}>
+    <div className="coach-card-body" aria-busy={pending}>
       <section className="coach-section" aria-labelledby={`${id}-understand-title`}>
-        <h3 id={`${id}-understand-title`}>Understand the position</h3>
-        {decision && <p className="decision-classification" title="Calculated from Stockfish's best and second-best moves"><strong>{decision.label}</strong><span>{decision.description}</span></p>}
+        <div className="coach-section-heading">
+          <h3 id={`${id}-understand-title`}>Understand the position</h3>
+          {decision && <span className={`decision-tag ${positionEvidence?.decision_classification ?? 'unclassified'}`} tabIndex={0} aria-label={`${decision.label}: ${decision.description}`}>
+            {decision.label}<span className="coach-tooltip" aria-hidden="true">{decision.description} Calculated by Stockfish.</span>
+          </span>}
+        </div>
         {teaching ? <>
           <p className="teaching-paragraph">{teaching.positional_thesis}</p>
         </> : response ? <>
@@ -86,58 +67,39 @@ export default function CoachCards({ response, nextMove, pending, selectedUci, o
       </section>
       <section className="coach-section" aria-labelledby={`${id}-plan-title`}>
         <h3 id={`${id}-plan-title`}>{teaching ? 'Needs of the position' : 'Develop a plan'}</h3>
-        {teaching ? <>
-          <div className="coach-subsection"><p className="teaching-paragraph">{teaching.needs_of_position}</p></div>
-          <div className="coach-subsection candidate-section">
-            <h4>Candidate moves</h4>
-            {teaching.candidate_moves.length ? <>
-              <p className="candidate-hint">Select a move to see its idea on the board.</p>
-              <div className="candidate-moves" role="group" aria-label="Instructional candidate moves">
-                {teaching.candidate_moves.map(candidate => {
-                  const selected = selectedUci === candidate.uci;
-                  return <button type="button" className="candidate-move" key={candidate.uci} aria-pressed={selected} disabled={transitioning} onClick={() => onSelectCandidate(candidate.uci)}>
-                    <span className="candidate-heading"><strong>{response?.candidate_san?.[candidate.uci] ?? candidate.uci}</strong><span>{selected ? 'Shown on board' : 'Show on board'}{selected ? <Check size={15} aria-hidden="true"/> : <ArrowUpRight size={15} aria-hidden="true"/>}</span></span>
-                    <span className="candidate-reason">{candidate.reason}</span>
-                  </button>;
-                })}
-              </div>
-              <p className="candidate-note">{positionEvidence ? 'Selected from Stockfish’s verified candidates.' : 'Coach suggestions · compare with the engine review.'}</p>
-            </> : <p className="coach-placeholder">{positionEvidence?.unclassified_reason === 'terminal_position' ? 'This position has ended.' : 'No legal moves are available in this position.'}</p>}
-          </div>
-        </> : <>
+        {teaching ? <p className="teaching-paragraph">{teaching.needs_of_position}</p> : <>
         {content.planIntro && <Prose>{content.planIntro}</Prose>}
         {content.objective && <div className="coach-subsection"><h4>Strategic objective</h4><Prose>{content.objective}</Prose></div>}
         {content.approach && <div className="coach-subsection"><h4>How to approach the position</h4><Prose>{content.approach}</Prose></div>}
         {!content.planIntro && !content.objective && !content.approach && <p className="coach-placeholder">{response ? 'No plan is included in this saved response.' : 'The needs of the position and candidate moves will appear here.'}</p>}
         </>}
       </section>
-    </div>
-    <div className="coach-tabpanel" role="tabpanel" id={`${id}-move-panel`} aria-labelledby={`${id}-move-tab`} hidden={activeTab !== 'move'} tabIndex={0} aria-busy={pending}>
-      <h3 className="coach-section-title">Evaluate your move</h3>
-      {evaluation && engine && <div className="engine-evaluation">
-        <div className="engine-evaluation-heading">
-          <div className="engine-played-move"><span>Your move</span><strong>{engine.played_move.san}</strong></div>
-          <strong className={`engine-score ${evaluation.tone}`} title={`${evaluation.label} · depth ${engine.played_move.depth}`}>{evaluation.value}</strong>
-        </div>
-        {topMoves.length > 0 ? <table className="engine-moves">
-          <caption>{topMoves.length === 1 ? 'Top engine move' : `Top ${topMoves.length} engine moves`}</caption>
-          <thead><tr><th scope="col">Rank</th><th scope="col">Move</th><th scope="col">Eval</th></tr></thead>
-          <tbody>{topMoves.map((move, index) => {
-            const score = engineEvaluation(engine, move);
-            const isPlayed = move.uci === engine.played_move.uci;
-            return <tr key={move.uci} className={isPlayed ? 'engine-move-played' : undefined}>
-              <td>{move.rank ?? index + 1}</td>
-              <th scope="row"><span>{move.san}</span>{isPlayed && <span className="engine-your-move">Your move</span>}</th>
-              <td><span className={`engine-score ${score?.tone ?? 'neutral'}`} title={score ? `${score.label} · depth ${move.depth}` : 'No score available'}>{score?.value ?? 'Unavailable'}</span></td>
-            </tr>;
-          })}</tbody>
-        </table> : <p className="engine-unavailable">No candidate moves are available for this saved response.</p>}
-        <p className="engine-source">{engine.engine} · {evaluation.perspective}’s perspective<br/>Scores in pawns; M means mate</p>
-      </div>}
-      {content.evaluation ? <>
-        <Prose>{content.evaluation}</Prose>
-        {!evaluation && <p className="engine-unavailable">No engine score is available for this saved response.</p>}
-      </> : <p className="coach-placeholder">{!nextMove ? 'Final position. There is no next move to evaluate.' : pending ? `The review of ${nextMove.san} will appear when the coach finishes.` : response ? `No move review is saved for ${nextMove.san}. Run coach to evaluate it.` : `Run coach to review ${nextMove.san} against the plan and Stockfish.`}</p>}
+      <section className="coach-section coach-moves-section" aria-labelledby={`${id}-moves-title`}>
+        <div className="coach-section-heading moves-heading"><h3 id={`${id}-moves-title`}>Moves</h3><span className="candidate-hint">Click to show on board</span></div>
+        {rows.length ? <div className="candidate-moves" role="group" aria-label="Candidate moves and player move">
+          {rows.map(move => {
+            const selected = selectedUci === move.uci;
+            const score = move.engineMove ? engineEvaluation(scoreContext, move.engineMove) : null;
+            return <div className={`candidate-row${move.isPlayed ? ' player-move-row' : ''}`} key={move.uci} data-uci={move.uci}>
+              <button type="button" className="candidate-move" aria-label={`${selected ? 'Hide' : 'Show'} ${move.san} on board${move.isPlayed ? ', player move' : ''}`} aria-describedby={`${id}-${move.uci}-reason${score ? ` ${id}-${move.uci}-score` : ''}`} aria-pressed={selected} disabled={transitioning} onClick={() => onSelectCandidate(move.uci)}>
+                <span className="candidate-heading">
+                  <span className="move-labels"><strong>{move.san}</strong>
+                    {score && <span id={`${id}-${move.uci}-score`} className={`engine-score ${score.tone}`} title={`${score.label} · ${score.perspective}'s perspective · depth ${move.engineMove?.depth}`} aria-label={`Evaluation ${score.value}, ${score.label}, ${score.perspective}'s perspective`}>{score.value}</span>}
+                    {move.isPlayed && <><span className="player-move-badge">Player move</span><span className={`move-quality ${quality}`}>{quality === 'acceptable' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span></>}
+                  </span>
+                  <span className="move-board-action" title={selected ? 'Shown on board' : 'Show on board'}>{selected ? <Check size={15} aria-hidden="true"/> : <ArrowUpRight size={15} aria-hidden="true"/>}</span>
+                </span>
+                <span className="candidate-reason" id={`${id}-${move.uci}-reason`}>{move.reason}</span>
+                {move.feedback && move.feedback !== move.reason && <span className="candidate-feedback">{move.feedback}</span>}
+              </button>
+              {move.isPlayed && betterUci && <button className="better-candidate" type="button" disabled={transitioning} onClick={() => onSelectCandidate(betterUci)}>
+                Compare with {response?.candidate_san?.[betterUci] ?? betterUci} <ArrowUpRight size={14} aria-hidden="true"/>
+              </button>}
+            </div>;
+          })}
+        </div> : <p className="coach-placeholder">{positionEvidence?.unclassified_reason === 'terminal_position' ? 'This position has ended.' : response ? 'No candidate moves are included in this saved response.' : 'Candidate moves and player feedback will appear here.'}</p>}
+        {response && !response.played_move && <p className="move-empty-note">{moveFeedback?.explanation ?? (nextMove ? 'Run coach for feedback on the recorded move.' : 'No recorded move is available to evaluate.')}</p>}
+      </section>
     </div>
   </div>;
 }
