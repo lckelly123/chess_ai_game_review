@@ -8,10 +8,15 @@ function Prose({ children }: { children: string }) {
   return <div className="coach-prose"><Markdown skipHtml disallowedElements={['img']} components={{ h1: 'h4', h2: 'h4', h3: 'h4' }}>{children}</Markdown></div>;
 }
 
-const characterDescriptions = {
-  quiet: 'Improve the position and coordinate your pieces.',
-  tense: 'Watch threats, pawn tension, and move order.',
-  forcing: 'Calculate immediate threats and forcing moves first.',
+const decisionDescriptions = {
+  flexible: { label: 'Flexible', description: 'Several moves preserve a similar expected outcome.' },
+  clear_preference: { label: 'Clear preference', description: 'One continuation offers a meaningful advantage.' },
+  critical: { label: 'Critical', description: 'The choice of move has major consequences for the expected outcome.' },
+};
+const unclassifiedDescriptions = {
+  terminal_position: { label: 'Game over', description: 'There is no decision to classify.' },
+  single_legal_move: { label: 'Only legal move', description: 'There is no alternative move to compare.' },
+  mate_score: { label: 'Unclassified', description: 'Mate scores prevent a centipawn comparison.' },
 };
 
 export type CoachTab = 'position' | 'move';
@@ -30,6 +35,10 @@ export default function CoachCards({ response, nextMove, pending, selectedUci, o
   const content = useMemo(() => parseCoachContent(response?.text ?? ''), [response?.text]);
   const engine = response?.stockfish;
   const teaching = response?.teaching;
+  const positionEvidence = response?.position_evidence;
+  const decision = positionEvidence?.decision_classification
+    ? decisionDescriptions[positionEvidence.decision_classification]
+    : positionEvidence?.unclassified_reason ? unclassifiedDescriptions[positionEvidence.unclassified_reason] : undefined;
   const evaluation = engineEvaluation(engine);
   const topMoves = engine?.top_moves?.slice(0, 5) ?? [];
   const waiting = pending ? 'Your coach is thinking…' : 'Run coach to explore this position.';
@@ -58,11 +67,11 @@ export default function CoachCards({ response, nextMove, pending, selectedUci, o
     <div className="coach-tabpanel" role="tabpanel" id={`${id}-position-panel`} aria-labelledby={`${id}-position-tab`} hidden={activeTab !== 'position'} tabIndex={0} aria-busy={pending}>
       <section className="coach-section" aria-labelledby={`${id}-understand-title`}>
         <h3 id={`${id}-understand-title`}>Understand the position</h3>
+        {decision && <p className="decision-classification" title="Calculated from Stockfish's best and second-best moves"><strong>{decision.label}</strong><span>{decision.description}</span></p>}
         {teaching ? <>
-          <p className="position-character"><strong>{teaching.position_character}</strong><span>{teaching.candidate_moves.length ? characterDescriptions[teaching.position_character] : 'No legal moves remain.'}</span></p>
           <p className="teaching-paragraph">{teaching.positional_thesis}</p>
         </> : response ? <>
-          {!!content.positionIntro && <Prose>{content.positionIntro}</Prose>}
+          {!!content.positionIntro && <Prose>{content.positionIntro.replace(/^\s*\*\*Position character:\*\*[^\n]*(?:\n|$)/gim, '').trim()}</Prose>}
           {content.factors.length > 0 && <>
             <p className="factor-hint">Ranked factors <span>Expand to read the reasoning</span></p>
             <div className="position-factors">
@@ -73,7 +82,7 @@ export default function CoachCards({ response, nextMove, pending, selectedUci, o
             </div>
           </>}
           {content.thesis && <div className="coach-subsection positional-thesis"><h4>Positional thesis</h4><Prose>{content.thesis}</Prose></div>}
-        </> : <p className="coach-placeholder">{waiting} Its character and positional thesis will appear here.</p>}
+        </> : <p className="coach-placeholder">{waiting} Its classification and positional thesis will appear here.</p>}
       </section>
       <section className="coach-section" aria-labelledby={`${id}-plan-title`}>
         <h3 id={`${id}-plan-title`}>{teaching ? 'Needs of the position' : 'Develop a plan'}</h3>
@@ -92,8 +101,8 @@ export default function CoachCards({ response, nextMove, pending, selectedUci, o
                   </button>;
                 })}
               </div>
-              <p className="candidate-note">Coach suggestions · compare with the engine review.</p>
-            </> : <p className="coach-placeholder">No legal moves are available in this position.</p>}
+              <p className="candidate-note">{positionEvidence ? 'Selected from Stockfish’s verified candidates.' : 'Coach suggestions · compare with the engine review.'}</p>
+            </> : <p className="coach-placeholder">{positionEvidence?.unclassified_reason === 'terminal_position' ? 'This position has ended.' : 'No legal moves are available in this position.'}</p>}
           </div>
         </> : <>
         {content.planIntro && <Prose>{content.planIntro}</Prose>}

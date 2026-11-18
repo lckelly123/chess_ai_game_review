@@ -8,7 +8,7 @@ from pathlib import Path
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
-from .position import InvalidPositionError
+from .position import CoachPosition, InvalidPositionError
 from .move_review import MoveReview
 from .stockfish import StockfishAnalysisError, StockfishUnavailableError
 from .service import CoachResponseError, build_request, open_coach
@@ -19,10 +19,11 @@ async def run(args: argparse.Namespace) -> None:
     settings = CoachSettings.from_env()
     ascii_board = Path(args.ascii_file).read_text(encoding="utf-8") if args.ascii_file else None
     # Validate locally before opening a client; dry runs never require a key.
-    request = build_request(args.fen, ascii_board=ascii_board, settings=settings)
+    CoachPosition.from_fen(args.fen, ascii_board=ascii_board)
     if args.move is not None:
         MoveReview.from_fen(args.fen, args.move)
     if args.dry_run:
+        request = await asyncio.to_thread(build_request, args.fen, ascii_board=ascii_board, settings=settings)
         print(json.dumps(request, indent=2, ensure_ascii=False))
         return
     async with open_coach(settings) as coach:
@@ -38,7 +39,7 @@ def main() -> int:
     parser.add_argument("--fen", required=True, help="Complete six-field FEN of the selected position.")
     parser.add_argument("--ascii-file", help="Optional matching ASCII board; otherwise generated from the FEN.")
     parser.add_argument("--move", help="Optional recorded move in UCI; enables the second coaching pass.")
-    parser.add_argument("--dry-run", action="store_true", help="Print the first-pass request without calling OpenAI or Stockfish.")
+    parser.add_argument("--dry-run", action="store_true", help="Run local Stockfish and print the first-pass request without calling OpenAI.")
     args = parser.parse_args()
     try:
         asyncio.run(run(args))

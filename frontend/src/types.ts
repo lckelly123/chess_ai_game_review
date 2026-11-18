@@ -21,15 +21,23 @@ export type EngineAnalysis = {
 };
 export type CandidateMove = { uci: string; reason: string; highlight_squares: [string, string] };
 export type PositionTeaching = {
-  position_character: 'quiet' | 'tense' | 'forcing';
   positional_thesis: string;
   needs_of_position: string;
   candidate_moves: CandidateMove[];
+};
+export type DecisionClassification = 'flexible' | 'clear_preference' | 'critical';
+export type PositionEvidence = {
+  decision_classification: DecisionClassification | null;
+  unclassified_reason: 'terminal_position' | 'single_legal_move' | 'mate_score' | null;
+  delta_cp: number | null;
+  delta_e_pp: number | null;
+  top_moves: EngineMove[];
 };
 export type CoachResponse = {
   fen: string; played_move: string | null; text: string; model: string; response_id: string; created_at: string;
   stockfish?: EngineAnalysis | null;
   teaching?: PositionTeaching | null;
+  position_evidence?: PositionEvidence | null;
   candidate_san?: Record<string, string>;
 };
 

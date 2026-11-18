@@ -19,6 +19,7 @@ from backend.tests.test_app import raw_game
 from backend.tests.test_coach import completed_response, teaching_output, teaching_text
 from backend.tests.test_coach_graph import mock_client
 from backend.tests.test_coach_routes import mock_coach_factory
+from backend.tests.position_fixtures import position_evidence
 
 
 FIRST = teaching_text()
@@ -61,13 +62,13 @@ def test_second_responses_request_gets_exact_prior_output_board_move_and_evidenc
 
     async def run():
         async with mock_client(upstream) as client:
-            return await Coach(client, CoachSettings(model=model), engine=engine).analyze(fen, played_move="e7e5")
+            return await Coach(client, CoachSettings(model=model), engine=engine, position_engine=position_evidence).analyze(fen, played_move="e7e5")
 
     result = asyncio.run(run())
     assert len(requests) == 2
     assert "previous_analysis" not in json.dumps(requests[0])
-    assert "Stockfish test" not in json.dumps(requests[0])
-    assert "e7e5" not in json.dumps(requests[0])
+    assert "Stockfish position evidence" in json.dumps(requests[0])
+    assert "played_move" not in json.dumps(requests[0])
     second = requests[1]
     assert second["input"][0]["content"] == MOVE_PROMPT_PATH.read_text(encoding="utf-8")
     payload = json.loads(second["input"][1]["content"].split("\n\n", 1)[1])
@@ -111,7 +112,7 @@ def test_checkpointed_runs_do_not_reuse_move_or_append_old_text():
 
     async def run():
         async with mock_client(upstream) as client:
-            graph = Coach(client, engine=evidence).graph.builder.compile(checkpointer=InMemorySaver())
+            graph = Coach(client, engine=evidence, position_engine=position_evidence).graph.builder.compile(checkpointer=InMemorySaver())
             config = {"configurable": {"thread_id": "review"}}
             first = await graph.ainvoke({"fen": chess.STARTING_FEN, "played_move": "e2e4"}, config)
             assert first["text"] == FIRST + "\n\n" + SECOND
@@ -121,6 +122,7 @@ def test_checkpointed_runs_do_not_reuse_move_or_append_old_text():
             assert plain["move_uci"] is None and plain["stockfish"] is None and plain["move_analysis"] is None
             assert plain["text"] == teaching_text(board.fen())
             assert plain["position_analysis"]["structured"] == teaching_output(board.fen())
+            assert plain["position_analysis"]["engine_evidence"] == position_evidence(board.fen())
             rerun = await graph.ainvoke({"fen": chess.STARTING_FEN, "played_move": "d2d4"}, config)
             assert rerun["text"] == FIRST + "\n\n" + SECOND
             assert rerun["stockfish"]["played_move"]["uci"] == "d2d4"
@@ -162,7 +164,7 @@ def test_engine_failure_prevents_second_model_request():
     async def run():
         async with mock_client(upstream) as client:
             with pytest.raises(StockfishAnalysisError):
-                await Coach(client, engine=failed_engine).analyze(chess.STARTING_FEN, played_move="e2e4")
+                await Coach(client, engine=failed_engine, position_engine=position_evidence).analyze(chess.STARTING_FEN, played_move="e2e4")
     asyncio.run(run())
     assert len(requests) == 1
 
@@ -188,6 +190,7 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
         assert saved["text"] == FIRST + "\n\n" + SECOND
         assert saved["played_move"] == "e2e4"
         assert saved["model"] == model
+        assert saved["position_evidence"] == position_evidence(chess.STARTING_FEN)
         assert saved["teaching"] == teaching_output()
         assert saved["candidate_san"] == {"g1h3": "Nh3"}
         assert saved["stockfish"]["perspective"] == "White"

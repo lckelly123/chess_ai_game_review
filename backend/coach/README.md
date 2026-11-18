@@ -15,20 +15,22 @@ Input is `fen` plus optional `played_move` in UCI. The board is always derived f
 
 1. Receive the selected position's complete FEN.
 2. Validate it with python-chess and generate a coordinate-labeled ASCII board. White is always at the bottom; letter case identifies piece color.
-3. Send `system_prompt.md` as a system message, followed by a user message containing the FEN, ASCII board, and side to move. Require a strict Responses API `text.format` JSON schema. Validate the returned structure, legal candidate moves, and two distinct highlight squares per candidate before continuing.
+3. Inside the first node, run `position_classification.analyze_position(fen)` off the event loop to obtain the top five Stockfish moves (or fewer when fewer are legal), their evaluations/WDL/PVs, relative losses, position outlook, and deterministic decision classification. Send the user's supplied `system_prompt.md`, the FEN/ASCII board, and this evidence through the same Responses API with a strict JSON schema. Validate that every recommended move belongs to the supplied pool and has two distinct highlight squares. Engine failures stop before any model call.
 4. If a played move exists, run Stockfish off the event loop to obtain up to eight root candidates plus the played move when outside the eight.
 5. Send `move_prompt.md` as the second call's system message, with the first pass's validated JSON object, the same FEN/ASCII board, the played move in UCI/SAN, and engine evidence as user input. Both calls use the selected model with medium reasoning for both Astra and Terra, and `store=False`; prior output is sent explicitly rather than via a stored response ID. The second call has no JSON response format.
-6. Append the second response to a readable Markdown rendering of the first pass for CLI/export compatibility. Without a played move, return only the first analysis. Invalid played moves are rejected before either model call; invalid generated teaching stops the graph before Stockfish, a second model call, or persistence.
+6. Append the second response to a readable Markdown rendering of the first pass for CLI/export compatibility. Without a played move, return only the first analysis. Invalid played moves are rejected before engine work or model calls; invalid generated teaching stops the graph before the second node's engine search, model call, or persistence.
 
 An optional ASCII board can also be supplied. It must match the FEN, either as the coordinate-labeled output of `CoachPosition.from_fen(fen).ascii_board` or the plain eight rows from `str(chess.Board(fen))`. Whitespace differences are accepted. The canonical board is always sent to OpenAI, preventing mismatched or flipped inputs.
 
-The first call receives no played move or engine information. The second receives only the reviewed move and supplied engine evidence, not the full PGN, result, or game history. Its generated Markdown is retained as returned.
+The first call receives independently computed position evidence and never receives the player's recorded move. The second node retains its existing prompt, top-eight-plus-played-move search, request structure, and Markdown output. Its previous-analysis input is the first node's new validated teaching JSON. Neither node receives the full PGN, result, or game history.
 
 ## Structured position teaching
 
-The first response contains exactly `position_character` (`quiet`, `tense`, or `forcing`), `positional_thesis`, `needs_of_position`, and `candidate_moves`. Each candidate contains `uci`, `reason`, and exactly two distinct `highlight_squares`. One to three distinct legal moves are required when moves exist; an empty array is accepted only when the side to move has no legal moves, including checkmate and stalemate. Word counts in the prompt are guidance rather than rejection rules. Position character describes the thinking required, not an engine evaluation.
+The first response contains exactly `positional_thesis`, `needs_of_position`, and `candidate_moves`. Each candidate contains `uci`, `reason`, and exactly two distinct `highlight_squares`. One to three distinct moves from the supplied top-five pool are required in nonterminal positions. All five are eligible for consideration; their ranks, CP/mate scores, WDL expectations, PVs, and relative losses let the model select sound instructional examples without adding an invented move-quality threshold. An empty array is required for terminal positions. Word counts are guidance rather than rejection rules. The model cannot output or override a classification.
 
-Structured data is saved inside the existing `position_analysis` JSONB column without a migration. HTTP responses expose it as nullable `teaching`, alongside `candidate_san` labels derived by python-chess. These fields also survive feedback retrieval and game reload. The model does not generate SAN labels or arrow coordinates. The UI derives an arrow from UCI and uses the two supplied squares as instructional highlights; selecting a candidate pauses autoplay without playing the move. Navigation and new responses clear the selection, and flipping the board transforms the overlay. Old rows without structured data retain their original Markdown presentation. Rerun coaching to generate candidate annotations for an old position.
+Structured data is saved inside the existing `position_analysis.structured` JSONB field without a migration. The exact first-pass engine evidence is saved beside it as `position_analysis.engine_evidence`, independently of the second pass's `stockfish` data. HTTP responses expose nullable `teaching`, `position_evidence`, and server-derived `candidate_san` labels; these survive feedback retrieval and game reload. The UI shows Flexible, Clear preference, or Critical from `position_evidence.decision_classification`, never from model output. Undefined classifications explain terminal, single-move, or mate-score cases. Old teaching with `position_character` remains readable, but its old label is omitted. Old reviews acquire engine classification on their next successful rerun; reading them triggers no new engine or model calls.
+
+The model does not generate SAN labels or arrow coordinates. The UI derives an arrow from UCI and uses the two supplied squares as instructional highlights; selecting a candidate pauses autoplay without playing the move. Navigation and new responses clear the selection, and flipping the board transforms the overlay. Old rows without structured data retain their original Markdown presentation.
 
 ## Web endpoint
 
@@ -44,7 +46,7 @@ The UI pauses autoplay when Run coach is pressed and shows progress. Moving to a
 
 ## Files
 
-- `system_prompt.md`: the user's compact teaching prompt, with the authorized no-legal-moves exception.
+- `system_prompt.md`: the user's supplied engine-informed teaching prompt. The request's position context describes unclassified and terminal edge cases.
 - `move_prompt.md`: the move-review prompt, adapted to consume structured first-pass teaching.
 - `teaching.py`: strict output schema, legal-move validation, SAN labels, and readable fallback rendering.
 - `position.py`: FEN validation, ASCII rendering, and the position message.
@@ -152,9 +154,46 @@ The second node uses these engine helpers:
 
 Stockfish 19 is installed and checksum-verified during the Docker build. Local Windows development can run `python scripts/install_stockfish.py` from the repository root; the resulting `.tools/stockfish` directory is ignored by Git and Docker. An existing installation can instead be selected with `STOCKFISH_PATH`. Depth, seconds per search, threads, and hash MB default to 18, 10, 2, and 128 and are configurable in `.env.example`. Each analysis owns and closes its engine process. The engine receives the FEN only, without earlier repetition history. A local CLI preview is available through `python -m backend.coach.stockfish --fen "..." --move e2e4`; it loads `.env` and prints the complete preparation JSON without OpenAI or PostgreSQL.
 
-The replay invokes the complete coaching graph; the separate preparation endpoint remains useful for inspecting engine inputs without a model call. The first-pass prompt and request remain position-only. The second node gets fresh engine evidence and only the current run's first response.
+The replay invokes the complete coaching graph; the separate preparation endpoint remains useful for inspecting move-review engine inputs without a model call. The first node uses an independent top-five position search and classification. The second node still gets fresh top-eight/move-review evidence and only the current run's first response.
 
 Keep clients/settings outside graph state and create any needed clients lazily. Do not hard-code a checkpointer in the exported graph: Studio supplies one, while direct application calls currently remain independent. A new FEN in a reused Studio thread generates a fresh board and does not send old analysis to OpenAI.
+
+## Standalone position classification
+
+`position_classification.py` implements the best-versus-second-best algorithm without OpenAI calls or database writes. Its standalone `classify_position` API retains the top-two behavior. Its `analyze_position` API requests up to five candidates and supplies the first coaching node and UI through the saved first-pass evidence. Call the standalone classifier from Python:
+
+```python
+from backend.coach.position_classification import classify_position
+
+result = classify_position(fen)
+print(result["classification"], result["delta_cp"], result["delta_e_pp"])
+```
+
+`classify_position(fen, settings=None)` accepts a complete six-field FEN and optional `StockfishSettings`; otherwise it reads the existing `STOCKFISH_*` environment settings. This is a blocking function; async callers should run it in a worker thread.
+
+`analyze_position(fen, settings=None)` applies the same classification thresholds to the best two moves in its top-five search, and adds `decision_classification` (`flexible`, `clear_preference`, `critical`, or null), `position_outlook`, and `permitted_candidate_uci`. Every candidate includes `relative_quality.cp_loss_from_best` and `relative_quality.expected_score_loss_pp`. A single legal move is evaluated and supplied as the sole candidate with a null classification. All candidates come from the same completed depth; finite-depth results can differ from a separate MultiPV=2 run.
+
+The classifier enables Stockfish's native `UCI_ShowWDL` output and requests `MultiPV=2`. Both centipawn scores and WDL estimates are normalized to the side to move. WDL counts are per thousand; for each candidate it calculates `E = (wins + 0.5 * draws) / 1000`. It then applies the supplied criteria exactly:
+
+| Classification | Criteria |
+| --- | --- |
+| Flexible | `delta_cp <= 35` **and** `delta_e_pp <= 5` |
+| Clear preference | Not Flexible, and `delta_e_pp < 20` |
+| Critical | `delta_e_pp >= 20` |
+
+`delta_cp = CP_best - CP_second`; `delta_e_pp = 100 * (E_best - E_second)` is in percentage points. Threshold comparisons use exact rational arithmetic, with no rounding before classification. The JSON-compatible result contains the normalized FEN, perspective, classification, both gaps, two ranked candidates with UCI/SAN/PV, CP or mate score, native WDL counts, probabilities, expected score, achieved depth, and engine/resource metadata.
+
+The latest complete pair at a common depth is used, so a time-limited search ending between MultiPV lines does not compare different iterations. Missing WDL, incomplete pairs, invalid variations, duplicate moves, and inconsistent rankings raise `StockfishAnalysisError`; bound-only scores are excluded. Search collection has a deadline of the configured search time plus five seconds, and initialization/configuration each have a five-second deadline. The engine process is closed on success and failure. WDL values are Stockfish's approximate engine-self-play outcome estimates, not player-specific probabilities; see the [official UCI_ShowWDL documentation](https://official-stockfish.github.io/docs/stockfish-wiki/UCI-Protocol-and-Stockfish-Commands.html#uci_showwdl).
+
+For terminal positions or a single legal move, the result has `classification: null` and `unclassified_reason: "terminal_position"` or `"single_legal_move"`, without starting Stockfish. Mate scores retain their mate distance and have no invented CP equivalent. If `delta_e_pp > 5`, the expected-score gap alone determines Clear preference or Critical; otherwise a comparison involving a mate score returns `classification: null`, `delta_cp: null`, and `unclassified_reason: "mate_score"`. FEN-only analysis cannot recover earlier repetition history.
+
+Run the standalone CLI from the repository root (it loads `.env` for engine settings):
+
+```powershell
+.\.venv\Scripts\python -m backend.coach.position_classification --fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+```
+
+It prints JSON and exits nonzero on invalid input, unavailable engine, timeout, or incomplete evidence. After rebuilding Docker, the same module is available via `docker compose run --rm --no-deps app python -m backend.coach.position_classification --fen "..."`.
 
 ## Run without the UI
 
@@ -164,7 +203,7 @@ From the repository root, preview the first-pass request without credentials or 
 .\.venv\Scripts\python -m backend.coach --fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" --dry-run
 ```
 
-To make real, billable requests, set `OPENAI_API_KEY` in your local environment and omit `--dry-run`. Add `--move e2e4` to run the second pass, or omit it for position-only coaching. Add `--ascii-file path/to/board.txt` to validate an existing ASCII representation alongside the FEN. Dry runs validate the optional move but preview only the first request, without running Stockfish. The CLI prints the combined answer to stdout; errors go to stderr with a nonzero exit status.
+To make real, billable requests, set `OPENAI_API_KEY` in your local environment and omit `--dry-run`. Add `--move e2e4` to run the second pass, or omit it for position-only coaching. Add `--ascii-file path/to/board.txt` to validate an existing ASCII representation alongside the FEN. Dry runs validate the optional move and run local Stockfish to preview the complete first request; they make no OpenAI calls. The CLI prints the combined answer to stdout; errors go to stderr with a nonzero exit status.
 
 Docker Compose passes `OPENAI_API_KEY`, `COACH_MAX_OUTPUT_TOKENS`, and `COACH_TIMEOUT_SECONDS` from the shell or the project's ignored `.env` file. After rebuilding the image, the same command can be run in a one-off container:
 

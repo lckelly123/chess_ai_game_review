@@ -80,7 +80,8 @@ def build_coach_graph(
         move = state.get("played_move")
         if move is not None:
             move = MoveReview.from_fen(position.fen, move).played_move_uci
-        # First pass sees neither the played move nor engine evidence.
+        # The first adapter prepares independent top-five position evidence.
+        # The recorded move is never passed to it.
         result = await analyze(position.fen)
         return {
             "fen": result.position.fen,

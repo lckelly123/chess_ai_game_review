@@ -16,13 +16,14 @@ from backend.coach import (
 )
 from backend.coach.service import SYSTEM_PROMPT_PATH
 from backend.coach.teaching import TeachingAnalysis
+from backend.tests.position_fixtures import position_evidence
 
 
 def teaching_output(fen=chess.STARTING_FEN):
     board = chess.Board(fen)
-    move = next(iter(board.legal_moves), None)
+    move = next(iter(board.legal_moves), None) if not board.is_game_over() else None
     return {
-        "position_character": "quiet", "positional_thesis": "Test analysis.",
+        "positional_thesis": "Test analysis.",
         "needs_of_position": "Test plan.",
         "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning.",
                              "highlight_squares": [chess.square_name(move.from_square), chess.square_name(move.to_square)]}] if move else [],
@@ -54,13 +55,13 @@ def completed_response(*, request=None, fen=chess.STARTING_FEN, **overrides):
     }
 
 
-def analyze_with_transport(handler, fen=chess.STARTING_FEN, **kwargs):
+def analyze_with_transport(handler, fen=chess.STARTING_FEN, *, position_engine=position_evidence, **kwargs):
     async def run():
         async with AsyncOpenAI(
             api_key="test-key", base_url="https://api.openai.com/v1", max_retries=0,
             http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
         ) as client:
-            return await Coach(client).analyze(fen, **kwargs)
+            return await Coach(client, position_engine=position_engine).analyze(fen, **kwargs)
     return asyncio.run(run())
 
 
@@ -82,6 +83,7 @@ def test_responses_request_and_output_through_real_sdk():
         assert set(body) == {"model", "reasoning", "input", "max_output_tokens", "store", "text"}
         assert body["text"]["format"]["strict"] is True
         assert body["text"]["format"]["type"] == "json_schema"
+        assert set(body["text"]["format"]["schema"]["properties"]) == {"positional_thesis", "needs_of_position", "candidate_moves"}
         assert body["input"][0] == {"role": "system", "content": SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")}
         message = body["input"][1]
         assert message["role"] == "user"
@@ -91,6 +93,11 @@ def test_responses_request_and_output_through_real_sdk():
         assert "4  . . . . P . . ." in message["content"]
         assert "1  R N B Q K B N R" in message["content"]
         assert "a b c d e f g h" in message["content"]
+        payload = json.loads(message["content"].split("Stockfish position evidence:\n", 1)[1].split("\n\n", 1)[0])
+        assert payload["decision_classification"] == "flexible"
+        assert len(payload["engine_verified_moves"]) == 5
+        assert payload["position_outlook"] == position_evidence(fen)["position_outlook"]
+        assert "played_move" not in payload and "previous_analysis" not in payload
         return httpx2.Response(200, json=completed_response(request=request))
 
     result = analyze_with_transport(upstream, fen)
@@ -99,6 +106,7 @@ def test_responses_request_and_output_through_real_sdk():
     assert result.position.fen == fen
     assert result.text == teaching_text(fen)
     assert result.position_analysis["structured"] == teaching_output(fen)
+    assert result.position_analysis["engine_evidence"] == position_evidence(fen)
     assert result.usage["output_tokens_details"]["reasoning_tokens"] == 20
 
 
@@ -142,7 +150,7 @@ def test_api_errors_propagate_without_fabricated_analysis_or_retry():
 
 def test_missing_key_is_lazy_and_actionable(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    assert build_request(chess.STARTING_FEN)["model"] == "gpt-6-astra"
+    assert build_request(chess.STARTING_FEN, evidence=position_evidence(chess.STARTING_FEN))["model"] == "gpt-6-astra"
     async def run():
         async with open_coach():
             pytest.fail("A client must not be created without a key")
@@ -162,17 +170,18 @@ def test_model_settings_are_scoped_and_preserve_runtime_limits(monkeypatch):
     monkeypatch.setenv("COACH_TIMEOUT_SECONDS", "45")
     terra = CoachSettings.from_env(model="gpt-6.1-terra")
     assert terra.max_output_tokens == 4096 and terra.timeout_seconds == 45
-    request = build_request(chess.STARTING_FEN, settings=terra)
+    request = build_request(chess.STARTING_FEN, settings=terra, evidence=position_evidence(chess.STARTING_FEN))
     assert request["model"] == "gpt-6.1-terra"
     assert request["reasoning"] == {"effort": "medium"}
     assert CoachSettings.from_env().model == CoachSettings().model == "gpt-6-astra"
-    assert build_request(chess.STARTING_FEN)["reasoning"] == {"effort": "medium"}
+    assert build_request(chess.STARTING_FEN, evidence=position_evidence(chess.STARTING_FEN))["reasoning"] == {"effort": "medium"}
     with pytest.raises(CoachConfigurationError, match="Unsupported coach model"):
         CoachSettings(model="unknown-model")
 
 
 def test_cli_dry_run_without_credentials():
     env = {k: v for k, v in os.environ.items() if not k.startswith(("OPENAI_", "COACH_"))}
+    env.update(STOCKFISH_DEPTH="4", STOCKFISH_TIME_LIMIT="2", STOCKFISH_THREADS="1", STOCKFISH_HASH_MB="16")
     result = subprocess.run(
         [sys.executable, "-m", "backend.coach", "--fen", chess.STARTING_FEN, "--dry-run"],
         cwd=Path(__file__).resolve().parents[2], env=env, text=True, encoding="utf-8",

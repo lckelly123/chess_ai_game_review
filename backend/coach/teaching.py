@@ -30,10 +30,9 @@ class CandidateMove(BaseModel):
         return value
 
 
-class TeachingAnalysis(BaseModel):
+class TeachingOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    position_character: Literal["quiet", "tense", "forcing"]
     positional_thesis: str = Field(min_length=1)
     needs_of_position: str = Field(min_length=1)
     # Zero is valid only in terminal positions; that depends on the input FEN.
@@ -46,10 +45,12 @@ class TeachingAnalysis(BaseModel):
             raise ValueError("Teaching paragraphs must not be blank.")
         return value
 
-    def validate_position(self, fen: str) -> "TeachingAnalysis":
+    def validate_position(self, fen: str, *, permitted_moves: list[str] | None = None) -> "TeachingOutput":
         board = chess.Board(fen)
-        if not self.candidate_moves and any(board.legal_moves):
+        if not self.candidate_moves and not board.is_game_over():
             raise ValueError("A position with legal moves requires at least one candidate.")
+        if self.candidate_moves and board.is_game_over():
+            raise ValueError("A terminal position must not recommend candidate moves.")
         seen = set()
         for candidate in self.candidate_moves:
             move = chess.Move.from_uci(candidate.uci)
@@ -57,6 +58,8 @@ class TeachingAnalysis(BaseModel):
                 raise ValueError(f"Illegal candidate move: {candidate.uci}.")
             if candidate.uci in seen:
                 raise ValueError("Candidate moves must be distinct.")
+            if permitted_moves is not None and candidate.uci not in permitted_moves:
+                raise ValueError("Candidate move is outside the supplied Stockfish pool.")
             seen.add(candidate.uci)
         return self
 
@@ -70,8 +73,13 @@ class TeachingAnalysis(BaseModel):
         candidates = "\n".join(f"- **{names[item.uci]}**: {item.reason}" for item in self.candidate_moves)
         return (
             "### 1. Understand the Position\n\n"
-            f"**Position character:** {self.position_character}\n\n"
             f"**Positional Thesis**\n\n{self.positional_thesis}\n\n"
             f"### 2. Develop a Plan\n\n**Needs of the Position**\n\n{self.needs_of_position}\n\n"
             "**Candidate Moves**\n\n" + (candidates or "No legal moves are available.")
         )
+
+
+class TeachingAnalysis(TeachingOutput):
+    """Read old saved teaching while omitting its obsolete model-made label."""
+
+    position_character: Literal["quiet", "tense", "forcing"] | None = Field(default=None, exclude=True)

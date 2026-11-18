@@ -15,6 +15,7 @@ from openai import AsyncOpenAI, RateLimitError
 from backend.coach import Coach, CoachConfigurationError, InvalidPositionError
 from backend.coach.graph import graph
 from backend.tests.test_coach import completed_response
+from backend.tests.position_fixtures import position_evidence
 
 
 @asynccontextmanager
@@ -50,6 +51,7 @@ def test_studio_config_loads_without_credentials(monkeypatch):
 
 def test_studio_graph_uses_same_adapter_and_closes_client(monkeypatch):
     import backend.coach.graph as graph_module
+    monkeypatch.setattr('backend.coach.responses.analyze_position', position_evidence)
 
     clients, requests = [], []
 
@@ -83,7 +85,7 @@ def test_reused_studio_thread_does_not_send_previous_board_or_analysis():
 
     async def run():
         async with mock_client(upstream) as client:
-            coach = Coach(client)
+            coach = Coach(client, position_engine=position_evidence)
             persistent = coach.graph.builder.compile(checkpointer=InMemorySaver())
             config = {"configurable": {"thread_id": "studio-test"}}
             await persistent.ainvoke({"fen": chess.STARTING_FEN}, config=config)
@@ -114,10 +116,10 @@ def test_nested_langsmith_traces_use_local_recorder(status):
 
     async def run():
         async with mock_client(upstream) as client:
-            coach = Coach(client)
+            coach = Coach(client, position_engine=position_evidence)
             # Reusing a client must not add a second Responses trace wrapper.
             wrapped_create = client.responses.create
-            coach = Coach(client)
+            coach = Coach(client, position_engine=position_evidence)
             assert client.responses.create is wrapped_create
             with tracing_context(enabled=True, client=recorder, project_name="coach-test"):
                 if status == 200:
@@ -158,7 +160,7 @@ def test_tracing_can_be_disabled_without_affecting_coach():
     async def run():
         async with mock_client(lambda request: httpx2.Response(200, json=completed_response())) as client:
             with tracing_context(enabled=False, client=recorder):
-                result = await Coach(client).analyze(chess.STARTING_FEN)
+                result = await Coach(client, position_engine=position_evidence).analyze(chess.STARTING_FEN)
                 assert result.response_id == "resp_test"
     asyncio.run(run())
     recorder.create_run.assert_not_called()

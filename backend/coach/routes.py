@@ -46,6 +46,7 @@ class AnalyzePositionResponse(BaseModel):
     created_at: datetime
     stockfish: dict | None = None
     teaching: TeachingAnalysis | None = None
+    position_evidence: dict | None = None
 
     @computed_field
     @property

@@ -17,6 +17,7 @@ from backend.coach.routes import create_coach_router
 from backend.main import create_app
 from backend.database import Database
 from backend.tests.test_coach import completed_response
+from backend.tests.position_fixtures import position_evidence
 
 
 def mock_coach_factory(handler, *, engine=None):
@@ -26,7 +27,7 @@ def mock_coach_factory(handler, *, engine=None):
             api_key="test-key", max_retries=0,
             http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
         ) as client:
-            yield Coach(client, settings, engine=engine)
+            yield Coach(client, settings, engine=engine, position_engine=position_evidence)
     return factory
 
 
@@ -53,7 +54,8 @@ def test_coach_endpoint_calls_responses_with_only_selected_position(test_db_url,
         assert result["fen"] == fen
         assert result["model"] == (model or "gpt-6-astra")
         assert result["text"].startswith("### 1. Understand the Position")
-        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at", "stockfish", "teaching", "candidate_san"}
+        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at", "stockfish", "teaching", "candidate_san", "position_evidence"}
+        assert result["position_evidence"] == position_evidence(fen)
         assert result["teaching"]["candidate_moves"][0]["uci"] == "g8h6"
         assert result["candidate_san"] == {"g8h6": "Nh6"}
         assert result["stockfish"] is None
