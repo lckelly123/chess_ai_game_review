@@ -91,8 +91,10 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
                 "when it is null: use the stated reason. For terminal_position, return an empty candidate_moves array "
                 "and explain that play has ended. For single_legal_move, recommend the sole verified move."
                 "\n\nPlayer-move information (use only for move_evaluation):\n" + json.dumps(move_evidence, ensure_ascii=False)
+                + "\n\nThe authoritative severity described in the system prompt is player-move information.move_quality.status. "
+                "Use that existing field; candidate quality uses the separate position-level policy."
                 + "\n\nWhen player-move information is null, set move_evaluation to plan_alignment unclear, "
-                "explanation 'No recorded move is available to evaluate.', and better_candidate_uci null."
+                "explanation 'No recorded move is available to evaluate.', better_candidate_uci null, and mistake_classification null."
             )},
         ],
     }

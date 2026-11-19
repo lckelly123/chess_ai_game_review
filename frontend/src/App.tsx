@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Check, CircleAlert, Clock3, LoaderCircle, RefreshCw, Search, X } from 'lucide-react';
 import { BrandKnight } from './Board';
 import Replay from './Replay';
+import GameAnalysisAction from './GameAnalysisAction';
 import { api, perspective, readStored, store, timeControl } from './types';
 import type { Game, GameDetail, ImportJob, Profile } from './types';
 
@@ -169,7 +170,9 @@ export default function App() {
                 <span className="game-item-info"><span className="opponent">{player.opponent}<span>{player.opponentRating ?? 'Unrated'}</span></span><span className="game-item-meta"><span className={`tiny-token ${player.isWhite ? 'white' : 'black'}`} aria-hidden="true"/>You played {player.isWhite ? 'White' : 'Black'}</span></span>
                 <span className="game-speed"><span className="capitalize">{game.time_class}</span><span>{timeControl(game.time_control)}</span></span>
                 <time className="game-date" dateTime={new Date(game.end_time * 1000).toISOString()}>{new Date(game.end_time * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</time>
-                <a className="analyze-button" data-game-id={game.id} href={`#game/${game.id}?player=${encodeURIComponent(username)}`} aria-label={`Analyze game against ${player.opponent}, ${new Date(game.end_time * 1000).toLocaleDateString()}`} onClick={() => { libraryPosition.current = { page: window.scrollY, list: gameListRef.current?.scrollTop || 0, game: game.id }; }}>Analyze <ArrowRight size={15}/></a>
+                <GameAnalysisAction key={`${game.id}:${username}`} game={game} username={username}
+                  onUpdate={analysis => setGames(current => current.map(item => item.id === game.id ? {...item, analysis} : item))}
+                  onOpen={() => { libraryPosition.current = { page: window.scrollY, list: gameListRef.current?.scrollTop || 0, game: game.id }; }}/>
               </li>;
             })}</ul>
             {!filtered.length && <div className="library-empty"><p>No games match these filters.</p><button className="text-button" onClick={() => { setSearch(''); setSpeed('all'); setResult('all'); }}>Clear filters</button></div>}

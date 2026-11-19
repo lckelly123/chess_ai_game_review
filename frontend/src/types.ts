@@ -3,10 +3,11 @@ export type Game = {
   white_rating: number | null; black_rating: number | null;
   result: string; end_time: number; time_class: string; time_control: string;
   opening: string; eco: string; ply_count: number;
+  analysis?: GameAnalysisSummary | null;
 };
 export type Position = { fen: string; last_move: string[] | null; check_square: string | null };
 export type Move = { ply: number; san: string; uci: string; color: string; number: number };
-export type GameDetail = Game & { pgn: string; positions: Position[]; moves: Move[]; coach_responses: Record<string, CoachResponse> };
+export type GameDetail = Game & { pgn: string; positions: Position[]; moves: Move[]; coach_responses: Record<string, CoachResponse>; engine_analyses?: Partial<Record<'white' | 'black', GameAnalysis>> };
 export type Profile = { username: string; last_synced: number; game_count: number };
 export type ImportJob = { id: string; username: string; status: 'queued' | 'running' | 'completed' | 'failed'; found: number; added: number; skipped: number; message: string };
 export type EngineMove = {
@@ -25,6 +26,18 @@ export type EngineAnalysis = {
   };
 };
 export type CandidateMove = { uci: string; reason: string; highlight_squares: [string, string] };
+export type MoveQuality = NonNullable<EngineAnalysis['move_quality']>['status'];
+export type EngineReview = { fen: string; played_move: string; stockfish: EngineAnalysis };
+export type GameAnalysisSummary = {
+  game_id: string; player_color: 'white' | 'black';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted';
+  total: number; completed: number; counts: Partial<Record<MoveQuality, number>>;
+  error: string | null; updated_at: string;
+};
+export type GameAnalysis = GameAnalysisSummary & { moves: Record<string, EngineReview> };
+export type MistakeClassification =
+  | { category: 'tactical'; subcategory: 'hanging_piece' | 'fork' | 'discovered_attack' | null }
+  | { category: 'positional'; subcategory: 'pawn_structure' | 'piece_play' | 'defending' | 'attacking' | null };
 export type PositionTeaching = {
   positional_thesis: string;
   needs_of_position: string;
@@ -33,6 +46,7 @@ export type PositionTeaching = {
     plan_alignment: 'aligned' | 'partially_aligned' | 'alternative_plan' | 'not_aligned' | 'unclear';
     explanation: string | null;
     better_candidate_uci: string | null;
+    mistake_classification?: MistakeClassification | null;
   } | null;
 };
 export type DecisionClassification = 'flexible' | 'clear_preference' | 'critical';

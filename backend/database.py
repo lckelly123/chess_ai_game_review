@@ -7,6 +7,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from .game_analysis import analysis_result, analysis_summary, pgn_fingerprint, quality_counts
+
 
 class Database:
     def __init__(self, conninfo: str = ""):
@@ -42,12 +44,73 @@ class Database:
 
     def games(self, username: str) -> list[dict]:
         with self.connection() as db:
-            return [row["metadata"] for row in db.execute("SELECT g.metadata FROM games g JOIN profile_games pg ON pg.game_id=g.id WHERE pg.username=%s ORDER BY g.end_time DESC, g.id", (username,))]
+            rows = db.execute(
+                """SELECT g.metadata, g.pgn, a.game_id, a.player_color, a.pgn_hash, a.status,
+                          a.total, a.completed, a.counts, a.error, a.updated_at
+                   FROM games g JOIN profile_games pg ON pg.game_id=g.id
+                   LEFT JOIN game_engine_analysis a ON a.game_id=g.id AND a.player_color=
+                       CASE WHEN lower(g.metadata->>'white')=%s THEN 'white' ELSE 'black' END
+                   WHERE pg.username=%s ORDER BY g.end_time DESC, g.id""", (username, username))
+            return [{**row["metadata"], "analysis": analysis_summary(row)
+                     if row["pgn_hash"] == pgn_fingerprint(row["pgn"]) else None} for row in rows]
 
     def game(self, game_id: str) -> dict | None:
         with self.connection() as db:
             row = db.execute("SELECT metadata, pgn FROM games WHERE id=%s", (game_id,)).fetchone()
             return {**row["metadata"], "pgn": row["pgn"]} if row else None
+
+    def game_analysis(self, game_id: str, color: str, fingerprint: str) -> dict | None:
+        with self.connection() as db:
+            return db.execute("SELECT * FROM game_engine_analysis WHERE game_id=%s AND player_color=%s AND pgn_hash=%s",
+                              (game_id, color, fingerprint)).fetchone()
+
+    def game_analyses(self, game_id: str, pgn: str) -> dict:
+        with self.connection() as db:
+            return {row["player_color"]: analysis_result(row) for row in db.execute(
+                "SELECT * FROM game_engine_analysis WHERE game_id=%s AND pgn_hash=%s", (game_id, pgn_fingerprint(pgn)))}
+
+    def interrupt_game_analyses(self):
+        # A server restart preserves completed moves, but no old worker survives.
+        with self.connection() as db:
+            db.execute("""UPDATE game_engine_analysis SET status='interrupted',
+                       error='Analysis paused when the app restarted. Resume to finish the remaining moves.',
+                       updated_at=clock_timestamp() WHERE status IN ('queued', 'running')""")
+
+    def begin_game_analysis(self, game_id: str, color: str, fingerprint: str, total: int) -> dict:
+        with self.connection() as db:
+            # Serialized by the service; the row lock also protects progress.
+            row = db.execute("SELECT * FROM game_engine_analysis WHERE game_id=%s AND player_color=%s FOR UPDATE",
+                             (game_id, color)).fetchone()
+            if row and row["pgn_hash"] == fingerprint:
+                if row["status"] == "completed":
+                    return row
+                return db.execute("""UPDATE game_engine_analysis SET status='queued', error=NULL,
+                                  updated_at=clock_timestamp() WHERE game_id=%s AND player_color=%s RETURNING *""",
+                                  (game_id, color)).fetchone()
+            return db.execute("""INSERT INTO game_engine_analysis (game_id, player_color, pgn_hash, status, total)
+                              VALUES (%s, %s, %s, 'queued', %s)
+                              ON CONFLICT (game_id, player_color) DO UPDATE SET pgn_hash=excluded.pgn_hash,
+                                  status='queued', total=excluded.total, completed=0, counts='{}', moves='{}',
+                                  error=NULL, updated_at=clock_timestamp() RETURNING *""",
+                              (game_id, color, fingerprint, total)).fetchone()
+
+    def save_game_analysis_move(self, game_id: str, color: str, fingerprint: str, ply: int, result: dict) -> bool:
+        with self.connection() as db:
+            row = db.execute("""UPDATE game_engine_analysis SET moves=moves || %s::jsonb,
+                              updated_at=clock_timestamp() WHERE game_id=%s AND player_color=%s AND pgn_hash=%s
+                              RETURNING moves""", (Jsonb({str(ply): result}), game_id, color, fingerprint)).fetchone()
+            if row is None:
+                return False
+            db.execute("""UPDATE game_engine_analysis SET completed=%s, counts=%s
+                       WHERE game_id=%s AND player_color=%s AND pgn_hash=%s""",
+                       (len(row["moves"]), Jsonb(quality_counts(row["moves"])), game_id, color, fingerprint))
+            return True
+
+    def set_game_analysis_status(self, game_id: str, color: str, fingerprint: str, status: str, error: str | None):
+        with self.connection() as db:
+            db.execute("""UPDATE game_engine_analysis SET status=%s, error=%s, updated_at=clock_timestamp()
+                       WHERE game_id=%s AND player_color=%s AND pgn_hash=%s""",
+                       (status, error, game_id, color, fingerprint))
 
     def cache(self, url: str) -> dict | None:
         with self.connection() as db:

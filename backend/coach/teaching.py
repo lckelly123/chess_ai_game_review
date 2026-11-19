@@ -9,12 +9,30 @@ Square = Annotated[str, Field(pattern=r"^[a-h][1-8]$")]
 Uci = Annotated[str, Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")]
 
 
+class TacticalMistake(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    category: Literal["tactical"]
+    subcategory: Literal["hanging_piece", "fork", "discovered_attack"] | None
+
+
+class PositionalMistake(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    category: Literal["positional"]
+    subcategory: Literal["pawn_structure", "piece_play", "defending", "attacking"] | None
+
+
+MistakeClassification = TacticalMistake | PositionalMistake
+
+
 class MoveEvaluation(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     plan_alignment: Literal["aligned", "partially_aligned", "alternative_plan", "not_aligned", "unclear"]
     explanation: str | None = Field(min_length=1)
     better_candidate_uci: Uci | None
+    mistake_classification: MistakeClassification | None
 
     @field_validator("explanation")
     @classmethod
@@ -86,6 +104,8 @@ class TeachingOutput(BaseModel):
         evaluation = self.move_evaluation
         candidates = {candidate.uci for candidate in self.candidate_moves}
         quality = evidence.get("move_quality", {}).get("status") if evidence else None
+        if evaluation.mistake_classification is not None and (played_move is None or quality not in ERROR_STATUSES):
+            raise ValueError("Mistake classification requires a recorded move with a reliable error severity.")
         if played_move in candidates and quality == "good" and (
             evaluation.plan_alignment != "aligned" or evaluation.explanation is not None
             or evaluation.better_candidate_uci is not None
@@ -126,8 +146,14 @@ class TeachingOutput(BaseModel):
         return text
 
 
+class SavedMoveEvaluation(MoveEvaluation):
+    """Older saved reviews predate mistake classification; do not fabricate it."""
+
+    mistake_classification: MistakeClassification | None = None
+
+
 class TeachingAnalysis(TeachingOutput):
     """Read old saved teaching while omitting its obsolete model-made label."""
 
     position_character: Literal["quiet", "tense", "forcing"] | None = Field(default=None, exclude=True)
-    move_evaluation: MoveEvaluation | None = None
+    move_evaluation: SavedMoveEvaluation | None = None

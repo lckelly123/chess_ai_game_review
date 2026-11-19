@@ -18,6 +18,7 @@ from .coach.preparation_routes import create_preparation_router
 from .coach.service import open_coach
 from .database import Database
 from .importer import ChessComImporter
+from .game_analysis import GameAnalysisService, analyze_game_move, create_game_analysis_router
 from .migrate_sqlite import migrate_sqlite
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,7 +34,7 @@ class ImportRequest(BaseModel):
         return value.strip().lower() if isinstance(value, str) else value
 
 
-def create_app(database_url: str | None = None, transport=None, *, coach_factory=open_coach) -> FastAPI:
+def create_app(database_url: str | None = None, transport=None, *, coach_factory=open_coach, game_engine=analyze_game_move) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Compose injects these variables; local Python runs read the same file.
@@ -45,16 +46,20 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
             migrate_sqlite(app.state.db, legacy_path)
         app.state.jobs = {}
         app.state.tasks = set()
+        app.state.db.interrupt_game_analyses()
+        app.state.game_analysis = GameAnalysisService(app.state.db, app.state.tasks, game_engine)
         async with httpx.AsyncClient(timeout=20, transport=transport, headers={"User-Agent": os.getenv("CHESSCOM_USER_AGENT", "ChessStudy/0.1 (local game library)"), "Accept": "application/json"}) as client:
             app.state.importer = ChessComImporter(app.state.db, client)
             yield
-            for task in app.state.tasks:
+            tasks = list(app.state.tasks)
+            for task in tasks:
                 task.cancel()
-            await asyncio.gather(*app.state.tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     app = FastAPI(title="Chess Study API", lifespan=lifespan)
     app.include_router(create_coach_router(coach_factory))
     app.include_router(create_preparation_router())
+    app.include_router(create_game_analysis_router())
 
     @app.exception_handler(psycopg.Error)
     async def database_error(request, exc):
@@ -84,7 +89,7 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
                    for ply, position in enumerate(detail["positions"])]
         feedback = app.state.db.coach_feedback_for_reviews(reviews + [(fen, None) for fen, _ in reviews])
         # Legacy position-only answers remain visible until a move review exists.
-        return {**record, **detail, "coach_responses": {
+        return {**record, **detail, "engine_analyses": app.state.db.game_analyses(game_id, record["pgn"]), "coach_responses": {
             str(ply): AnalyzePositionResponse(**answer).model_dump(mode="json")
             for ply, (fen, move) in enumerate(reviews)
             if (answer := feedback.get((fen, move)) or feedback.get((fen, None))) is not None

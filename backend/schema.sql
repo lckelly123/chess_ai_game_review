@@ -42,3 +42,18 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
 );
+-- Engine-only work is separate from paid coach feedback. Each key in moves is
+-- the zero-based pre-move ply, so UI markers open the decision before the move.
+CREATE TABLE IF NOT EXISTS game_engine_analysis (
+    game_id TEXT NOT NULL REFERENCES games(id),
+    player_color TEXT NOT NULL CHECK (player_color IN ('white', 'black')),
+    pgn_hash TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'interrupted')),
+    total INTEGER NOT NULL CHECK (total >= 0),
+    completed INTEGER NOT NULL DEFAULT 0 CHECK (completed >= 0),
+    counts JSONB NOT NULL DEFAULT '{}',
+    moves JSONB NOT NULL DEFAULT '{}',
+    error TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (game_id, player_color)
+);

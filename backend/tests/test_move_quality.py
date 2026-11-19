@@ -110,7 +110,7 @@ def test_outside_pool_search_stays_on_original_board_and_perspective(monkeypatch
 
 def test_feedback_reuses_reason_only_for_acceptable_selected_move():
     data = teaching_output()
-    data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": None, "better_candidate_uci": None}
+    data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": None, "better_candidate_uci": None, "mistake_classification": None}
     teaching = TeachingOutput.model_validate(data)
     evidence = {"move_quality": {"status": "good"}}
     teaching.validate_move_evaluation(played_move="g1h3", evidence=evidence)
@@ -125,7 +125,7 @@ def test_feedback_reuses_reason_only_for_acceptable_selected_move():
 
 def test_better_move_reference_requires_selected_candidate_and_meaningful_improvement():
     data = teaching_output()
-    data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": "The idea is useful, but the execution loses material.", "better_candidate_uci": "g1h3"}
+    data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": "The idea is useful, but the execution loses material.", "better_candidate_uci": "g1h3", "mistake_classification": None}
     teaching = TeachingOutput.model_validate(data)
     evidence = {"move_quality": {"status": "inaccuracy"}, "top_moves": [{"uci": "g1h3", **candidate()}],
                 "played_move": {"uci": "e2e4", **candidate(500, 100, 0)}}

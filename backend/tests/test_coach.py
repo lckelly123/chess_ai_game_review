@@ -25,7 +25,7 @@ def teaching_output(fen=chess.STARTING_FEN):
     return {
         "positional_thesis": "Test analysis.",
         "needs_of_position": "Test plan.",
-        "move_evaluation": {"plan_alignment": "unclear", "explanation": "Test move feedback.", "better_candidate_uci": None},
+        "move_evaluation": {"plan_alignment": "unclear", "explanation": "Test move feedback.", "better_candidate_uci": None, "mistake_classification": None},
         "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning.",
                              "highlight_squares": [chess.square_name(move.from_square), chess.square_name(move.to_square)]}] if move else [],
     }
