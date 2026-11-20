@@ -41,7 +41,7 @@ class Coach:
 
 
 @asynccontextmanager
-async def open_coach(settings: CoachSettings | None = None) -> AsyncIterator[Coach]:
+async def open_coach(settings: CoachSettings | None = None, *, position_engine=None, engine=None) -> AsyncIterator[Coach]:
     settings = settings or CoachSettings.from_env()
     async with open_response_client(settings) as client:
-        yield Coach(client, settings)
+        yield Coach(client, settings, position_engine=position_engine, engine=engine)

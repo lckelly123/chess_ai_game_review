@@ -7,7 +7,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .game_analysis import analysis_result, analysis_summary, pgn_fingerprint, quality_counts
+from .coach.classification import CLASSIFICATION_VERSION
+from .game_analysis import analysis_result, analysis_summary, coaching_total, pgn_fingerprint, quality_counts
 
 
 class Database:
@@ -46,7 +47,7 @@ class Database:
         with self.connection() as db:
             rows = db.execute(
                 """SELECT g.metadata, g.pgn, a.game_id, a.player_color, a.pgn_hash, a.status,
-                          a.total, a.completed, a.counts, a.error, a.updated_at
+                          a.total, a.completed, a.counts, a.coach_completed, a.coach_version, a.error, a.updated_at
                    FROM games g JOIN profile_games pg ON pg.game_id=g.id
                    LEFT JOIN game_engine_analysis a ON a.game_id=g.id AND a.player_color=
                        CASE WHEN lower(g.metadata->>'white')=%s THEN 'white' ELSE 'black' END
@@ -58,6 +59,15 @@ class Database:
         with self.connection() as db:
             row = db.execute("SELECT metadata, pgn FROM games WHERE id=%s", (game_id,)).fetchone()
             return {**row["metadata"], "pgn": row["pgn"]} if row else None
+
+    def lesson_games(self, username: str) -> list[dict]:
+        with self.connection() as db:
+            return db.execute(
+                """SELECT g.id, g.pgn, g.metadata, a.pgn_hash, a.moves
+                   FROM games g JOIN profile_games pg ON pg.game_id=g.id
+                   LEFT JOIN game_engine_analysis a ON a.game_id=g.id AND a.player_color=
+                       CASE WHEN lower(g.metadata->>'white')=%s THEN 'white' ELSE 'black' END
+                   WHERE pg.username=%s ORDER BY g.id""", (username, username)).fetchall()
 
     def game_analysis(self, game_id: str, color: str, fingerprint: str) -> dict | None:
         with self.connection() as db:
@@ -82,17 +92,20 @@ class Database:
             row = db.execute("SELECT * FROM game_engine_analysis WHERE game_id=%s AND player_color=%s FOR UPDATE",
                              (game_id, color)).fetchone()
             if row and row["pgn_hash"] == fingerprint:
-                if row["status"] == "completed":
+                if (row["status"] == "completed" and row["coach_completed"] >= coaching_total(row)
+                        and row["coach_version"] == CLASSIFICATION_VERSION):
                     return row
                 return db.execute("""UPDATE game_engine_analysis SET status='queued', error=NULL,
-                                  updated_at=clock_timestamp() WHERE game_id=%s AND player_color=%s RETURNING *""",
-                                  (game_id, color)).fetchone()
-            return db.execute("""INSERT INTO game_engine_analysis (game_id, player_color, pgn_hash, status, total)
-                              VALUES (%s, %s, %s, 'queued', %s)
+                                  coach_completed=CASE WHEN coach_version=%s THEN coach_completed ELSE 0 END,
+                                  coach_version=%s, updated_at=clock_timestamp()
+                                  WHERE game_id=%s AND player_color=%s RETURNING *""",
+                                  (CLASSIFICATION_VERSION, CLASSIFICATION_VERSION, game_id, color)).fetchone()
+            return db.execute("""INSERT INTO game_engine_analysis (game_id, player_color, pgn_hash, status, total, coach_version)
+                              VALUES (%s, %s, %s, 'queued', %s, %s)
                               ON CONFLICT (game_id, player_color) DO UPDATE SET pgn_hash=excluded.pgn_hash,
-                                  status='queued', total=excluded.total, completed=0, counts='{}', moves='{}',
+                                  status='queued', total=excluded.total, completed=0, counts='{}', moves='{}', coach_completed=0, coach_version=excluded.coach_version,
                                   error=NULL, updated_at=clock_timestamp() RETURNING *""",
-                              (game_id, color, fingerprint, total)).fetchone()
+                              (game_id, color, fingerprint, total, CLASSIFICATION_VERSION)).fetchone()
 
     def save_game_analysis_move(self, game_id: str, color: str, fingerprint: str, ply: int, result: dict) -> bool:
         with self.connection() as db:
@@ -105,6 +118,12 @@ class Database:
                        WHERE game_id=%s AND player_color=%s AND pgn_hash=%s""",
                        (len(row["moves"]), Jsonb(quality_counts(row["moves"])), game_id, color, fingerprint))
             return True
+
+    def save_game_coach_progress(self, game_id: str, color: str, fingerprint: str, completed: int) -> bool:
+        with self.connection() as db:
+            return db.execute("""UPDATE game_engine_analysis SET coach_completed=GREATEST(coach_completed, %s),
+                              updated_at=clock_timestamp() WHERE game_id=%s AND player_color=%s AND pgn_hash=%s""",
+                              (completed, game_id, color, fingerprint)).rowcount > 0
 
     def set_game_analysis_status(self, game_id: str, color: str, fingerprint: str, status: str, error: str | None):
         with self.connection() as db:
@@ -128,6 +147,7 @@ class Database:
                    (fen, text, model, response_id, usage, played_move, position_analysis, move_analysis, stockfish)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING fen, NULLIF(played_move, '') AS played_move, text, model, response_id, created_at, stockfish,
+                             position_analysis -> 'classification_version' AS classification_version,
                              position_analysis -> 'structured' AS teaching,
                              position_analysis -> 'engine_evidence' AS position_evidence""",
                 (analysis.position.fen, analysis.text, analysis.model, analysis.response_id,
@@ -147,7 +167,8 @@ class Database:
         with self.connection() as db:
             rows = db.execute(
                 """SELECT DISTINCT ON (cf.fen, cf.played_move) cf.fen, NULLIF(cf.played_move, '') AS played_move,
-                          text, model, response_id, created_at, stockfish, position_analysis -> 'structured' AS teaching,
+                          text, model, response_id, created_at, stockfish, position_analysis -> 'classification_version' AS classification_version,
+                             position_analysis -> 'structured' AS teaching,
                           position_analysis -> 'engine_evidence' AS position_evidence
                    FROM coach_feedback cf WHERE cf.fen = ANY(%s) AND cf.played_move = ANY(%s)
                    ORDER BY cf.fen, cf.played_move, created_at DESC, id DESC""",

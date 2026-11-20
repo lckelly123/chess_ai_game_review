@@ -21,10 +21,11 @@ const unclassifiedDescriptions = {
   mate_score: { label: 'Unclassified', description: 'Mate scores prevent a centipawn comparison.' },
 };
 
-const mistakeCategories = { tactical: 'Tactical', positional: 'Positional' };
+const mistakeCategories = { tactical_miss: 'Missed tactic', tactical_allowed: 'Allowed tactic', positional: 'Positional' };
 const mistakeSubcategories = {
-  hanging_piece: 'Hanging piece', fork: 'Fork', discovered_attack: 'Discovered attack',
-  pawn_structure: 'Pawn structure', piece_play: 'Piece play', defending: 'Defending', attacking: 'Attacking',
+  hanging_piece: 'Hanging piece', fork: 'Fork', pin_skewer: 'Pin / skewer', discovered_attack: 'Discovered attack',
+  pawn: 'Best move: pawn', knight: 'Best move: knight', bishop: 'Best move: bishop',
+  rook: 'Best move: rook', queen: 'Best move: queen', king: 'Best move: king',
 };
 const mateQualityDescriptions: Record<string, string> = {
   mate_created: 'Allows a forced checkmate against you.',
@@ -61,6 +62,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
 
   return <div className="coach-cards">
     <div className="coach-card-body" aria-busy={pending}>
+      {response?.classification_current === false && <p className="coach-placeholder">This saved review uses an earlier coach. Run coach to update its analysis and lesson labels.</p>}
       {!engineOnly && <>
       <section className="coach-section" aria-labelledby={`${id}-understand-title`}>
         <div className="coach-section-heading">

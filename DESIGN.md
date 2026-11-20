@@ -20,6 +20,7 @@ colors:
   selection-badge: "#2b4257"
   warning-surface: "#342d20"
   warning-ink: "#e6c389"
+  severity-mistake: "#efaa72"
   board-light: "#d6e4e9"
   board-dark: "#7399ad"
   last-move-overlay: "#d4d57088"
@@ -141,6 +142,16 @@ components:
     padding: "6px 10px"
   board:
     rounded: "{rounded.board}"
+  navigation-tab:
+    textColor: "{colors.muted}"
+    padding: "0px 2px"
+  navigation-tab-current:
+    textColor: "{colors.ink}"
+  lessons-table:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.panel}"
+    width: "100%"
 ---
 
 # Design System: Chess study
@@ -177,6 +188,8 @@ The locally bundled Icy Sea image supplies the board's textured light and blue s
 
 **The Position State Rule.** Keep the position caption, last-move squares, and check distinguishable; each communicates a different part of the replay state.
 
+Lessons severity headings use warning amber for Inaccuracy, warm orange for Mistake, and the existing negative coral for Blunder. Counts stay neutral, with muted but readable zeros; severity is also named in each column. These table roles match the library severity counts; the replay timeline retains its distinct stronger red Blunder marker.
+
 ## Typography
 
 Locally bundled DM Sans Variable supplies all headings, controls, names, metadata, and notation. The game-title separator uses the same family at regular weight. Newsreader is no longer imported.
@@ -185,14 +198,17 @@ The library title is (38px), saved-games heading (19px), opponent names (14px), 
 
 ## Layout
 
-The app has two separate screens. The root URL opens the game library without a board. The library is centered at a maximum outer width of (1120px), with (38px 36px 24px) padding. A (68px) canvas-colored header sits above it. A short title leads into one compact import form, then saved-player selection, search, filters, and a scrollable list. Desktop rows align result, opponent, time control, date, and Analyze in columns.
+The app has library, replay, and Lessons screens. The root URL opens the game library without a board. The library is centered at a maximum outer width of (1120px), with (38px 36px 24px) padding. A (68px) canvas-colored header sits above it. A short title leads into one compact import form, then saved-player selection, search, filters, and a scrollable list. Desktop rows align result, opponent, time control, date, and Analyze in columns.
+
+Lessons shares the library container. Its title and player/refresh controls sit opposite each other with a (24px) gap and (32px) space before the content. The title reuses the (38px) display treatment. A compact error count and library-coverage summary precede one full-width grouped table, with (18px) separation. Notes follow the table after (16px).
 
 Analyze opens a hash route containing the game ID and player. The dedicated replay screen has a maximum outer width of (1680px), a Back to games link, game heading, board, and Coach panel. The board caps at (620px). Board and Coach share the width in a 1:1.45 ratio with a (32px) gap. Inside Coach, one outlined response panel spans the available width. Position teaching, candidates, and move feedback share one card. The panel grows with its content and the page scrolls naturally. Browser navigation and direct replay links work. Returning within the session restores filters, list/page scrolling, and focus to the originating Analyze link. Replay position remains saved per game.
 
 - At (1200px) and below, the board remains beside the single Coach response panel in a 1:1.35 ratio.
 - At (960px) and below, page side padding becomes (24px), game columns tighten, and the replay gap becomes (24px).
 - At (900px) and below, Coach moves below the centered board; the combined response remains one panel.
-- At (700px) and below, the header becomes (64px), library side padding (18px), and import controls wrap under the username. Filters sit below search. Game rows place their Analyze link on the right with date beneath it. The list caps at (520px).
+- At (700px) and below, the header wraps into two rows with a minimum height of (108px) and padding of (12px 18px 0). The full-width second row keeps both navigation links visible with targets at least (44px) tall. Library side padding becomes (18px), and import controls wrap under the username. Filters sit below search. Game rows place their Analyze link on the right with date beneath it. The list caps at (520px).
+- At (700px) and below, Lessons stacks its heading and controls with a (16px) gap, uses a (32px) title, and stacks the summary. Table horizontal cell padding becomes (12px), with (20px) for subcategory labels. At (520px) and below, the table uses (14px) body and (11px) column headings, (6px) horizontal cell padding, and (12px) outer text insets; labels wrap and Inaccuracy shortens to Inacc. with its full expansion retained. The name column changes from (40%) to (36%), and each of the four numeric columns from (15%) to (16%).
 - At (700px) and below, replay uses one column. Replay side padding is (16px); the response body uses (18px) padding. Candidate rows and stronger-move links retain touch targets at least (44px) tall.
 - At (370px) and below, spacing and replay controls tighten and response padding becomes (14px). The body has no fixed minimum width, so (320px) viewports accommodate the scrollbar without horizontal overflow.
 
@@ -215,6 +231,16 @@ Button color transitions take (140ms). Interactive focus uses a solid blue outli
 ### Inputs and filters
 
 Charcoal fields use clearly visible grey borders and gently curved corners. The username field reserves room for its clear control. Search has a leading icon, while native select controls handle imported player, import count, speed, and result. Keep visible labels or accessible names on all fields.
+
+### Primary navigation
+
+The persistent header contains real links to Your game library and Lessons. Muted (13px) labels and compact outline SVG icons sit (8px) apart within links; the links are separated by (24px). Hover uses soft white, while the current page combines soft white with a blue bottom rule (2px) and `aria-current="page"`. Replay keeps the library tab current. Existing keyboard focus remains visible. The header gap between brand and navigation is (40px), reducing to (24px) at (960px); its mobile treatment is defined in Layout.
+
+### Lessons table
+
+One charcoal panel with the established (12px) corners and fine border contains a semantic, fixed-layout table. Missed tactics, Allowed tactics, and Positional groups have bold totals above indented, regular-weight subcategories. Positional rows identify the piece in Stockfish’s best move. An earlier-review notice uses neutral text and a blue library link above the table; it is not a success state. The first column is left aligned; numeric columns are right aligned with tabular numerals. Cell padding is (13px 24px) with (1.5) line height. Column headings use muted (13px) text with (16px) vertical padding, aside from the named severity colors. Group rows use (650) weight and (20px 24px 12px) padding; desktop subcategory labels have a (40px) left inset. Detail rows gain a neutral hover fill. Fine rules separate groups, and a brighter field-border rule distinguishes the All errors footer with (18px) vertical padding and (650) weight.
+
+Keep the total column semibold and zeros visible in muted text. Unclassified errors receive a separate row when present. The table has a descriptive accessible caption and scoped row, row-group, and column headings. Player selection and refresh reuse existing controls with a minimum (44px) height. Loading uses quiet table-shaped placeholders; errors offer retry, and the empty state links to the game library. Notes below the table explain count coverage without another panel.
 
 ### Library rows and result markers
 

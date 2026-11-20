@@ -57,3 +57,9 @@ CREATE TABLE IF NOT EXISTS game_engine_analysis (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (game_id, player_color)
 );
+-- Coaching is resumable separately from engine progress; feedback itself stays
+-- in coach_feedback, keyed by the full pre-move FEN and played move.
+ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS coach_completed INTEGER NOT NULL DEFAULT 0 CHECK (coach_completed >= 0);
+
+-- Keep engine results when refreshing reviews for a new classification taxonomy.
+ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS coach_version INTEGER NOT NULL DEFAULT 0;

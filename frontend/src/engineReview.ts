@@ -1,15 +1,30 @@
 import type { CoachMove } from './coachMoves.ts';
 import type { CandidateSelection } from './boardAnnotations.ts';
-import type { EngineReview, GameAnalysisSummary, Move, MoveQuality, Position } from './types.ts';
+import type { CoachResponse, EngineReview, GameAnalysisSummary, Move, MoveQuality, Position } from './types.ts';
 
 export const qualityLabels: Record<MoveQuality, string> = {good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder', uncertain: 'Quality uncertain'};
 export const analysisActive = (analysis?: GameAnalysisSummary | null) => analysis?.status === 'queued' || analysis?.status === 'running';
+export const coachingPending = (analysis?: GameAnalysisSummary | null) => (analysis?.coach_completed ?? 0) < (analysis?.coach_total ?? 0);
 
 export function analysisProgress(analysis: GameAnalysisSummary) {
   if (analysis.status === 'queued') return `Queued · ${analysis.completed}/${analysis.total} moves`;
+  if (analysis.completed === analysis.total && coachingPending(analysis)) {
+    const progress = `${analysis.coach_completed}/${analysis.coach_total} flagged moves`;
+    if (analysis.status === 'running') return `Coaching ${progress}`;
+    if (analysis.status === 'completed') return `${analysis.completed} moves analyzed · Coach reviews pending`;
+    return `Coaching paused · ${progress}`;
+  }
   if (analysis.status === 'running') return `Analyzing ${analysis.completed}/${analysis.total} moves`;
-  if (analysis.status === 'completed') return `${analysis.completed} moves analyzed`;
+  if (analysis.status === 'completed') return `${analysis.completed} moves analyzed${analysis.coach_completed ? ` · ${analysis.coach_completed} coach reviews saved` : ''}`;
   return `Paused · ${analysis.completed}/${analysis.total} moves`;
+}
+
+export function mergeCoachResponses(current: Record<string, CoachResponse>, incoming: Record<string, CoachResponse>) {
+  const merged = {...current};
+  for (const [ply, response] of Object.entries(incoming)) {
+    if (!merged[ply] || Date.parse(response.created_at) >= Date.parse(merged[ply].created_at)) merged[ply] = response;
+  }
+  return merged;
 }
 
 export function engineMoves(review?: EngineReview): CoachMove[] {

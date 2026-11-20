@@ -32,12 +32,13 @@ export type GameAnalysisSummary = {
   game_id: string; player_color: 'white' | 'black';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted';
   total: number; completed: number; counts: Partial<Record<MoveQuality, number>>;
+  coach_total: number; coach_completed: number;
   error: string | null; updated_at: string;
 };
 export type GameAnalysis = GameAnalysisSummary & { moves: Record<string, EngineReview> };
 export type MistakeClassification =
-  | { category: 'tactical'; subcategory: 'hanging_piece' | 'fork' | 'discovered_attack' | null }
-  | { category: 'positional'; subcategory: 'pawn_structure' | 'piece_play' | 'defending' | 'attacking' | null };
+  | { category: 'tactical_miss' | 'tactical_allowed'; subcategory: 'hanging_piece' | 'fork' | 'pin_skewer' | 'discovered_attack' }
+  | { category: 'positional'; subcategory: 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king' };
 export type PositionTeaching = {
   positional_thesis: string;
   needs_of_position: string;
@@ -61,6 +62,8 @@ export type CoachResponse = {
   fen: string; played_move: string | null; text: string; model: string; response_id: string; created_at: string;
   stockfish?: EngineAnalysis | null;
   teaching?: PositionTeaching | null;
+  classification_current?: boolean;
+  classification_version?: number | null;
   position_evidence?: PositionEvidence | null;
   candidate_san?: Record<string, string>;
 };

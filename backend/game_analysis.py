@@ -1,4 +1,4 @@
-"""Resumable, engine-only analysis of one player's decisions in a saved game."""
+"""Resumable engine analysis and coaching of one player's flagged moves."""
 
 import asyncio
 from collections import Counter
@@ -10,14 +10,22 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from .chess_games import replay
+from .coach.classification import CLASSIFICATION_VERSION, current_classification
 from .coach.move_review import MoveReview
 from .coach.move_quality import analyze_played_move
 from .coach.player_move_quality import with_player_move_quality
 from .coach.position_classification import analyze_position
 from .coach.stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
+from .coach.service import CoachResponseError, open_coach
+from .coach.settings import CoachConfigurationError, CoachModel, CoachSettings, DEFAULT_COACH_MODEL
 
 logger = logging.getLogger(__name__)
 ACTIVE_STATUSES = {"queued", "running"}
+COACH_QUALITIES = {"inaccuracy", "mistake", "blunder"}
+
+
+def coaching_total(row: dict) -> int:
+    return sum(row["counts"].get(quality, 0) for quality in COACH_QUALITIES)
 
 
 def pgn_fingerprint(pgn: str) -> str:
@@ -34,7 +42,9 @@ def player_color(record: dict, username: str) -> str:
 def analysis_summary(row: dict | None) -> dict | None:
     if row is None:
         return None
-    return {key: row[key] for key in ("game_id", "player_color", "status", "total", "completed", "counts", "error", "updated_at")}
+    return {**{key: row[key] for key in ("game_id", "player_color", "status", "total", "completed", "counts", "error", "updated_at")},
+            "coach_total": coaching_total(row),
+            "coach_completed": row.get("coach_completed", 0) if row.get("coach_version") == CLASSIFICATION_VERSION else 0}
 
 
 def analysis_result(row: dict | None) -> dict | None:
@@ -50,17 +60,19 @@ def analyze_game_move(review: MoveReview) -> dict:
     # coaching, without constructing a graph or contacting a model. The UI shows
     # the first three of these ranked lines, independent of candidate approval.
     position = analyze_position(review.position.fen)
-    return analyze_played_move(review, position)
+    return {**analyze_played_move(review, position), "position_evidence": position}
 
 
 class GameAnalysisService:
-    def __init__(self, database, tasks: set, analyzer=analyze_game_move):
+    def __init__(self, database, tasks: set, analyzer=analyze_game_move, *, coach_factory=None, coach_lock=None):
         self.db = database
         self.tasks = tasks
         self.analyzer = analyzer
         self.active = {}
         self.start_lock = asyncio.Lock()
         self.engine_lock = asyncio.Lock()
+        self.coach_factory = coach_factory or open_coach
+        self.coach_lock = coach_lock if coach_lock is not None else asyncio.Lock()
 
     async def game_for_player(self, game_id: str, username: str):
         record = await run_in_threadpool(self.db.game, game_id)
@@ -72,7 +84,7 @@ class GameAnalysisService:
             raise HTTPException(422, str(exc)) from exc
         return record, color, pgn_fingerprint(record["pgn"])
 
-    async def start(self, game_id: str, username: str):
+    async def start(self, game_id: str, username: str, model: CoachModel = DEFAULT_COACH_MODEL):
         async with self.start_lock:
             record, color, fingerprint = await self.game_for_player(game_id, username)
             key = (game_id, color)
@@ -88,9 +100,10 @@ class GameAnalysisService:
             targets = [(ply, detail["positions"][ply]["fen"], move["uci"])
                        for ply, move in enumerate(detail["moves"]) if move["color"] == color]
             row = await run_in_threadpool(self.db.begin_game_analysis, game_id, color, fingerprint, len(targets))
-            if row["status"] == "completed":
+            if (row["status"] == "completed" and row.get("coach_completed", 0) >= coaching_total(row)
+                    and row.get("coach_version") == CLASSIFICATION_VERSION):
                 return analysis_result(row)
-            task = asyncio.create_task(self._run(game_id, color, fingerprint, targets, row["moves"]))
+            task = asyncio.create_task(self._run(game_id, color, fingerprint, targets, row["moves"], model))
             self.active[key] = task
             self.tasks.add(task)
             task.add_done_callback(self.tasks.discard)
@@ -111,9 +124,41 @@ class GameAnalysisService:
                 row.update(status="interrupted", error=message)
             return analysis_result(row)
 
-    async def _run(self, game_id, color, fingerprint, targets, saved):
+    async def _coach_moves(self, game_id, color, fingerprint, targets, saved, model):
+        completed = 0
+        for ply, fen, uci in targets:
+            evidence = saved[str(ply)]
+            if evidence["stockfish"].get("move_quality", {}).get("status") not in COACH_QUALITIES:
+                continue
+            # Share the manual Run coach lock, and check the cache inside it so
+            # a manual review finishing while we wait cannot create a duplicate.
+            async with self.coach_lock:
+                current = await run_in_threadpool(self.db.game, game_id)
+                if current is None or pgn_fingerprint(current["pgn"]) != fingerprint:
+                    return False
+                previous = await run_in_threadpool(self.db.coach_feedback_for_reviews, [(fen, uci)])
+                if not current_classification(previous.get((fen, uci))):
+                    await run_in_threadpool(self.db.health)
+                    options = {}
+                    if evidence.get("position_evidence"):
+                        # New jobs reuse the exact evidence that selected this
+                        # move. Older engine-only saves use the normal coach search.
+                        options = {"position_engine": lambda _: evidence["position_evidence"],
+                                   "engine": lambda *_: evidence["stockfish"]}
+                    async with self.coach_factory(CoachSettings.from_env(model=model), **options) as coach:
+                        result = await coach.analyze(fen, played_move=uci)
+                    if result.position.fen != fen or result.played_move != uci:
+                        raise CoachResponseError("The coach returned a different position or move.", result.response_id)
+                    await run_in_threadpool(self.db.save_coach_feedback, result)
+                completed += 1
+                if not await run_in_threadpool(self.db.save_game_coach_progress, game_id, color, fingerprint, completed):
+                    return False
+        return True
+
+    async def _run(self, game_id, color, fingerprint, targets, saved, model):
         async def status(value, error=None):
             await run_in_threadpool(self.db.set_game_analysis_status, game_id, color, fingerprint, value, error)
+        phase = "engine"
         try:
             # One game search at a time avoids multiplying Stockfish CPU/hash
             # usage when multiple games are submitted. Queued work is durable.
@@ -131,16 +176,26 @@ class GameAnalysisService:
                             or not evidence.get("top_moves")):
                         raise StockfishAnalysisError("Engine evidence does not match the requested move.")
                     result = {"fen": review.position.fen, "played_move": uci,
-                              "stockfish": with_player_move_quality(evidence)}
+                              "stockfish": with_player_move_quality({key: value for key, value in evidence.items()
+                                                                     if key != "position_evidence"})}
+                    if evidence.get("position_evidence"):
+                        result["position_evidence"] = evidence["position_evidence"]
                     persisted = await run_in_threadpool(self.db.save_game_analysis_move, game_id, color, fingerprint, ply, result)
                     if not persisted:
                         return  # The PGN was replaced; never write stale results.
+                    saved[str(ply)] = result
+            phase = "coach"
+            if await self._coach_moves(game_id, color, fingerprint, targets, saved, model):
                 await status("completed")
         except asyncio.CancelledError:
             await status("interrupted", "Analysis paused. Resume to finish the remaining moves.")
             raise
         except Exception as exc:
-            if isinstance(exc, StockfishUnavailableError):
+            if isinstance(exc, CoachConfigurationError):
+                message = "Coach configuration is missing or invalid. Check the API key and settings, then resume."
+            elif phase == "coach":
+                message = "Coaching could not finish. Engine results and saved reviews are kept; resume to try again."
+            elif isinstance(exc, StockfishUnavailableError):
                 message = "Stockfish is unavailable. Check its installation, then resume analysis."
             elif isinstance(exc, StockfishTimeoutError):
                 message = "Stockfish took too long. Resume to retry the remaining moves."
@@ -159,6 +214,7 @@ class GameAnalysisService:
 class StartGameAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
+    model: CoachModel = DEFAULT_COACH_MODEL
 
     @field_validator("username", mode="before")
     @classmethod
@@ -171,7 +227,7 @@ def create_game_analysis_router() -> APIRouter:
 
     @router.post("/{game_id}/analysis", status_code=202)
     async def start(game_id: str, body: StartGameAnalysis, request: Request):
-        return await request.app.state.game_analysis.start(game_id, body.username)
+        return await request.app.state.game_analysis.start(game_id, body.username, body.model)
 
     @router.get("/{game_id}/analysis")
     async def saved(game_id: str, request: Request, username: str = Query(min_length=1, max_length=50)):

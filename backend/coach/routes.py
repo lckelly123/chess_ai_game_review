@@ -19,6 +19,7 @@ from .service import CoachResponseError, open_coach
 from .settings import CoachConfigurationError, CoachModel, CoachSettings, DEFAULT_COACH_MODEL
 from .stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
 from .teaching import TeachingAnalysis
+from .classification import CLASSIFICATION_VERSION
 from .player_move_quality import with_player_move_quality
 
 
@@ -47,6 +48,12 @@ class AnalyzePositionResponse(BaseModel):
     created_at: datetime
     stockfish: dict | None = None
     teaching: TeachingAnalysis | None = None
+    classification_version: int | None = None
+
+    @computed_field
+    @property
+    def classification_current(self) -> bool:
+        return self.classification_version == CLASSIFICATION_VERSION
     position_evidence: dict | None = None
 
     @field_validator("stockfish")
@@ -60,11 +67,11 @@ class AnalyzePositionResponse(BaseModel):
         return self.teaching.candidate_san(self.fen) if self.teaching is not None else {}
 
 
-def create_coach_router(coach_factory=open_coach) -> APIRouter:
+def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRouter:
     router = APIRouter(prefix="/api/coach", tags=["coach"])
     # This is a single-user, single-worker app. Reject overlapping requests
     # rather than queueing extra paid generations (including other tabs).
-    request_lock = asyncio.Lock()
+    request_lock = request_lock if request_lock is not None else asyncio.Lock()
 
     @router.get("/feedback", response_model=AnalyzePositionResponse | None)
     async def saved_feedback(http_request: Request, fen: str = Query(min_length=1, max_length=256),

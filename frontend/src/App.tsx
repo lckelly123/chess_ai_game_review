@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, BookOpen, Check, CircleAlert, Clock3, LoaderCircle, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Check, CircleAlert, Clock3, GraduationCap, LoaderCircle, RefreshCw, Search, X } from 'lucide-react';
 import { BrandKnight } from './Board';
 import Replay from './Replay';
 import GameAnalysisAction from './GameAnalysisAction';
+import Lessons from './Lessons';
 import { api, perspective, readStored, store, timeControl } from './types';
 import type { Game, GameDetail, ImportJob, Profile } from './types';
 
@@ -18,6 +19,7 @@ export default function App() {
   const [limit, setLimit] = useState(50);
   const [games, setGames] = useState<Game[]>([]);
   const [replayRoute, setReplayRoute] = useState(readReplayRoute);
+  const [lessonsOpen, setLessonsOpen] = useState(() => window.location.hash === '#lessons');
   const [detail, setDetail] = useState<GameDetail | null>(null);
   const [search, setSearch] = useState('');
   const [speed, setSpeed] = useState('all');
@@ -36,20 +38,20 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const gameListRef = useRef<HTMLUListElement>(null);
   const libraryPosition = useRef({ page: 0, list: 0, game: '' });
-  const wasReplaying = useRef(!!replayRoute);
+  const wasOutsideLibrary = useRef(!!replayRoute || lessonsOpen);
   const busy = submitting || !!jobId;
 
   useEffect(() => {
-    const navigate = () => setReplayRoute(readReplayRoute());
+    const navigate = () => { setReplayRoute(readReplayRoute()); setLessonsOpen(window.location.hash === '#lessons'); };
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
 
   useLayoutEffect(() => {
-    if (replayRoute) {
+    if (replayRoute || lessonsOpen) {
       window.scrollTo(0, 0);
-      workspaceRef.current?.focus({ preventScroll: true });
-    } else if (wasReplaying.current) {
+      if (replayRoute) workspaceRef.current?.focus({ preventScroll: true });
+    } else if (wasOutsideLibrary.current) {
       const list = gameListRef.current;
       if (list) {
         list.scrollTop = libraryPosition.current.list;
@@ -57,9 +59,9 @@ export default function App() {
       }
       window.scrollTo(0, libraryPosition.current.page);
     }
-    wasReplaying.current = !!replayRoute;
-    document.title = replayRoute ? 'Chess study — Game replay' : 'Chess study — Your game library';
-  }, [replayRoute]);
+    wasOutsideLibrary.current = !!replayRoute || lessonsOpen;
+    document.title = lessonsOpen ? 'Chess study — Lessons' : replayRoute ? 'Chess study — Game replay' : 'Chess study — Your game library';
+  }, [replayRoute, lessonsOpen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -140,9 +142,18 @@ export default function App() {
   const activeProfile = profiles.find(p => p.username === username);
 
   return <>
-    <header className="site-header"><a className="wordmark" href="#games" aria-label="Chess study home"><span className="brand-piece"><BrandKnight/></span>Chess <span>study</span></a><span className="header-purpose"><BookOpen size={16}/> {replayRoute ? 'Game replay' : 'Your game library'}</span><span className="local-label"><span/> Saved on this device</span></header>
+    <header className="site-header"><a className="wordmark" href="#games" aria-label="Chess study home"><span className="brand-piece"><BrandKnight/></span>Chess <span>study</span></a>
+      <nav className="primary-nav" aria-label="Main navigation">
+        <a href="#games" aria-current={!lessonsOpen ? 'page' : undefined}><BookOpen size={16}/> <span>Your game library</span></a>
+        <a href="#lessons" aria-current={lessonsOpen ? 'page' : undefined} onClick={() => {
+          if (!replayRoute && !lessonsOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
+        }}><GraduationCap size={17}/> Lessons</a>
+      </nav><span className="local-label"><span/> Saved on this device</span></header>
     <main className={`app-layout ${replayRoute ? 'replay-layout' : 'library-layout'}`}>
-      {!replayRoute ? <div className="library">
+      {lessonsOpen ? <Lessons key={username} profiles={profiles} username={username} profilesLoading={loading && !profiles.length}
+        profileError={!username ? libraryError : ''} onRetryProfiles={() => setBoot(value => value + 1)}
+        onSelectPlayer={value => { setUsername(value); setInput(value); setSearch(''); setSpeed('all'); setResult('all'); }}/>
+      : !replayRoute ? <div className="library">
         <div className="library-heading"><h1>Your game library.</h1><p>Import your Chess.com games and choose one to replay.</p></div>
         <section className="import-section" aria-label="Import games from Chess.com">
           <div className="import-fields">

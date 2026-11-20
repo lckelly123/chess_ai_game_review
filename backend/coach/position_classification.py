@@ -48,24 +48,52 @@ def _candidate_with_expectation(board: chess.Board, info: dict, rank: int) -> tu
     }, expectation
 
 
+def _validated_candidates(board: chess.Board, infos: list[dict]) -> list[tuple[dict, Fraction]]:
+    evaluated = [_candidate_with_expectation(board, info, rank) for rank, info in enumerate(infos, 1)]
+    if len({candidate["uci"] for candidate, _ in evaluated}) != len(evaluated):
+        raise StockfishAnalysisError("Stockfish returned duplicate candidate moves.")
+    for index in range(1, len(evaluated)):
+        if (infos[index - 1]["score"].pov(board.turn) < infos[index]["score"].pov(board.turn)
+                or evaluated[index - 1][1] < evaluated[index][1]):
+            raise StockfishAnalysisError("Stockfish candidate scores are inconsistent with their best-move ordering.")
+    return evaluated
+
+
 async def _complete_candidates(engine, board: chess.Board, limit: chess.engine.Limit, count: int) -> list[dict]:
-    # A timed MultiPV search can stop between candidate lines. Retain the latest
-    # complete set instead of comparing moves from different depths.
-    iterations: dict[int, dict[int, dict]] = {}
+    # Stockfish emits ranked batches, sometimes with new-depth leaders followed
+    # by older-depth lines. Merging those updates by depth/rank can duplicate a
+    # root after it changes rank. Only commit a whole, validated batch; later
+    # partial or inconsistent batches must never overwrite that snapshot.
+    pending: list[dict] = []
+    complete: list[dict] = []
+    last_error = None
     with await engine.analysis(board, limit, multipv=count) as analysis:
         async for info in analysis:
             depth, rank = info.get("depth"), info.get("multipv")
-            if type(depth) is not int or depth < 1 or rank not in range(1, count + 1):
+            if type(rank) is not int or rank not in range(1, count + 1):
                 continue
-            if not {"pv", "score", "wdl"} <= info.keys():
+            if rank == 1:
+                pending = []
+            if (type(depth) is not int or depth < 1
+                    or rank != len(pending) + 1
+                    or (pending and depth != pending[0]["depth"])
+                    or not {"pv", "score", "wdl"} <= info.keys()
+                    or info.get("lowerbound") or info.get("upperbound")):
+                pending = []
                 continue
-            if info.get("lowerbound") or info.get("upperbound"):
-                continue
-            iterations.setdefault(depth, {})[rank] = info
-    for depth in sorted(iterations, reverse=True):
-        if set(iterations[depth]) == set(range(1, count + 1)):
-            return [iterations[depth][rank] for rank in range(1, count + 1)]
-    raise StockfishAnalysisError("Stockfish did not return all candidate moves at a common depth with WDL estimates.")
+            pending.append(info)
+            if rank == count:
+                try:
+                    _validated_candidates(board, pending)
+                except StockfishAnalysisError as exc:
+                    last_error = exc
+                else:
+                    if not complete or depth >= complete[0]["depth"]:
+                        complete = pending
+                pending = []
+    if complete:
+        return complete
+    raise StockfishAnalysisError("Stockfish did not return a complete, consistent candidate batch at a common depth with WDL estimates.") from last_error
 
 
 async def _analyze_candidates(board: chess.Board, settings: StockfishSettings, count: int) -> tuple[str, list[dict]]:
@@ -77,9 +105,16 @@ async def _analyze_candidates(board: chess.Board, settings: StockfishSettings, c
         limit = chess.engine.Limit(depth=settings.depth, time=settings.time_limit)
         # The stream itself has no built-in deadline. Bound the whole search so
         # an unresponsive engine cannot keep a caller waiting indefinitely.
-        async with asyncio.timeout(settings.time_limit + 5.0):
-            infos = await _complete_candidates(engine, board, limit, count)
-        return engine.id.get("name", "Stockfish"), infos
+        for attempt in range(2):
+            try:
+                async with asyncio.timeout(settings.time_limit + 5.0):
+                    infos = await _complete_candidates(engine, board, limit, count)
+                return engine.id.get("name", "Stockfish"), infos
+            except StockfishAnalysisError:
+                # A search with no usable snapshot gets one fresh stream. Keep
+                # the retry bounded and never accept incomplete evidence.
+                if attempt:
+                    raise
     finally:
         transport.close()
 
@@ -134,16 +169,11 @@ def _position_evidence(fen: str, settings: StockfishSettings | None, *, count: i
     settings = settings or StockfishSettings.from_env()
     try:
         engine_name, infos = asyncio.run(_analyze_candidates(board, settings, min(count, legal_move_count)))
-        evaluated = [_candidate_with_expectation(board, info, rank) for rank, info in enumerate(infos, 1)]
+        evaluated = _validated_candidates(board, infos)
         candidates = [candidate for candidate, _ in evaluated]
-        if len({candidate["uci"] for candidate in candidates}) != len(candidates):
-            raise StockfishAnalysisError("Stockfish returned duplicate candidate moves.")
         best, best_e = evaluated[0]
         best_cp = best["score"]["cp"]
-        for index, (candidate, expected_score) in enumerate(evaluated):
-            if index and (infos[index - 1]["score"].pov(board.turn) < infos[index]["score"].pov(board.turn)
-                          or evaluated[index - 1][1] < expected_score):
-                raise StockfishAnalysisError("Stockfish candidate scores are inconsistent with their best-move ordering.")
+        for candidate, expected_score in evaluated:
             cp = candidate["score"]["cp"]
             candidate["relative_quality"] = {
                 "cp_loss_from_best": best_cp - cp if best_cp is not None and cp is not None else None,

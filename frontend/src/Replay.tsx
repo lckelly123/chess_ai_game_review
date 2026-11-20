@@ -6,7 +6,7 @@ import type { CoachResponse, GameAnalysis, GameDetail } from './types';
 import { api, perspective, readStored, store, timeControl } from './types';
 import { AUTOPLAY_TURN_MS, BETWEEN_TURNS_MS, playerTurnStops, replayNavigation, restoreReplay } from './replayNavigation';
 import { visibleCandidate, type CandidateSelection } from './boardAnnotations';
-import { analysisActive, analysisProgress, engineMoves, engineSelectionId, errorMarkers, visibleEngineCandidate } from './engineReview';
+import { analysisActive, analysisProgress, engineMoves, engineSelectionId, errorMarkers, mergeCoachResponses, visibleEngineCandidate } from './engineReview';
 
 const COACH_MODELS = [
   { value: 'gpt-6-astra', label: 'GPT-6 Astra' },
@@ -82,15 +82,22 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     if (!analyzing) return;
     const controller = new AbortController();
     let timer: number;
+    let savedReviews = analysis?.coach_completed ?? 0;
     const poll = async () => {
       try {
         const latest = await api<GameAnalysis | null>(`/api/games/${game.id}/analysis?username=${encodeURIComponent(username)}`, {signal: controller.signal});
         if (controller.signal.aborted) return;
+        if ((latest?.coach_completed ?? 0) > savedReviews) {
+          const updated = await api<GameDetail>(`/api/games/${game.id}`, {signal: controller.signal});
+          if (controller.signal.aborted) return;
+          setCoachResponses(current => mergeCoachResponses(current, updated.coach_responses));
+          savedReviews = latest!.coach_completed;
+        }
         setAnalysis(latest); setAnalysisError('');
         if (analysisActive(latest)) timer = window.setTimeout(poll, 1500);
       } catch (err) {
         if (controller.signal.aborted) return;
-        setAnalysisError(err instanceof Error ? err.message : 'Could not check engine progress.');
+        setAnalysisError(err instanceof Error ? err.message : 'Could not check analysis progress.');
         timer = window.setTimeout(poll, 4000);
       }
     };

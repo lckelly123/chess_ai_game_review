@@ -1,0 +1,69 @@
+.lessons-page { min-width: 0; }
+.lessons-heading { display: flex; justify-content: space-between; align-items: start; gap: 24px; margin-bottom: 32px; }
+.lessons-heading h1 { font-size: 38px; font-weight: 550; letter-spacing: -.035em; line-height: 1.15; }
+.lessons-heading p { margin-top: 10px; color: var(--muted); font-size: 16px; line-height: 1.6; }
+.lessons-controls { padding-top: 4px; flex-shrink: 0; }
+.lessons-controls select { min-height: 44px; font-size: 14px; }
+.lessons-controls .icon-button { min-width: 44px; min-height: 44px; }
+.lessons-summary { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 18px; }
+.lessons-summary p { font-size: 16px; }
+.lessons-summary strong { font-weight: 650; }
+.lessons-summary > span { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.lesson-table-wrap { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.lesson-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 16px; }
+.lesson-table col { width: 15%; }
+.lesson-table .lesson-name-column { width: 40%; }
+.lesson-table th, .lesson-table td { padding: 13px 24px; text-align: right; line-height: 1.5; }
+.lesson-table th:first-child { text-align: left; }
+.lesson-table thead th { font-size: 13px; font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--line); padding-top: 16px; padding-bottom: 16px; }
+.lesson-table thead .inaccuracy { color: var(--warning); }
+.lesson-table thead .mistake { color: #efaa72; }
+.lesson-table thead .blunder { color: var(--negative); }
+.lesson-table .lesson-count { font-variant-numeric: tabular-nums; }
+.lesson-table .zero { color: var(--muted); }
+.lesson-table .total { font-weight: 600; }
+.lesson-table .severity-short { display: none; text-decoration: none; }
+.lesson-group th, .lesson-group td { padding-top: 20px; padding-bottom: 12px; font-weight: 650; }
+.lesson-table tbody + tbody { border-top: 1px solid var(--line); }
+.lesson-detail th { font-weight: 400; padding-left: 40px; }
+.lesson-detail th, .lesson-detail td { color: var(--muted); }
+.lesson-detail .lesson-count:not(.zero) { color: var(--ink); }
+.lesson-detail:last-child th, .lesson-detail:last-child td { padding-bottom: 22px; }
+.lesson-detail:hover { background: var(--hover); }
+.lesson-unclassified th { font-weight: 500; }
+.lesson-table tfoot { border-top: 1px solid var(--field-border); }
+.lesson-table tfoot th, .lesson-table tfoot td { padding-top: 18px; padding-bottom: 18px; font-weight: 650; }
+.lessons-notes { margin-top: 16px; color: var(--muted); font-size: 13px; line-height: 1.7; max-width: 76ch; }
+.lessons-notes p + p { margin-top: 6px; }
+.lessons-note { color: var(--positive); margin-bottom: 18px; font-size: 16px; line-height: 1.6; }
+.lessons-update { color: var(--muted); }
+.lessons-update a { color: var(--accent); }
+.lessons-empty { padding: 52px 0; display: flex; flex-direction: column; align-items: start; gap: 16px; }
+.lessons-empty h2 { font-size: 21px; font-weight: 550; letter-spacing: -.02em; }
+.lessons-empty p { color: var(--muted); font-size: 16px; line-height: 1.65; max-width: 60ch; }
+.lessons-empty .back-link { font-size: 14px; min-height: 44px; }
+.lessons-loading { color: var(--muted); font-size: 14px; }
+.lesson-skeleton { margin-top: 24px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.lesson-skeleton > div { height: 54px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.lesson-skeleton > div:last-child { border-bottom: 0; }
+@media (max-width: 700px) {
+  .lessons-heading { flex-direction: column; gap: 16px; margin-bottom: 26px; }
+  .lessons-heading h1 { font-size: 32px; }
+  .lessons-controls { padding-top: 0; }
+  .lessons-summary { gap: 6px; flex-direction: column; }
+  .lesson-table th, .lesson-table td { padding-left: 12px; padding-right: 12px; }
+  .lesson-detail th { padding-left: 20px; }
+}
+@media (max-width: 520px) {
+  .lesson-table { font-size: 14px; }
+  .lesson-table col { width: 16%; }
+  .lesson-table .lesson-name-column { width: 36%; }
+  .lesson-table th, .lesson-table td { padding-left: 6px; padding-right: 6px; }
+  .lesson-table th:first-child { padding-left: 12px; }
+  .lesson-table td:last-child, .lesson-table thead th:last-child { padding-right: 12px; }
+  .lesson-table thead th { font-size: 11px; }
+  .lesson-table .severity-full { display: none; }
+  .lesson-table .severity-short { display: inline; }
+  .lesson-detail th { font-size: 14px; }
+  .lesson-group th { font-size: 15px; }
+}

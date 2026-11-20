@@ -140,6 +140,89 @@ def test_partial_latest_iteration_uses_last_complete_depth(monkeypatch):
     assert result["top_moves"][0]["uci"] == "e2e4"
 
 
+@pytest.mark.parametrize("finish_mixed_batch", [False, True])
+def test_rank_changes_do_not_corrupt_saved_five_move_batch(monkeypatch, finish_mixed_batch):
+    # The 55...Rh8 failure: a newer ranking moves Ra1 from fourth to third.
+    # Its leaders have advanced a depth, while the remaining lines have not.
+    fen = "r7/5k2/7P/6RK/6P1/8/8/8 b - - 2 55"
+    roots = ["f7e6", "f7f6", "a8a6", "a8a1", "f7f8"]
+    completed = [info(uci, -1010 - rank, (0, 0, 1000), rank, color=chess.BLACK, depth=14)
+                 for rank, uci in enumerate(roots, 1)]
+    mixed = [{**completed[0], "depth": 15}, {**completed[1], "depth": 15},
+             {**completed[3], "multipv": 3}]
+    if finish_mixed_batch:
+        mixed += [{**completed[2], "multipv": 4}, completed[4]]
+    engine = FakeEngine([*completed, *mixed])
+    install(monkeypatch, engine)
+    result = analyze_position(fen)
+    assert [move["uci"] for move in result["top_moves"]] == roots
+    assert [move["depth"] for move in result["top_moves"]] == [14] * 5
+    assert result["delta_cp"] == 1 and result["delta_e_pp"] == 0
+    assert result["classification"] == "Flexible"
+
+
+@pytest.mark.parametrize("change", ["partial", "missing_first", "mixed_depth", "duplicate", "reversed_cp",
+                                   "reversed_wdl", "illegal_pv", "missing_wdl", "bound"])
+def test_bad_later_batch_preserves_last_valid_snapshot(monkeypatch, change):
+    completed = pair()
+    later = [info("g1f3", 100, (700, 0, 300), 1), info("c2c4", 90, (690, 0, 310), 2)]
+    if change == "partial":
+        later.pop()
+    elif change == "missing_first":
+        later.pop(0)
+    elif change == "mixed_depth":
+        later[0]["depth"] = 13
+    elif change == "duplicate":
+        later[1]["pv"] = later[0]["pv"]
+    elif change == "reversed_cp":
+        later[1]["score"] = chess.engine.PovScore(chess.engine.Cp(200), chess.WHITE)
+    elif change == "reversed_wdl":
+        later[1]["wdl"] = chess.engine.PovWdl(chess.engine.Wdl(1000, 0, 0), chess.WHITE)
+    elif change == "illegal_pv":
+        later[0]["pv"] = [chess.Move.from_uci("e2e5")]
+    elif change == "missing_wdl":
+        del later[0]["wdl"]
+    elif change == "bound":
+        later[0]["lowerbound"] = True
+    engine = FakeEngine([*completed, *later])
+    install(monkeypatch, engine)
+    result = classify_position(chess.STARTING_FEN)
+    assert [move["uci"] for move in result["top_moves"]] == ["e2e4", "d2d4"]
+    assert result["delta_cp"] == 35 and result["delta_e_pp"] == 5
+
+
+@pytest.mark.parametrize("depth,expected", [(11, "e2e4"), (12, "g1f3"), (13, "g1f3")])
+def test_latest_valid_batch_at_deepest_completed_depth_is_used(monkeypatch, depth, expected):
+    engine = FakeEngine([*pair(), info("g1f3", 100, (700, 0, 300), 1, depth=depth),
+                         info("c2c4", 90, (690, 0, 310), 2, depth=depth)])
+    install(monkeypatch, engine)
+    result = classify_position(chess.STARTING_FEN)
+    assert result["top_moves"][0]["uci"] == expected
+    assert {move["depth"] for move in result["top_moves"]} == {max(12, depth)}
+
+
+@pytest.mark.parametrize("recover", [False, True])
+def test_search_without_valid_snapshot_retries_once(monkeypatch, recover):
+    engine = FakeEngine([])
+    install(monkeypatch, engine)
+    streams = []
+
+    async def analysis(board, limit, **kwargs):
+        stream = FakeAnalysis(pair() if recover and streams else pair()[:1])
+        streams.append(stream)
+        return stream
+
+    monkeypatch.setattr(engine, "analysis", analysis)
+    if recover:
+        result = classify_position(chess.STARTING_FEN)
+        assert result["classification"] == "Flexible"
+    else:
+        with pytest.raises(StockfishAnalysisError, match="complete, consistent candidate batch"):
+            classify_position(chess.STARTING_FEN)
+    assert len(streams) == 2 and all(stream.stopped for stream in streams)
+    assert engine.closed
+
+
 @pytest.mark.parametrize("fen,reason", [
     ("7k/6Q1/5K2/8/8/8/8/8 b - - 0 1", "terminal_position"),
     ("7k/5K2/7Q/8/8/8/8/8 b - - 0 1", "terminal_position"),

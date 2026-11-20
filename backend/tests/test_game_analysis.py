@@ -1,15 +1,21 @@
 import asyncio
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 import threading
 import time
+from uuid import uuid4
 
 import chess
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.chess_games import normalize_game, replay
+from backend.coach.classification import CLASSIFICATION_VERSION
+from backend.tests.test_coach import teaching_output
 from backend.coach.move_review import MoveReview
+from backend.coach.responses import CoachAnalysis, CoachResponseError
+from backend.coach.position import CoachPosition
 from backend.coach.player_move_quality import assess_player_move
 from backend.coach.stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError
 from backend.database import Database
@@ -17,9 +23,31 @@ from backend.game_analysis import (
     GameAnalysisService, analysis_result, analysis_summary, analyze_game_move,
     pgn_fingerprint, quality_counts,
 )
-from backend.main import create_app
+from backend.main import create_app as real_create_app
 from backend.tests.position_fixtures import position_evidence
 from backend.tests.test_app import raw_game
+
+
+class FakeCoach:
+    async def analyze(self, fen, *, played_move=None):
+        return CoachAnalysis(text="Review this decision.", response_id=str(uuid4()), model="gpt-6-astra",
+                             position=CoachPosition.from_fen(fen), usage=None, played_move=played_move,
+                             position_analysis={"classification_version": CLASSIFICATION_VERSION, "structured": teaching_output(fen)})
+
+
+@asynccontextmanager
+async def fake_coach(settings, **kwargs):
+    yield FakeCoach()
+
+
+@pytest.fixture(autouse=True)
+def mock_background_coach(monkeypatch):
+    monkeypatch.setattr('backend.game_analysis.open_coach', fake_coach)
+
+
+def create_app(*args, **kwargs):
+    kwargs.setdefault('coach_factory', fake_coach)
+    return real_create_app(*args, **kwargs)
 
 
 def evidence(review):
@@ -36,6 +64,26 @@ class MemoryDatabase:
     def __init__(self):
         self.record = normalize_game(raw_game(), "alice")
         self.rows = {}
+        self.feedback = {}
+
+    def health(self):
+        pass
+
+    def save_coach_feedback(self, analysis):
+        saved = {"fen": analysis.position.fen, "played_move": analysis.played_move,
+                 "text": analysis.text, "model": analysis.model, "response_id": analysis.response_id,
+                 "created_at": datetime.now(timezone.utc), "stockfish": analysis.stockfish,
+                 "classification_version": (analysis.position_analysis or {}).get("classification_version"),
+                 "teaching": (analysis.position_analysis or {}).get("structured")}
+        self.feedback[(analysis.position.fen, analysis.played_move)] = saved
+        return saved
+
+    def save_game_coach_progress(self, game_id, color, fingerprint, completed):
+        row = self.rows[(game_id, color)]
+        if row['pgn_hash'] != fingerprint:
+            return False
+        row['coach_completed'] = max(row.get('coach_completed', 0), completed)
+        return True
 
     def game(self, game_id):
         return deepcopy(self.record) if game_id == self.record["id"] else None
@@ -50,8 +98,10 @@ class MemoryDatabase:
         if row is None:
             row = {"game_id": game_id, "player_color": color, "pgn_hash": fingerprint, "status": "queued",
                    "total": total, "completed": 0, "counts": {}, "moves": {}, "error": None,
-                   "updated_at": datetime.now(timezone.utc)}
-        if row["status"] != "completed":
+                   "updated_at": datetime.now(timezone.utc), "coach_completed": 0, "coach_version": CLASSIFICATION_VERSION}
+        if row.get("coach_version") != CLASSIFICATION_VERSION:
+            row.update(coach_version=CLASSIFICATION_VERSION, coach_completed=0)
+        if row["status"] != "completed" or row.get('coach_completed', 0) < sum(row['counts'].get(q, 0) for q in ('inaccuracy', 'mistake', 'blunder')):
             row.update(status="queued", error=None)
         self.rows[key] = row
         return deepcopy(row)
@@ -79,7 +129,7 @@ class MemoryDatabase:
                 if key == game_id and row["pgn_hash"] == pgn_fingerprint(pgn)}
 
     def coach_feedback_for_reviews(self, reviews):
-        return {}
+        return {key: deepcopy(self.feedback[key]) for key in reviews if key in self.feedback}
 
     def games(self, username):
         color = "white" if username == "alice" else "black"
@@ -266,17 +316,20 @@ def wait_completed(client, game_id, username="alice"):
     pytest.fail("Engine job did not finish")
 
 
-def test_http_job_survives_navigation_and_restart_without_model_calls(monkeypatch):
+def test_http_job_saves_coaching_and_reuses_it_after_navigation_and_restart(monkeypatch):
     db = MemoryDatabase()
     monkeypatch.setattr('backend.main.Database', lambda _: db)
     calls = []
     def engine(review):
         calls.append(review.played_move_uci)
         return evidence(review)
-    def no_coach(*args, **kwargs):
-        pytest.fail("Game analysis must not call the coach")
+    coach_calls = []
+    @asynccontextmanager
+    async def factory(settings, **kwargs):
+        coach_calls.append(settings.model)
+        yield FakeCoach()
     game_id = db.record["id"]
-    with TestClient(create_app("unused", game_engine=engine, coach_factory=no_coach)) as client:
+    with TestClient(create_app("unused", game_engine=engine, coach_factory=factory)) as client:
         assert client.get(f'/api/games/{game_id}/analysis?username=alice').json() is None
         assert client.post('/api/games/missing/analysis', json={"username": "alice"}).status_code == 404
         assert client.post(f'/api/games/{game_id}/analysis', json={"username": "outsider"}).status_code == 422
@@ -287,10 +340,13 @@ def test_http_job_survives_navigation_and_restart_without_model_calls(monkeypatc
         assert client.get(f'/api/games/{game_id}').json()["engine_analyses"]["white"] == saved
         summary = client.get('/api/games?username=alice').json()[0]["analysis"]
         assert summary["completed"] == 4 and "moves" not in summary
-    with TestClient(create_app("unused", game_engine=engine, coach_factory=no_coach)) as restarted:
+        assert summary['coach_completed'] == summary['coach_total'] == 4
+        assert set(client.get(f'/api/games/{game_id}').json()['coach_responses']) == {'0', '2', '4', '6'}
+    with TestClient(create_app("unused", game_engine=engine, coach_factory=factory)) as restarted:
         assert restarted.get(f'/api/games/{game_id}/analysis?username=alice').json() == saved
         assert restarted.post(f'/api/games/{game_id}/analysis', json={"username": "alice"}).json() == saved
         assert len(calls) == 4
+        assert coach_calls == ['gpt-6-astra'] * 4
 
 
 def test_interrupted_work_resumes_after_restart(monkeypatch):
@@ -357,3 +413,180 @@ def test_postgres_resume_keeps_saved_moves_and_separates_colors(test_db_url):
         client.post(f'/api/games/{game["id"]}/analysis', json={"username": "alice"})
         assert wait_completed(client, game["id"])["moves"]["0"] == first
         assert client.get(f'/api/games/{game["id"]}/analysis?username=bob').json() is None
+
+
+def test_automatic_coach_selects_only_three_error_grades_and_reuses_exact_evidence():
+    db = MemoryDatabase()
+    db.record['pgn'] = '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. d3 Nf6 5. O-O *'
+    scores = {'e2e4': 100, 'g1f3': 30, 'f1c4': -30, 'd2d3': -100, 'e1g1': None}
+    engine_calls, coach_calls = [], []
+    def engine(review):
+        engine_calls.append(review.played_move_uci)
+        result = evidence(review)
+        result['played_move']['score']['cp'] = scores[review.played_move_uci]
+        result['position_evidence'] = position_evidence(review.position.fen)
+        return result
+    @asynccontextmanager
+    async def factory(settings, **options):
+        assert len(engine_calls) == 5  # Classification finishes before coaching.
+        class Coach(FakeCoach):
+            async def analyze(self, fen, *, played_move=None):
+                coach_calls.append((played_move, settings.model))
+                position = options['position_engine'](fen)
+                move = options['engine'](None, position)
+                assert position['fen'] == move['fen'] == fen
+                assert move['played_move']['uci'] == played_move
+                assert move['move_quality']['status'] in {'inaccuracy', 'mistake', 'blunder'}
+                return await super().analyze(fen, played_move=played_move)
+        yield Coach()
+    async def run():
+        service = GameAnalysisService(db, set(), engine, coach_factory=factory)
+        await service.start(db.record['id'], 'alice', 'gpt-6.1-terra')
+        await finish(service)
+        row = await service.saved(db.record['id'], 'alice')
+        assert row['status'] == 'completed'
+        assert row['counts'] == {grade: 1 for grade in ('good', 'inaccuracy', 'mistake', 'blunder', 'uncertain')}
+        assert row['coach_total'] == row['coach_completed'] == 3
+        assert coach_calls == [(move, 'gpt-6.1-terra') for move in ('g1f3', 'f1c4', 'd2d3')]
+        assert len(db.feedback) == 3
+    asyncio.run(run())
+
+
+def test_coach_failure_keeps_all_engine_results_and_resume_skips_saved_reviews():
+    db = MemoryDatabase()
+    engine_calls, coach_calls = [], []
+    def engine(review):
+        engine_calls.append(review.played_move_uci)
+        return evidence(review)
+    @asynccontextmanager
+    async def factory(settings, **options):
+        class Coach(FakeCoach):
+            async def analyze(self, fen, *, played_move=None):
+                coach_calls.append(played_move)
+                if len(coach_calls) == 2:
+                    raise TimeoutError('private API diagnostics')
+                return await super().analyze(fen, played_move=played_move)
+        yield Coach()
+    async def run():
+        service = GameAnalysisService(db, set(), engine, coach_factory=factory)
+        await service.start(db.record['id'], 'alice')
+        await finish(service)
+        row = await service.saved(db.record['id'], 'alice')
+        assert row['status'] == 'failed' and row['completed'] == 4 and row['coach_completed'] == 1
+        assert 'Coaching' in row['error'] and 'private' not in row['error']
+        first = deepcopy(db.feedback)
+        await service.start(db.record['id'], 'alice')
+        await finish(service)
+        row = await service.saved(db.record['id'], 'alice')
+        assert row['status'] == 'completed' and row['coach_completed'] == 4
+        assert all(db.feedback[key] == saved for key, saved in first.items())
+        assert engine_calls == ['e2e4', 'g1f3', 'f1c4', 'e1g1']
+        assert coach_calls == ['e2e4', 'g1f3', 'g1f3', 'f1c4', 'e1g1']
+    asyncio.run(run())
+
+
+def test_legacy_completed_engine_job_can_add_coaching_and_reuse_manual_feedback():
+    db = MemoryDatabase()
+    game_id = db.record['id']
+    fingerprint = pgn_fingerprint(db.record['pgn'])
+    db.begin_game_analysis(game_id, 'white', fingerprint, 4)
+    for ply in (0, 2, 4, 6):
+        review = MoveReview.from_game(db.record['pgn'], ply)
+        result = evidence(review)
+        result['move_quality'] = assess_player_move(result['top_moves'][0], result['played_move'])
+        db.save_game_analysis_move(game_id, 'white', fingerprint, ply,
+                                   {'fen': review.position.fen, 'played_move': review.played_move_uci, 'stockfish': result})
+    db.set_game_analysis_status(game_id, 'white', fingerprint, 'completed', None)
+    original = deepcopy(db.rows[(game_id, 'white')]['moves'])
+    calls = []
+    @asynccontextmanager
+    async def factory(settings, **options):
+        calls.append(settings.model)
+        yield FakeCoach()
+    async def run():
+        first = MoveReview.from_game(db.record['pgn'], 0)
+        db.save_coach_feedback(await FakeCoach().analyze(first.position.fen, played_move=first.played_move_uci))
+        service = GameAnalysisService(db, set(), lambda _: pytest.fail('Saved engine results must be reused'), coach_factory=factory)
+        started = await service.start(game_id, 'alice')
+        assert started['status'] == 'queued' and started['coach_total'] == 4
+        await finish(service)
+        saved = await service.start(game_id, 'alice')
+        assert saved['status'] == 'completed' and saved['coach_completed'] == 4
+        assert saved['moves'] == original and len(calls) == 3 and not service.tasks
+    asyncio.run(run())
+
+
+def test_background_coach_rejects_wrong_move_before_persistence():
+    db = MemoryDatabase()
+    @asynccontextmanager
+    async def factory(settings, **options):
+        class Coach(FakeCoach):
+            async def analyze(self, fen, *, played_move=None):
+                return await super().analyze(fen, played_move='a2a3')
+        yield Coach()
+    async def run():
+        service = GameAnalysisService(db, set(), evidence, coach_factory=factory)
+        await service.start(db.record['id'], 'alice')
+        await finish(service)
+        saved = await service.saved(db.record['id'], 'alice')
+        assert saved['status'] == 'failed' and saved['completed'] == 4
+        assert saved['coach_completed'] == 0 and not db.feedback
+    asyncio.run(run())
+
+
+def test_manual_and_background_coach_share_one_generation_lock(monkeypatch):
+    db = MemoryDatabase()
+    monkeypatch.setattr('backend.main.Database', lambda _: db)
+    entered, release = threading.Event(), threading.Event()
+    @asynccontextmanager
+    async def factory(settings, **options):
+        class Coach(FakeCoach):
+            async def analyze(self, fen, *, played_move=None):
+                entered.set()
+                assert await asyncio.to_thread(release.wait, 5)
+                return await super().analyze(fen, played_move=played_move)
+        yield Coach()
+    try:
+        with TestClient(create_app('unused', game_engine=evidence, coach_factory=factory)) as client:
+            game_id = db.record['id']
+            assert client.post(f'/api/games/{game_id}/analysis', json={'username': 'alice', 'model': 'invalid'}).status_code == 422
+            client.post(f'/api/games/{game_id}/analysis', json={'username': 'alice'})
+            assert entered.wait(5)
+            response = client.post('/api/coach/analyze', json={'game_id': game_id, 'ply': 0})
+            assert response.status_code == 409
+            release.set()
+            assert wait_completed(client, game_id)['coach_completed'] == 4
+    finally:
+        release.set()
+
+
+def test_completed_old_taxonomy_job_refreshes_only_stale_reviews_without_engine_work(test_db_url):
+    db = Database(test_db_url)
+    game = normalize_game(raw_game(), 'alice')
+    db.save_import('alice', [game], 1)
+    with TestClient(create_app(test_db_url, game_engine=evidence)) as client:
+        client.post(f'/api/games/{game["id"]}/analysis', json={'username': 'alice'})
+        assert wait_completed(client, game['id'])['coach_completed'] == 4
+    with db.connection() as conn:
+        conn.execute('UPDATE game_engine_analysis SET coach_version=0')
+        conn.execute("UPDATE coach_feedback SET position_analysis=position_analysis - 'classification_version' WHERE played_move != 'e2e4'")
+        before = conn.execute('SELECT moves FROM game_engine_analysis').fetchone()['moves']
+    calls = []
+    @asynccontextmanager
+    async def factory(settings, **options):
+        class Coach(FakeCoach):
+            async def analyze(self, fen, *, played_move=None):
+                calls.append(played_move)
+                return await super().analyze(fen, played_move=played_move)
+        yield Coach()
+    with TestClient(create_app(test_db_url, game_engine=lambda _: pytest.fail('Must reuse engine results'), coach_factory=factory)) as client:
+        summary = client.get('/api/games?username=alice').json()[0]['analysis']
+        assert summary['coach_completed'] == 0 and summary['coach_total'] == 4
+        client.post(f'/api/games/{game["id"]}/analysis', json={'username': 'alice'})
+        result = wait_completed(client, game['id'])
+        assert result['coach_completed'] == 4 and result['moves'] == before
+        assert calls == ['g1f3', 'f1c4', 'e1g1']
+        client.post(f'/api/games/{game["id"]}/analysis', json={'username': 'alice'})
+        assert len(calls) == 3  # Completed current reviews are reused.
+    with db.connection() as conn:
+        assert conn.execute('SELECT count(*) AS count FROM coach_feedback').fetchone()['count'] == 7

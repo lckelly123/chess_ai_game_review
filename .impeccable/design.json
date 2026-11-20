@@ -1,9 +1,23 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-18T06:41:31.900070+00:00",
+  "generatedAt": "2026-11-19T08:14:58.512889+00:00",
   "title": "Design System: Chess study",
   "extensions": {
     "colorMeta": {
+      "severity-mistake": {
+        "role": "semantic",
+        "displayName": "Mistake orange",
+        "tonalRamp": [
+          "oklch(15% 0.10873 59.39)",
+          "oklch(26% 0.10873 59.39)",
+          "oklch(38% 0.10873 59.39)",
+          "oklch(49% 0.10873 59.39)",
+          "oklch(61% 0.10873 59.39)",
+          "oklch(72% 0.10873 59.39)",
+          "oklch(84% 0.10873 59.39)",
+          "oklch(95% 0.10873 59.39)"
+        ]
+      },
       "primary": {
         "role": "primary",
         "displayName": "Primary",
@@ -499,6 +513,11 @@
         "query": "max-width"
       },
       {
+        "name": "compact-lessons-table",
+        "value": "520px",
+        "query": "max-width"
+      },
+      {
         "name": "narrow-phone",
         "value": "370px",
         "query": "max-width"
@@ -506,6 +525,22 @@
     ]
   },
   "components": [
+    {
+      "name": "Primary navigation",
+      "kind": "nav",
+      "refersTo": "navigation-tab",
+      "description": "Persistent library and Lessons links. The 68px desktop header wraps to a minimum 108px at 700px, placing both links in a full-width second row.",
+      "html": "<nav class=\"ds-primary-nav\" aria-label=\"Main navigation\"><a href=\"#games\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 7v14\"/><path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\"/></svg><span>Your game library</span></a><a href=\"#lessons\" aria-current=\"page\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z\"/><path d=\"M22 10v6\"/><path d=\"M6 12.5V16a6 3 0 0 0 12 0v-3.5\"/></svg>Lessons</a></nav>",
+      "css": ".ds-primary-nav{font-family:\"DM Sans Variable\",sans-serif;display:flex;align-items:stretch;gap:24px;min-height:68px;background:var(--canvas,#0c0d0f)}.ds-primary-nav a{display:flex;align-items:center;gap:8px;padding:0 2px;border-bottom:2px solid transparent;font-size:13px;color:var(--muted,#a5adb8);text-decoration:none}.ds-primary-nav svg{flex-shrink:0}.ds-primary-nav a:hover{color:var(--ink,#f1f2f4)}.ds-primary-nav a[aria-current=\"page\"]{color:var(--ink,#f1f2f4);border-bottom-color:var(--accent,#91b4d3)}.ds-primary-nav a:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}@media(max-width:700px){.ds-primary-nav{order:3;flex-basis:100%;min-height:44px}.ds-primary-nav a{min-height:44px}}"
+    },
+    {
+      "name": "Lessons severity table",
+      "kind": "custom",
+      "refersTo": "lessons-table",
+      "description": "Grouped tactical and positional totals, neutral tabular counts, visible zeros, and an overall total. Preview names and counts are illustrative. Compact columns and an expanded Inacc. abbreviation preserve the table on narrow screens.",
+      "html": "<div class=\"ds-lesson-table-wrap\"><table class=\"ds-lesson-table\"><caption class=\"ds-visually-hidden\">Illustrative errors by subcategory</caption><colgroup><col class=\"ds-lesson-name-column\"/><col/><col/><col/><col/></colgroup><thead><tr><th scope=\"col\">Subcategory</th><th scope=\"col\" class=\"ds-inaccuracy\"><span class=\"ds-severity-full\">Inaccuracy</span><abbr class=\"ds-severity-short\" title=\"Inaccuracy\">Inacc.</abbr></th><th scope=\"col\" class=\"ds-mistake\">Mistake</th><th scope=\"col\" class=\"ds-blunder\">Blunder</th><th scope=\"col\">Total</th></tr></thead><tbody><tr class=\"ds-lesson-group\"><th scope=\"rowgroup\">Tactical</th><td class=\"ds-lesson-count\">2</td><td class=\"ds-lesson-count\">1</td><td class=\"ds-lesson-count ds-zero\">0</td><td class=\"ds-lesson-count ds-total\">3</td></tr><tr class=\"ds-lesson-detail\"><th scope=\"row\">Example subcategory</th><td class=\"ds-lesson-count\">2</td><td class=\"ds-lesson-count\">1</td><td class=\"ds-lesson-count ds-zero\">0</td><td class=\"ds-lesson-count ds-total\">3</td></tr></tbody><tbody><tr class=\"ds-lesson-group\"><th scope=\"rowgroup\">Positional</th><td class=\"ds-lesson-count\">1</td><td class=\"ds-lesson-count ds-zero\">0</td><td class=\"ds-lesson-count ds-zero\">0</td><td class=\"ds-lesson-count ds-total\">1</td></tr><tr class=\"ds-lesson-detail\"><th scope=\"row\">Example subcategory</th><td class=\"ds-lesson-count\">1</td><td class=\"ds-lesson-count ds-zero\">0</td><td class=\"ds-lesson-count ds-zero\">0</td><td class=\"ds-lesson-count ds-total\">1</td></tr></tbody><tfoot><tr><th scope=\"row\">All errors</th><td class=\"ds-lesson-count\">3</td><td class=\"ds-lesson-count\">1</td><td class=\"ds-lesson-count ds-zero\">0</td><td class=\"ds-lesson-count ds-total\">4</td></tr></tfoot></table></div>",
+      "css": ".ds-lesson-table{font-family:\"DM Sans Variable\",sans-serif;color:var(--ink,#f1f2f4)}.ds-lesson-table-wrap { border: 1px solid var(--line,#2b2e34); border-radius: 12px; overflow: hidden; background: var(--surface,#16181c); }.ds-lesson-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 16px; }.ds-lesson-table col { width: 15%; }.ds-lesson-table .ds-lesson-name-column { width: 40%; }.ds-lesson-table th, .ds-lesson-table td { padding: 13px 24px; text-align: right; line-height: 1.5; }.ds-lesson-table th:first-child { text-align: left; }.ds-lesson-table thead th { font-size: 13px; font-weight: 500; color: var(--muted,#a5adb8); border-bottom: 1px solid var(--line,#2b2e34); padding-top: 16px; padding-bottom: 16px; }.ds-lesson-table thead .ds-inaccuracy { color: var(--warning,#e6c389); }.ds-lesson-table thead .ds-mistake { color: #efaa72; }.ds-lesson-table thead .ds-blunder { color: var(--negative,#f0ad9f); }.ds-lesson-table .ds-lesson-count { font-variant-numeric: tabular-nums; }.ds-lesson-table .ds-zero { color: var(--muted,#a5adb8); }.ds-lesson-table .ds-total { font-weight: 600; }.ds-lesson-table .ds-severity-short { display: none; text-decoration: none; }.ds-lesson-group th, .ds-lesson-group td { padding-top: 20px; padding-bottom: 12px; font-weight: 650; }.ds-lesson-table tbody + tbody { border-top: 1px solid var(--line,#2b2e34); }.ds-lesson-detail th { font-weight: 400; padding-left: 40px; }.ds-lesson-detail th, .ds-lesson-detail td { color: var(--muted,#a5adb8); }.ds-lesson-detail .ds-lesson-count:not(.ds-zero) { color: var(--ink,#f1f2f4); }.ds-lesson-detail:last-child th, .ds-lesson-detail:last-child td { padding-bottom: 22px; }.ds-lesson-detail:hover { background: var(--hover,#202329); }.ds-lesson-unclassified th { font-weight: 500; }.ds-lesson-table tfoot { border-top: 1px solid var(--field-border,#606773); }.ds-lesson-table tfoot th, .ds-lesson-table tfoot td { padding-top: 18px; padding-bottom: 18px; font-weight: 650; }@media(max-width:700px){.ds-lesson-table th, .ds-lesson-table td { padding-left: 12px; padding-right: 12px; }.ds-lesson-detail th { padding-left: 20px; }}@media(max-width:520px){.ds-lesson-table { font-size: 14px; }.ds-lesson-table col { width: 16%; }.ds-lesson-table .ds-lesson-name-column { width: 36%; }.ds-lesson-table th, .ds-lesson-table td { padding-left: 6px; padding-right: 6px; }.ds-lesson-table th:first-child { padding-left: 12px; }.ds-lesson-table td:last-child, .ds-lesson-table thead th:last-child { padding-right: 12px; }.ds-lesson-table thead th { font-size: 11px; }.ds-lesson-table .ds-severity-full { display: none; }.ds-lesson-table .ds-severity-short { display: inline; }.ds-lesson-detail th { font-size: 14px; }.ds-lesson-group th { font-size: 15px; }}.ds-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}"
+    },
     {
       "name": "Import action",
       "kind": "button",

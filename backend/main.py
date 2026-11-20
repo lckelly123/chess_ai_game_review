@@ -19,6 +19,7 @@ from .coach.service import open_coach
 from .database import Database
 from .importer import ChessComImporter
 from .game_analysis import GameAnalysisService, analyze_game_move, create_game_analysis_router
+from .lessons import lesson_analytics
 from .migrate_sqlite import migrate_sqlite
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,6 +36,7 @@ class ImportRequest(BaseModel):
 
 
 def create_app(database_url: str | None = None, transport=None, *, coach_factory=open_coach, game_engine=analyze_game_move) -> FastAPI:
+    coach_lock = asyncio.Lock()
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Compose injects these variables; local Python runs read the same file.
@@ -47,7 +49,8 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
         app.state.jobs = {}
         app.state.tasks = set()
         app.state.db.interrupt_game_analyses()
-        app.state.game_analysis = GameAnalysisService(app.state.db, app.state.tasks, game_engine)
+        app.state.game_analysis = GameAnalysisService(app.state.db, app.state.tasks, game_engine,
+                                                     coach_factory=coach_factory, coach_lock=coach_lock)
         async with httpx.AsyncClient(timeout=20, transport=transport, headers={"User-Agent": os.getenv("CHESSCOM_USER_AGENT", "ChessStudy/0.1 (local game library)"), "Accept": "application/json"}) as client:
             app.state.importer = ChessComImporter(app.state.db, client)
             yield
@@ -57,7 +60,7 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
             await asyncio.gather(*tasks, return_exceptions=True)
 
     app = FastAPI(title="Chess Study API", lifespan=lifespan)
-    app.include_router(create_coach_router(coach_factory))
+    app.include_router(create_coach_router(coach_factory, request_lock=coach_lock))
     app.include_router(create_preparation_router())
     app.include_router(create_game_analysis_router())
 
@@ -78,6 +81,10 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
     @app.get("/api/games")
     def games(username: str = Query(min_length=1, max_length=50)):
         return app.state.db.games(username.lower())
+
+    @app.get("/api/lessons")
+    def lessons(username: str = Query(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")):
+        return lesson_analytics(app.state.db, username)
 
     @app.get("/api/games/{game_id}")
     def game(game_id: str):

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { engineMoves, engineSelectionId, visibleEngineCandidate, errorMarkers, analysisProgress } from '../src/engineReview.ts';
+import { engineMoves, engineSelectionId, visibleEngineCandidate, errorMarkers, analysisProgress, coachingPending, mergeCoachResponses } from '../src/engineReview.ts';
 import { playerTurnStops, replayNavigation, restoreReplay } from '../src/replayNavigation.ts';
 
 const engineMove = (uci, san, cp, rank) => ({uci, san, rank, depth: 12, score: {cp, mate: null, bound: 'exact'}});
@@ -75,4 +75,25 @@ test('custom Black-to-move start and short games use the actual stop index', () 
   assert.equal(markers[0].percent, 0);
   assert.equal(markers[0].label, '30… O-O — Mistake');
   assert.equal(analysisProgress({status: 'running', completed: 18, total: 42}), 'Analyzing 18/42 moves');
+});
+
+test('game progress distinguishes pending, active, paused and saved coaching', () => {
+  const analysis = {completed: 60, total: 60, coach_total: 5, coach_completed: 2};
+  assert.equal(analysisProgress({...analysis, status: 'running'}), 'Coaching 2/5 flagged moves');
+  assert.equal(analysisProgress({...analysis, status: 'failed'}), 'Coaching paused · 2/5 flagged moves');
+  assert.equal(analysisProgress({...analysis, status: 'completed'}), '60 moves analyzed · Coach reviews pending');
+  assert.equal(coachingPending(analysis), true);
+  assert.equal(coachingPending({...analysis, coach_completed: 5}), false);
+  assert.equal(analysisProgress({...analysis, coach_completed: 5, status: 'completed'}), '60 moves analyzed · 5 coach reviews saved');
+  assert.equal(analysisProgress({...analysis, coach_total: 0, coach_completed: 0, status: 'completed'}), '60 moves analyzed');
+});
+
+test('live automatic reviews merge without replacing a newer manual response', () => {
+  const old = {response_id: 'old', created_at: '2026-11-18T12:00:00Z'};
+  const current = {response_id: 'manual', created_at: '2026-11-18T13:00:00Z'};
+  const automatic = {response_id: 'automatic', created_at: '2026-11-18T13:01:00Z'};
+  const before = {'2': current};
+  assert.deepEqual(mergeCoachResponses(before, {'2': old, '4': automatic}), {'2': current, '4': automatic});
+  assert.deepEqual(mergeCoachResponses(before, {'2': automatic}), {'2': automatic});
+  assert.deepEqual(before, {'2': current});
 });
