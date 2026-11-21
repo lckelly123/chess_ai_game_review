@@ -12,3 +12,4 @@ frontend/dist/
 .impeccable/live/
 *.log
 *.tsbuildinfo
+/algorithm_normalization/
