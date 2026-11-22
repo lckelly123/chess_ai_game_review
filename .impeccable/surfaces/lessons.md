@@ -1,19 +1,23 @@
 # Lessons
 
-Mode: Operate. Route: `#lessons`.
+Mode: Operate. Route: `#lessons`. Direction: `lessons-explorer-2026-11-21`.
 
-The user's request is a precise addition to the existing app: a Lessons tab beside the game library, showing the severity breakdown within tactical and positional subcategories. Build directly in the established charcoal, DM Sans system; no new visual identity or concept selection is needed.
+The user requested a layout like the supplied summary-card and topic-list reference, while retaining the current color palette. This replaces the grouped table within the established app; no new visual identity or concept selection is needed. Build path: code. The reference is structural inspiration, not an exact reproduction.
 
 ## Direction contract
 
-- Purpose: compare inaccuracies, mistakes, and blunders across saved lesson categories for the selected player.
-- Composition: persistent top navigation; Lessons heading and player/refresh controls; a compact sample-size summary; one grouped data table with category totals and an overall total.
-- Data: count a pre-move decision once per game, use the latest matching saved coach label, exclude Good and Uncertain, and retain unclassified errors. Only current saved game analyses are included. Opening this page performs no engine searches or model calls.
-- Identity: inherit DESIGN.md colors, DM Sans, existing field and focus styles, and 12px panel corners. Severity colors follow the replay legend. The table supplies the visual hierarchy; no decorative charts or metric cards.
-- Interaction: real navigation links with current-page state, profile selection, refresh, retry, and an empty-state link to the library. Back/forward navigation and existing replay routes continue to work.
-- Responsive: both tabs remain available on mobile, with a second header row. The table fits a narrow screen; Inaccuracy may shorten to Inacc. with its full accessible label. Subcategory names can wrap.
-- Quality bar: counts reconcile across rows, categories, and severity columns; coverage states how much of the library was analyzed; zeros remain readable; no invented category assignments or fake data; no horizontal page overflow; loading/error/empty states are explicit.
+- THESIS: Turn saved lesson counts into a focused category explorer, with totals first and topic detail on demand.
+- OWN-WORLD: Inherit pure-black canvas and panels, DM Sans, soft white text, muted sky-blue selection, amber/orange/coral severity colors, fine borders, and 12px panel corners.
+- STORY: Compare Positional and Tactical totals, select a category, narrow severity, and expand a topic to inspect its full breakdown. Unclassified errors remain reachable.
+- FIRST VIEWPORT: Heading and player controls, sample coverage, two equal summary buttons with segmented severity bars, a quiet Unclassified row, then tactical subgroup and severity filters with proportional topic rows. Cards stack on narrow mobile screens.
+- FORM: User-provided reference `codex-clipboard-9742a2b8-6e99-4cdd-b549-ea73f17ff36d.png`, code-led, no generated comp. Signature interaction: filtering recomputes matching counts, ordering, and bar proportions without new network work.
 
-No approved image comp: this is a code-led extension of a precisely specified existing interface.
+## Data and interaction
 
-Classification update: tactical groups are Missed tactics and Allowed tactics, each with hanging piece, fork, pin/skewer, and discovered attack. Positional rows name the best engine move’s piece, not the player’s moved piece. No-subcategory rows are retired; unsupported and earlier-version labels remain Unclassified. A notice above the table explains when existing reviews need updating and links to the library, without starting generation.
+Use the unchanged `/api/lessons` response. Combine Missed tactics and Allowed tactics only for the Tactical overview; keep the two separate in exploration. Positional topics identify the best engine move's piece. Each game decision is counted once, Good and Uncertain are excluded, and Unclassified is never folded into another category. Opening Lessons performs no engine or model work.
+
+Cards and filters are native buttons with pressed states. Topic disclosures are native details/summary with full severity counts and a proportion of the current matching set. They do not promise individual move lists, which this endpoint does not return. Retain player selection, refresh, retry, coverage, stale-review notices, empty states, and navigation.
+
+## Quality bar
+
+Counts reconcile across group totals and filters; bars have text equivalents; selected and focused controls are distinguishable; no horizontal overflow at 320px or larger; each interaction has a meaningful outcome. Preserve the user's earlier replay simplifications and pure-black palette. No new images or invented production data.

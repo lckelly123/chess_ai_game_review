@@ -87,7 +87,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
       </section>
       </>}
       <section className="coach-section coach-moves-section" aria-labelledby={`${id}-moves-title`}>
-        <div className="coach-section-heading moves-heading"><h3 id={`${id}-moves-title`}>Moves</h3><span className="candidate-hint">Click to show on board</span></div>
+        <div className="coach-section-heading moves-heading"><h3 id={`${id}-moves-title`}>Moves</h3></div>
         {rows.length ? <div className="candidate-moves" role="group" aria-label="Candidate moves and player move">
           {rows.map(move => {
             const selected = selectedUci === move.uci;

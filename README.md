@@ -30,7 +30,7 @@ On the first PostgreSQL startup, the app imports games, profiles, profile associ
 
 ### Stored coaching
 
-`coach_feedback` stores the complete FEN, played move, combined coaching card, model/response ID/usage, and Stockfish evidence. Every successful run adds a row. The replay restores the latest exact FEN-plus-move response after refresh or restart. Failed runs leave prior feedback intact. Older reviews remain stored; rerun coaching to generate the new combined card. Reading saved feedback makes no OpenAI call. Question drafts remain in browser storage.
+`coach_feedback` stores the complete FEN, played move, combined coaching card, model/response ID/usage, and Stockfish evidence. Every successful run adds a row. The replay restores the latest exact FEN-plus-move response after refresh or restart. Failed runs leave prior feedback intact. Older reviews remain stored; rerun coaching to generate the new combined card. Reading saved feedback makes no OpenAI call.
 
 For a SQL session inside Docker:
 
@@ -97,7 +97,7 @@ The backend's standalone `backend.coach.position_classification.classify_positio
 - The slider selects the same decision points; Space toggles autoplay through them. Reduced-motion preference skips the intermediate board. Shortcuts do not intercept form fields or the coach cards. Space retains its native action on focused buttons and links.
 - Flip the board; the initial orientation follows the imported player.
 - Selecting a game again restores your last settled position in this browser. Older bookmarks on an opponent's turn move back to the preceding player decision.
-- The Coach response is one card containing the position thesis, needs, candidate moves, and feedback on your move. The decision classification is a colored heading tag. Evaluations are colored from the reviewed side’s perspective. The played move appears once within the same list, with a blue Player move badge and concise feedback; sound matching recommendations reuse their explanation. An optional link previews a stronger candidate. Select a candidate to draw its arrow and two instructional squares without playing it. Selection pauses autoplay; Clear, navigation, and new responses reset the overlay. Saved feedback restores automatically. Older reviews show their position teaching; rerun for combined move feedback. Question drafts stay local.
+- The Coach response is one card containing the position thesis, needs, candidate moves, and feedback on your move. The decision classification is a colored heading tag. Evaluations are colored from the reviewed side’s perspective. The played move appears once within the same list, with a blue Player move badge and concise feedback; sound matching recommendations reuse their explanation. An optional link previews a stronger candidate. Select a candidate to draw its arrow and two instructional squares without playing it. Selection pauses autoplay; selecting the same candidate again, navigation, and new responses reset the overlay. Saved feedback restores automatically. Older reviews show their position teaching; rerun for combined move feedback.
 
 ## Coach backend
 
@@ -123,7 +123,9 @@ The additive `game_engine_analysis` table is created automatically at startup. R
 
 The **Lessons** tab shows the selected player's inaccuracies, mistakes, and blunders within each tactical and positional subcategory. Counts come from saved game analyses, with the latest matching coach review supplying the category. A move is counted once per game; repeated coach runs do not add errors, while the same decision played in another game counts as another occurrence. Good and uncertain moves are excluded. Errors without a supported current-version label remain in **Unclassified**; category-only labels are no longer emitted. The page states how many games and moves have been analyzed and provides player selection and refresh.
 
-Lessons separates missed tactics and allowed tactics by motif, and positional errors by the piece in Stockfish’s best move. Earlier review versions remain readable but count as Unclassified until refreshed. Use **Coach flagged moves** in the library or **Run coach** on an individual move; saved engine analysis is retained. Current reviews with an explicitly null classification remain Unclassified without being retried automatically.
+Choose the **Positional** or **Tactical** summary card to explore its errors, then filter by severity. Tactical exploration keeps **Missed tactics** and **Allowed tactics** separate by motif; positional topics use the piece in Stockfish’s best move. Topics are ordered by matching count, with bars showing their share of the current matching set. Expand a topic for its full severity breakdown. **Unclassified** remains separately accessible when present. Filtering uses saved counts without another request; the explorer shows aggregate counts rather than individual move lists.
+
+Earlier review versions remain readable but count as Unclassified until refreshed. Use **Coach flagged moves** in the library or **Run coach** on an individual move; saved engine analysis is retained. Current reviews with an explicitly null classification remain Unclassified without being retried automatically.
 
 `GET /api/lessons?username=player` is read-only. It excludes stale PGN results, mismatched positions, and opponent moves, and never starts Stockfish or OpenAI work. Only saved game-analysis decisions contribute; import and analyze a game to populate the breakdown.
 
