@@ -175,7 +175,7 @@ Keep clients/settings outside graph state and create any needed clients lazily. 
 
 `position_classification.py` collects exact common-depth MultiPV-5 evidence; `sharpness.py` computes the shared deterministic metric without model calls or database writes. Both `classify_position(fen, settings=None)` and `analyze_position(fen, settings=None)` use this five-move rule:
 
-1. Use the original side-to-move perspective. Clamp all five finite scores to ±2000 cp; map winning/losing mates to ±2000 cp for sharpness only. Preserve the original CP/mate scores and engine ranking for all other consumers.
+1. Use the original side-to-move perspective. Clamp all five finite scores to ±1000 cp (±10 pawns); map winning/losing mates to ±1000 cp for sharpness only. Preserve the original CP/mate scores and engine ranking for all other consumers.
 2. Sort the capped scores and calculate `D = sum(w[i] * (C[i] - C[i+1]))`, with `w[i] = exp(-i) / sum(exp(-j) for j in range(4))` (λ=1).
 3. Normalize to `S = 100 * min(1, log1p(D/10) / log1p(687.68/10))`. D and a=10 are in centipawns. The cutoff is the fixed empirical anchor from the calibration collection; scores at or above it tie at 100.
 4. Assign the tag using the unrounded score:
@@ -203,7 +203,7 @@ Search collection retains the latest complete, exact batch at a common depth and
 
 ### Saved evidence and coaching versions
 
-New coaching saves `sharpness_version: 1` alongside the unchanged mistake `classification_version: 2` in the existing JSONB. API responses expose `sharpness_current` separately. Complete saved position evidence is rescored on read, including game-analysis results, without changing the stored engine evidence or making model requests. The prior explanation is not rewritten; the UI identifies coaching generated under earlier position labels. Old incomplete saves remain unclassified until a new analysis. Cached evidence is also refreshed before new coaching; incomplete old evidence triggers the normal position search.
+New coaching saves `sharpness_version: 2` alongside the unchanged mistake `classification_version: 2` in the existing JSONB. Sharpness version 2 lowers the cap from ±2000 to ±1000 cp; weights, normalization, and tag thresholds are unchanged. API responses expose `sharpness_current` separately. Complete saved position evidence is rescored on read, including game-analysis results, without changing the stored engine evidence or making model requests. The prior explanation is not rewritten; the UI identifies coaching generated under earlier position labels, including sharpness version 1. Old incomplete saves remain unclassified until a new analysis. Cached evidence is also refreshed before new coaching; incomplete old evidence triggers the normal position search.
 
 This update does not invalidate lesson categories or automatically regenerate completed coaching jobs. Users can refresh an earlier explanation with Run coach. The five new prompt modes describe evaluation sensitivity and never imply human difficulty, a guaranteed outcome change, or that every legal move is safe. Candidate approval and player-move severity retain their separate policies.
 

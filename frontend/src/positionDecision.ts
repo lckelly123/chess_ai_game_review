@@ -18,7 +18,7 @@ export function positionDecision(evidence?: PositionEvidence | null) {
   if (!evidence) return undefined;
   const tag = evidence.decision_classification;
   const score = evidence.sharpness?.score;
-  if (evidence.sharpness?.version === 1 && tag && descriptions[tag] && typeof score === 'number'
+  if (evidence.sharpness?.version === 2 && tag && descriptions[tag] && typeof score === 'number'
       && Number.isFinite(score) && score >= 0 && score <= 100 && !evidence.unclassified_reason) {
     const decision = descriptions[tag];
     return { ...decision, className: tag,

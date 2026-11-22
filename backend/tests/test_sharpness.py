@@ -56,16 +56,21 @@ def test_database_example_uses_all_five_cp_even_with_equal_wdl():
 
 
 @pytest.mark.parametrize('values,effective', [
-    ([5000, 3000, 2500, 2200, 2100], [2000] * 5),
-    ([-2100, -2200, -2500, -3000, -5000], [-2000] * 5),
-    (['M3', 'M5', 'M7', 'M9', 'M11'], [2000] * 5),
-    (['M-11', 'M-9', 'M-7', 'M-5', 'M-3'], [-2000] * 5),
-    (['M1', 800, 0, -800, 'M-1'], [2000, 800, 0, -800, -2000]),
-    (['M1', 'M-10', 'M-9', 'M-8', 'M-1'], [2000, -2000, -2000, -2000, -2000]),
+    ([5000, 3000, 2500, 2200, 2100], [1000] * 5),
+    ([-2100, -2200, -2500, -3000, -5000], [-1000] * 5),
+    ([1800, 1500, 1250, 1100, 1001], [1000] * 5),
+    ([-1001, -1100, -1250, -1500, -1800], [-1000] * 5),
+    ([1001, 1000, 0, -1000, -1001], [1000, 1000, 0, -1000, -1000]),
+    ([1000, 999, 0, -999, -1000], [1000, 999, 0, -999, -1000]),
+    (['M3', 'M5', 'M7', 'M9', 'M11'], [1000] * 5),
+    (['M-11', 'M-9', 'M-7', 'M-5', 'M-3'], [-1000] * 5),
+    (['M1', 800, 0, -800, 'M-1'], [1000, 800, 0, -800, -1000]),
+    (['M1', 'M-10', 'M-9', 'M-8', 'M-1'], [1000, -1000, -1000, -1000, -1000]),
 ])
 def test_cap_and_mate_policy_include_best_and_preserve_raw_scores(values, effective):
     original = scored(values)
     result = with_position_sharpness(original)
+    assert result['sharpness']['cap_cp'] == 1000
     assert result['sharpness']['capped_scores_cp'] == effective
     assert result['top_moves'] == original['top_moves']
     expected = sum(w * (effective[i] - effective[i+1]) for i, w in enumerate(WEIGHTS))
@@ -117,17 +122,27 @@ def test_incomplete_saved_evidence_never_inherits_legacy_label(defect):
     assert result['unclassified_reason'] == 'insufficient_engine_evidence'
 
 
-def test_api_rescores_old_evidence_without_marking_old_coaching_current():
-    old = scored([500, 100, 0, -100, -200])
-    old.pop('sharpness')
-    old.update(classification='Flexible', decision_classification='flexible')
+@pytest.mark.parametrize('saved_version', [None, 1])
+def test_api_rescores_old_evidence_without_marking_old_coaching_current(saved_version):
+    old = scored([1800, 1500, 1250, 1100, 1001])
+    if saved_version is None:
+        old.pop('sharpness')
+    else:
+        raw = sum(w * gap for w, gap in zip(WEIGHTS, [300, 250, 150, 99]))
+        old['sharpness'].update(version=1, cap_cp=2000, raw_cp=raw, score=normalized_sharpness(raw),
+                                capped_scores_cp=[1800, 1500, 1250, 1100, 1001])
+    old.update(classification='Demanding', decision_classification='demanding')
+    snapshot = deepcopy(old)
     response = AnalyzePositionResponse(fen=chess.STARTING_FEN, text='Saved explanation', model='model',
-        response_id='saved', created_at=datetime.now(timezone.utc), position_evidence=old, classification_version=2)
+        response_id='saved', created_at=datetime.now(timezone.utc), position_evidence=old,
+        classification_version=2, sharpness_version=saved_version)
     result = response.model_dump()
     assert result['position_evidence']['sharpness']['version'] == SHARPNESS_VERSION
-    assert result['position_evidence']['decision_classification'] == 'critical'
+    assert result['position_evidence']['sharpness']['cap_cp'] == 1000
+    assert result['position_evidence']['sharpness']['score'] == 0
+    assert result['position_evidence']['decision_classification'] == 'forgiving'
     assert result['sharpness_current'] is False and result['classification_current'] is True
-    assert result['text'] == 'Saved explanation' and old['decision_classification'] == 'flexible'
+    assert result['text'] == 'Saved explanation' and old == snapshot
 
 
 def test_new_prompt_receives_recalculated_sharpness_and_separate_quality_policy():
@@ -136,6 +151,7 @@ def test_new_prompt_receives_recalculated_sharpness_and_separate_quality_policy(
     request = build_request(chess.STARTING_FEN, evidence=evidence)
     content = request['input'][1]['content']
     assert '"decision_mode": "demanding"' in content
+    assert '"cap_cp": 1000' in content
     assert '"a_cp": 10' in content and '"cutoff_cp": 687.68' in content
     assert '"metric": "expected_score_loss_pp"' in content
     assert 'clear_preference' not in content

@@ -4,8 +4,8 @@ import math
 
 import chess
 
-SHARPNESS_VERSION = 1
-CAP_CP = 2000
+SHARPNESS_VERSION = 2
+CAP_CP = 1000
 A_CP = 10
 CUTOFF_CP = 687.68
 WEIGHTS = tuple(math.exp(-i) / sum(math.exp(-j) for j in range(4)) for i in range(4))
