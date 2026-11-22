@@ -50,10 +50,11 @@ export type PositionTeaching = {
     mistake_classification?: MistakeClassification | null;
   } | null;
 };
-export type DecisionClassification = 'flexible' | 'clear_preference' | 'critical';
+export type DecisionClassification = 'forgiving' | 'flexible' | 'selective' | 'demanding' | 'critical';
 export type PositionEvidence = {
   decision_classification: DecisionClassification | null;
-  unclassified_reason: 'terminal_position' | 'single_legal_move' | 'mate_score' | null;
+  unclassified_reason: 'terminal_position' | 'single_legal_move' | 'fewer_than_five_legal_moves' | 'insufficient_engine_evidence' | null;
+  sharpness?: { version: number; raw_cp: number | null; score: number | null; cap_cp: number; a_cp: number; cutoff_cp: number };
   delta_cp: number | null;
   delta_e_pp: number | null;
   top_moves: EngineMove[];
@@ -64,6 +65,8 @@ export type CoachResponse = {
   teaching?: PositionTeaching | null;
   classification_current?: boolean;
   classification_version?: number | null;
+  sharpness_current?: boolean;
+  sharpness_version?: number | null;
   position_evidence?: PositionEvidence | null;
   candidate_san?: Record<string, string>;
 };

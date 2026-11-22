@@ -211,8 +211,10 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .coach-subsection + .coach-subsection { margin-top: 14px; }
 .coach-subsection h4 { margin: 0 0 8px; font-size: 13px; font-weight: 650; line-height: 1.5; }
 .decision-tag { display: inline-flex; padding: 3px 8px; border-radius: 5px; background: var(--hover); color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1.4; cursor: help; }
+.decision-tag.forgiving { background: var(--positive-surface); color: var(--positive); }
 .decision-tag.flexible { background: var(--selected); color: var(--accent); }
-.decision-tag.clear_preference { background: var(--warning-surface); color: var(--warning); }
+.decision-tag.selective { background: #2c2738; color: #c8b7e5; }
+.decision-tag.demanding { background: var(--warning-surface); color: var(--warning); }
 .decision-tag.critical { background: var(--negative-surface); color: var(--negative); }
 .decision-tag .coach-tooltip { left: 0; right: auto; }
 .teaching-paragraph { margin: 0; }

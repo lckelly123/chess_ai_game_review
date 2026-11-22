@@ -9,6 +9,7 @@ import chess.engine
 
 from .move_review import MoveReview
 from .player_move_quality import PLAYER_QUALITY_POLICY, assess_player_move
+from .sharpness import with_position_sharpness
 from .stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError, StockfishUnavailableError, _candidate
 
 # This is the candidate-approval policy, separate from player-move severity. A large
@@ -59,7 +60,7 @@ def assess_move(best: dict, move: dict) -> dict:
 
 def prepare_position_evidence(evidence: dict) -> dict:
     """Approve moves without consulting any player-specific information."""
-    result = deepcopy(evidence)
+    result = with_position_sharpness(deepcopy(evidence))
     candidates = result["top_moves"]
     for move in candidates:
         move["quality"] = assess_move(candidates[0], move)

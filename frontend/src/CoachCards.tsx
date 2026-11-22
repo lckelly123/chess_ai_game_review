@@ -5,21 +5,11 @@ import type { CoachResponse, EngineReview, Move } from './types';
 import { engineEvaluation, parseCoachContent } from './coachContent';
 import { coachMoves } from './coachMoves';
 import { engineMoves, qualityLabels } from './engineReview';
+import { positionDecision } from './positionDecision';
 
 function Prose({ children }: { children: string }) {
   return <div className="coach-prose"><Markdown skipHtml disallowedElements={['img']} components={{ h1: 'h4', h2: 'h4', h3: 'h4' }}>{children}</Markdown></div>;
 }
-
-const decisionDescriptions = {
-  flexible: { label: 'Flexible', description: 'Several moves preserve a similar expected outcome.' },
-  clear_preference: { label: 'Clear preference', description: 'One continuation offers a meaningful advantage.' },
-  critical: { label: 'Critical', description: 'The choice of move has major consequences for the expected outcome.' },
-};
-const unclassifiedDescriptions = {
-  terminal_position: { label: 'Game over', description: 'There is no decision to classify.' },
-  single_legal_move: { label: 'Only legal move', description: 'There is no alternative move to compare.' },
-  mate_score: { label: 'Unclassified', description: 'Mate scores prevent a centipawn comparison.' },
-};
 
 const mistakeCategories = { tactical_miss: 'Missed tactic', tactical_allowed: 'Allowed tactic', positional: 'Positional' };
 const mistakeSubcategories = {
@@ -44,9 +34,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   const engine = response ? response.stockfish : engineReview?.stockfish;
   const teaching = response?.teaching;
   const positionEvidence = response?.position_evidence;
-  const decision = positionEvidence?.decision_classification
-    ? decisionDescriptions[positionEvidence.decision_classification]
-    : positionEvidence?.unclassified_reason ? unclassifiedDescriptions[positionEvidence.unclassified_reason] : undefined;
+  const decision = positionDecision(positionEvidence);
   const rows = engineOnly ? engineMoves(engineReview) : coachMoves(response);
   const scoreContext = engine ?? (response ? { perspective: response.fen.split(' ')[1] === 'w' ? 'White' as const : 'Black' as const } : undefined);
   const moveFeedback = teaching?.move_evaluation;
@@ -63,12 +51,13 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   return <div className="coach-cards">
     <div className="coach-card-body" aria-busy={pending}>
       {response?.classification_current === false && <p className="coach-placeholder">This saved review uses an earlier coach. Run coach to update its analysis and lesson labels.</p>}
+      {response?.classification_current !== false && response?.sharpness_current === false && <p className="coach-placeholder">This saved coaching used earlier position labels. Run coach to refresh its explanation.</p>}
       {!engineOnly && <>
       <section className="coach-section" aria-labelledby={`${id}-understand-title`}>
         <div className="coach-section-heading">
           <h3 id={`${id}-understand-title`}>Understand the position</h3>
-          {decision && <span className={`decision-tag ${positionEvidence?.decision_classification ?? 'unclassified'}`} tabIndex={0} aria-label={`${decision.label}: ${decision.description}`}>
-            {decision.label}<span className="coach-tooltip" aria-hidden="true">{decision.description} Calculated by Stockfish.</span>
+          {decision && <span className={`decision-tag ${decision.className}`} tabIndex={0} aria-label={`${decision.label}: ${decision.tooltip}`}>
+            {decision.label}<span className="coach-tooltip" aria-hidden="true">{decision.tooltip}</span>
           </span>}
         </div>
         {teaching ? <>

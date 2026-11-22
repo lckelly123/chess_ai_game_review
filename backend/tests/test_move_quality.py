@@ -12,6 +12,7 @@ from backend.coach.position_classification import analyze_position
 from backend.coach.stockfish import StockfishSettings, StockfishUnavailableError
 from backend.coach.teaching import TeachingOutput, TeachingAnalysis
 from backend.coach.responses import build_request
+from backend.coach.sharpness import with_position_sharpness
 from backend.tests.position_fixtures import position_evidence
 from backend.tests.test_coach import teaching_output
 
@@ -57,7 +58,7 @@ def test_position_pool_excludes_inferior_moves_without_changing_top_five_or_clas
     prepared = prepare_position_evidence(original)
     assert len(prepared["top_moves"]) == 5
     assert len(prepared["permitted_candidate_uci"]) == 4
-    assert prepared["decision_classification"] == original["decision_classification"]
+    assert prepared["sharpness"] == with_position_sharpness(original)["sharpness"]
     assert original["top_moves"][-1]["quality"]["status"] == "acceptable"  # no mutation
 
 

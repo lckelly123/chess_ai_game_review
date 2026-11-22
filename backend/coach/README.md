@@ -14,7 +14,7 @@ Input is `fen` plus optional `played_move` in UCI. The only active node, `analyz
 
 1. Validate the FEN and optional move before engine work or model calls; derive the canonical board and SAN using python-chess.
 2. Run an independent top-five Stockfish search with native WDL, evaluations, PVs, outlook, and deterministic position classification. The played move never affects this search, ranking, or approved pool.
-3. Approve candidates with expected-score loss at most **5 percentage points** from the best move. Keep all five lines available for comparison. This move-quality policy is separate from the unchanged Flexible/Clear preference/Critical classifier. Large centipawn gaps in winning positions do not alone make alternatives unacceptable.
+3. Approve candidates with expected-score loss at most **5 percentage points** from the best move. Keep all five lines available for comparison. This move-quality policy is separate from the five-tag centipawn sharpness classifier. Large centipawn gaps in winning positions do not alone make alternatives unacceptable.
 4. Reuse a played move already in that search. Otherwise evaluate only that move from the same pre-move root and completed search depth. Grade the player with the Lichess logistic centipawn rule described below. Depth mismatches, missing scores, bounded scores, or contradictory ordering yield uncertain quality. Engine failures stop before the model call.
 5. Send the supplied `system_prompt.md`, position evidence with `decision_mode`, and separately labeled player-move evidence through the same Responses API. The prompt reserves player-specific information for `move_evaluation`; position teaching and candidate selection must remain independent. This is a prompt constraint within one generation, not a guarantee of identical prose across separate model runs.
 6. Validate the four-field structured answer and save only a complete successful result. Usage and response IDs describe this single call. The CLI/export text is a readable rendering of the same answer, with no appended second response.
@@ -29,13 +29,13 @@ The response contains exactly `positional_thesis`, `needs_of_position`, `candida
 
 `mistake_classification` is null or an object containing exactly `category` and a non-null `subcategory`. Categories are `tactical_miss`, `tactical_allowed`, and `positional`. Either tactical category supports `hanging_piece`, `fork`, `pin_skewer`, and `discovered_attack`. Positional subcategories are `pawn`, `knight`, `bishop`, `rook`, `queen`, and `king`, identifying the piece moved by Stockfish's rank-1 move from the original board, not the played piece or the first instructional candidate. The backend supplies `engine_best_move_piece` and verifies positional labels against it, including castling and promotions. Unsupported motifs or unreliable evidence require a null classification.
 
-Classification still requires backend severity `inaccuracy`, `mistake`, or `blunder`; severity and WDL position/candidate policy are unchanged. Terminal positions still permit an empty candidate array. The four-field LLM output and single-node graph are unchanged.
+Classification still requires backend severity `inaccuracy`, `mistake`, or `blunder`; severity and WDL candidate approval are unchanged. Terminal positions still permit an empty candidate array. The four-field LLM output and single-node graph are unchanged.
 
 New passes save `classification_version: 2` beside `structured` in the existing `position_analysis` JSONB. API responses expose that metadata and `classification_current` outside the LLM output. Saved legacy coaching remains readable; obsolete classification labels are omitted rather than reinterpreted. Auto-coaching reuses only current-version reviews, including explicit null classifications. The additive `game_engine_analysis.coach_version` metadata resets only coaching progress when an older completed game is resumed; saved engine searches are retained. Opening a page never regenerates old responses or starts paid requests.
 
 ### Player-move severity
 
-This policy is independent of the unchanged position classifier and WDL-based candidate approval. From the player's perspective, clamp CP to [-1000, 1000] and compute `W(cp) = 100 / (1 + exp(-0.00368208 * cp))`. Compare best and played moves at the same root and depth using `loss = W(best_cp) - W(played_cp)`. Loss below 5 pp is **Good**, [5, 10) **Inaccuracy**, [10, 15) **Mistake**, and >=15 **Blunder**. Do not round before classification. Native WDL is not an input to player severity; missed opportunities use the same thresholds. Severity does not establish a tactical or positional cause.
+This policy is independent of position sharpness and WDL-based candidate approval. From the player's perspective, clamp CP to [-1000, 1000] and compute `W(cp) = 100 / (1 + exp(-0.00368208 * cp))`. Compare best and played moves at the same root and depth using `loss = W(best_cp) - W(played_cp)`. Loss below 5 pp is **Good**, [5, 10) **Inaccuracy**, [10, 15) **Mistake**, and >=15 **Blunder**. Do not round before classification. Native WDL is not an input to player severity; missed opportunities use the same thresholds. Severity does not establish a tactical or positional cause.
 
 Forced mates follow the separate [Lichess Advice rules](https://github.com/lichess-org/lila/blob/master/modules/tree/src/main/Advice.scala): allowing mate is a blunder, reduced to a mistake when the prior CP is below -700 or an inaccuracy below -999; losing a forced mate is a blunder, reduced to a mistake when the resulting CP exceeds 700 or an inaccuracy above 999. Keeping a forced mate, or remaining in an already forced loss, gets no error annotation (shown as Good). Mate distance changes alone are not penalized. Mate comparisons have null `winning_chances_loss_pp`, never invented CP values. The curve is documented in [scalachess eval.scala](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/eval.scala).
 
@@ -173,35 +173,41 @@ Keep clients/settings outside graph state and create any needed clients lazily. 
 
 ## Standalone position classification
 
-`position_classification.py` implements the best-versus-second-best algorithm without OpenAI calls or database writes. Its standalone `classify_position` API retains the top-two behavior. Its `analyze_position` API requests up to five candidates and supplies the first coaching node and UI through the saved first-pass evidence. Call the standalone classifier from Python:
+`position_classification.py` collects exact common-depth MultiPV-5 evidence; `sharpness.py` computes the shared deterministic metric without model calls or database writes. Both `classify_position(fen, settings=None)` and `analyze_position(fen, settings=None)` use this five-move rule:
+
+1. Use the original side-to-move perspective. Clamp all five finite scores to ±2000 cp; map winning/losing mates to ±2000 cp for sharpness only. Preserve the original CP/mate scores and engine ranking for all other consumers.
+2. Sort the capped scores and calculate `D = sum(w[i] * (C[i] - C[i+1]))`, with `w[i] = exp(-i) / sum(exp(-j) for j in range(4))` (λ=1).
+3. Normalize to `S = 100 * min(1, log1p(D/10) / log1p(687.68/10))`. D and a=10 are in centipawns. The cutoff is the fixed empirical anchor from the calibration collection; scores at or above it tie at 100.
+4. Assign the tag using the unrounded score:
+
+| Score | Classification |
+|---|---|
+| 0 ≤ S ≤ 20 | Forgiving |
+| 20 < S ≤ 40 | Flexible |
+| 40 < S ≤ 60 | Selective |
+| 60 < S ≤ 80 | Demanding |
+| 80 < S ≤ 100 | Critical |
 
 ```python
 from backend.coach.position_classification import classify_position
 
 result = classify_position(fen)
-print(result["classification"], result["delta_cp"], result["delta_e_pp"])
+print(result["classification"], result["sharpness"]["raw_cp"], result["sharpness"]["score"])
 ```
 
-`classify_position(fen, settings=None)` accepts a complete six-field FEN and optional `StockfishSettings`; otherwise it reads the existing `STOCKFISH_*` environment settings. This is a blocking function; async callers should run it in a worker thread.
+The result includes `sharpness.version`, raw D, normalized score, cap, a, cutoff, weights, and capped scores. `classification` is the display name; `decision_classification` is its lowercase key. `delta_cp` and `delta_e_pp` remain descriptive best-versus-second diagnostics and do not determine the tag. WDL remains available for outlook and candidate approval, independently of sharpness. The original engine ranking and native mate distances are preserved.
 
-`analyze_position(fen, settings=None)` applies the same classification thresholds to the best two moves in its top-five search, and adds `decision_classification` (`flexible`, `clear_preference`, `critical`, or null), `position_outlook`, and `permitted_candidate_uci`. Every candidate includes `relative_quality.cp_loss_from_best` and `relative_quality.expected_score_loss_pp`. A single legal move is evaluated and supplied as the sole candidate with a null classification. All candidates come from the same completed depth; finite-depth results can differ from a separate MultiPV=2 run.
+Both APIs accept a complete six-field FEN and optional `StockfishSettings`, otherwise using `STOCKFISH_*` settings. They are blocking; async callers use a worker thread. The standalone classifier skips engine search when fewer than five legal moves exist. The coaching analyzer still evaluates the available one to four moves for teaching, while leaving sharpness null. Terminal positions never launch an engine. Reasons are `terminal_position`, `single_legal_move`, and `fewer_than_five_legal_moves`. Incomplete or invalid saved five-move evidence becomes `insufficient_engine_evidence`; it is never padded.
 
-The classifier enables Stockfish's native `UCI_ShowWDL` output and requests `MultiPV=2`. Both centipawn scores and WDL estimates are normalized to the side to move. WDL counts are per thousand; for each candidate it calculates `E = (wins + 0.5 * draws) / 1000`. It then applies the supplied criteria exactly:
+Search collection retains the latest complete, exact batch at a common depth and rejects duplicate/illegal moves, mixed depths, bounds, invalid WDL, and inconsistent orderings. Its deadline is the configured search time plus five seconds, with bounded initialization and one retry when no valid batch exists. FEN-only analysis cannot recover earlier repetition history. Production uses its existing depth/time budget; the experimental histogram used 400,000 nodes, so individual scores and tags can differ with search depth.
 
-| Classification | Criteria |
-| --- | --- |
-| Flexible | `delta_cp <= 35` **and** `delta_e_pp <= 5` |
-| Clear preference | Not Flexible, and `delta_e_pp < 20` |
-| Critical | `delta_e_pp >= 20` |
+### Saved evidence and coaching versions
 
-`delta_cp = CP_best - CP_second`; `delta_e_pp = 100 * (E_best - E_second)` is in percentage points. Threshold comparisons use exact rational arithmetic, with no rounding before classification. The JSON-compatible result contains the normalized FEN, perspective, classification, both gaps, two ranked candidates with UCI/SAN/PV, CP or mate score, native WDL counts, probabilities, expected score, achieved depth, and engine/resource metadata.
+New coaching saves `sharpness_version: 1` alongside the unchanged mistake `classification_version: 2` in the existing JSONB. API responses expose `sharpness_current` separately. Complete saved position evidence is rescored on read, including game-analysis results, without changing the stored engine evidence or making model requests. The prior explanation is not rewritten; the UI identifies coaching generated under earlier position labels. Old incomplete saves remain unclassified until a new analysis. Cached evidence is also refreshed before new coaching; incomplete old evidence triggers the normal position search.
 
-The latest complete pair at a common depth is used, so a time-limited search ending between MultiPV lines does not compare different iterations. Missing WDL, incomplete pairs, invalid variations, duplicate moves, and inconsistent rankings raise `StockfishAnalysisError`; bound-only scores are excluded. Search collection has a deadline of the configured search time plus five seconds, and initialization/configuration each have a five-second deadline. The engine process is closed on success and failure. WDL values are Stockfish's approximate engine-self-play outcome estimates, not player-specific probabilities; see the [official UCI_ShowWDL documentation](https://official-stockfish.github.io/docs/stockfish-wiki/UCI-Protocol-and-Stockfish-Commands.html#uci_showwdl).
+This update does not invalidate lesson categories or automatically regenerate completed coaching jobs. Users can refresh an earlier explanation with Run coach. The five new prompt modes describe evaluation sensitivity and never imply human difficulty, a guaranteed outcome change, or that every legal move is safe. Candidate approval and player-move severity retain their separate policies.
 
-For terminal positions or a single legal move, the result has `classification: null` and `unclassified_reason: "terminal_position"` or `"single_legal_move"`, without starting Stockfish. Mate scores retain their mate distance and have no invented CP equivalent. If `delta_e_pp > 5`, the expected-score gap alone determines Clear preference or Critical; otherwise a comparison involving a mate score returns `classification: null`, `delta_cp: null`, and `unclassified_reason: "mate_score"`. FEN-only analysis cannot recover earlier repetition history.
-
-Run the standalone CLI from the repository root (it loads `.env` for engine settings):
-
+Run from the repository root:
 ```powershell
 .\.venv\Scripts\python -m backend.coach.position_classification --fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 ```

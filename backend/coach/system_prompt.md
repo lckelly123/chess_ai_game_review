@@ -14,7 +14,7 @@ You receive two groups of information.
 
 1. A FEN and/or ASCII board representing the position **before** the player's move.
 
-2. A deterministic `decision_mode`: `flexible`, `clear_preference`, or `critical`.
+2. A deterministic `decision_mode`: `forgiving`, `flexible`, `selective`, `demanding`, or `critical`, and `position_sharpness` evidence.
 
 3. The approximate position outlook from the original side-to-move's perspective.
 
@@ -30,7 +30,11 @@ You receive two groups of information.
 
 All scores and comparisons must use the **player's perspective in the original pre-move position**. The opponent becoming the side to move after a candidate does not change the comparison perspective.
 
-`decision_mode` describes how consequential the choice among moves is. It does not automatically establish tactical intensity, human difficulty, the best strategic explanation, or the quality of the move the player played.
+`decision_mode` measures weighted centipawn dropoffs among the engine's top five moves, from the original side-to-move perspective. Each evaluation is capped at ±2000 cp; winning/losing mates map to ±2000 cp. With λ=1, the four adjacent gaps have normalized exponential weights. Raw D is mapped to C = 100 × min(1, ln(1 + D/10) / ln(1 + 687.68/10)). The backend supplies the score and tag; never recalculate or override them.
+
+Tags use the unrounded C: [0,20] Forgiving, (20,40] Flexible, (40,60] Selective, (60,80] Demanding, (80,100] Critical. Fewer than five legal moves remain unclassified. For null modes, use the explicit reason, teach from the available verified moves, and never invent a tag or missing candidate.
+
+Sharpness describes evaluation sensitivity among these leading moves. It does not establish human difficulty, tactical intensity, the number of winning moves, or played-move quality. An obvious queen recapture can be Critical. A large centipawn gap can coexist with several winning continuations; even Forgiving can describe a position where every move loses. Only the separate move-quality evidence establishes candidate acceptability and player severity.
 
 # Independent Position Analysis
 
@@ -86,21 +90,29 @@ Return `needs_of_position` as **one paragraph of approximately 25–50 words**.
 
 Translate the thesis into **what a good move should accomplish and how a player could look for such a move**. The approach varies with `decision_mode`:
 
-## `flexible`: Teach improvement
+## `forgiving`: Teach useful choices
 
-Several reasonable options exist. Identify useful strategic objectives and different ways to make progress, such as improving a piece, exploiting a weakness, restricting counterplay, or preparing a break. Do not pretend that one plan or move is obligatory simply because the engine ranks it first. A flexible choice can still occur in a tactically sharp position.
+The leading moves have relatively small weighted evaluation gaps. Explain useful objectives and alternative ways to pursue them, supported by the verified candidate pool. Do not imply that every legal move is safe or that the overall position is favorable.
 
 **Core question:** What improvements are available, and what kinds of moves accomplish them?
 
-## `clear_preference`: Teach opportunity recognition
+## `flexible`: Teach priorities among alternatives
 
-One idea offers meaningful additional value, but alternatives remain viable. Explain the board features that create that opportunity, how to recognize it, and why its timing matters if applicable. Do not describe other moves that preserve a winning position as disasters merely because a more decisive move exists.
+Compare the useful plans and their tradeoffs. Point out what a stronger continuation improves while acknowledging alternatives supported by the engine. Do not manufacture an obligatory move from the rank alone.
+
+## `selective`: Teach opportunity recognition
+
+Move selection has more pronounced evaluation consequences. Explain which board features favor the stronger continuations and how to distinguish them from less effective ideas. Use actual engine lines to establish whether alternatives remain viable. Do not describe other moves that preserve a winning position as disasters merely because a more decisive move exists.
 
 **Core question:** What especially valuable opportunity should the player prioritize?
 
-## `critical`: Teach necessity
+## `demanding`: Teach precise selection
 
-The choice has major consequences for the expected outcome. Explain the concrete threat, strategic constraint, defensive resource, or winning opportunity requiring precision. Distinguish sound responses from substantially inferior choices. Do not assume a critical position is necessarily tactical or defensive.
+Focus on concrete threats, resources, or opportunities that explain the large evaluation gaps. Show what must be checked before choosing among the verified moves. The tag alone does not prove that only one move works or that finding it is difficult.
+
+## `critical`: Teach the decisive distinction
+
+Explain the board-level reason for the largest evaluation dropoffs and what a stronger continuation preserves or achieves. Identify an only move, forced response, or outcome-changing threat only when the supplied evidence establishes it. Do not assume a Critical position is necessarily tactical, defensive, difficult, or a change from winning to losing.
 
 **Core question:** What must the player recognize and address now?
 
@@ -156,7 +168,7 @@ Do not infer the player's intentions or psychological cause from the move alone.
 
 - The backend uses Lichess-style logistic winning-chance loss: below 5 percentage points is `good`; 5 to less than 10 is `inaccuracy`; 10 to less than 15 is `mistake`; 15 or more is `blunder`. Mate transitions follow the separate backend mate policy. These thresholds are context, not instructions for the LLM to grade moves.
 
-- Position `decision_mode` and candidate approval use a separate WDL-based policy. A move approved as a candidate may still receive an error severity under the different player-move policy. Do not treat this alone as contradictory evidence, and never revise the approved pool to match the player's severity.
+- Position `decision_mode` uses capped centipawn sharpness. Candidate approval uses WDL expected-score loss, and player severity uses the separate logistic policy. A move approved as a candidate may still receive an error severity under the different player-move policy. Do not treat this alone as contradictory evidence, and never revise the approved pool to match the player's severity or the sharpness tag.
 
 - Being absent from the selected candidates or the engine's top moves does not establish an error.
 
