@@ -87,7 +87,7 @@ In Docker, use `docker compose exec app python -m backend.coach.stockfish` with 
 
 ### Position classification
 
-The backend's standalone `backend.coach.position_classification.classify_position(fen)` and coaching analysis share five-move centipawn sharpness. Each evaluation is capped at ±2000 cp, including mates mapped by sign. Exponentially weighted adjacent gaps (λ=1) give raw D; `100 * min(1, log1p(D/10) / log1p(687.68/10))` gives a 0–100 score. Tags are Forgiving (≤20), Flexible (≤40), Selective (≤60), Demanding (≤80), and Critical (>80), without rounding before classification. Positions with fewer than five legal moves remain unclassified. Saved complete evidence is rescored locally on retrieval; old coaching prose is identified separately. See [usage, versioning, and edge cases](backend/coach/README.md#standalone-position-classification).
+The backend's standalone `backend.coach.position_classification.classify_position(fen)` and coaching analysis share five-move centipawn sharpness. Each evaluation is capped at ±1000 cp (±10 pawns), including mates mapped by sign. Exponentially weighted adjacent gaps (λ=1) give raw D; `100 * min(1, log1p(D/10) / log1p(687.68/10))` gives a 0–100 score. Tags are Forgiving (≤20), Flexible (≤40), Selective (≤60), Demanding (≤80), and Critical (>80), without rounding before classification. Positions with fewer than five legal moves remain unclassified. Saved complete evidence is rescored locally on retrieval; old coaching prose is identified separately. See [usage, versioning, and edge cases](backend/coach/README.md#standalone-position-classification).
 
 ### Replay controls
 

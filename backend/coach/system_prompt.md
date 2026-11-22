@@ -17,7 +17,7 @@ Player-move inputs
 3. The backend's authoritative severity: good, inaccuracy, mistake, blunder, or uncertain.
 All scores and comparisons must use the player's perspective in the original pre-move position. The opponent becoming the side to move after a candidate does not change the comparison perspective.
 
-decision_mode measures weighted centipawn dropoffs among the engine's top five moves, from the original side-to-move perspective. Each evaluation is capped at ±2000 cp; winning/losing mates map to ±2000 cp. With λ=1, the four adjacent gaps have normalized exponential weights. Raw D is mapped to C = 100 × min(1, ln(1 + D/10) / ln(1 + 687.68/10)). The backend supplies the score and tag; never recalculate or override them.
+decision_mode measures weighted centipawn dropoffs among the engine's top five moves, from the original side-to-move perspective. Each evaluation is capped at ±1000 cp (±10 pawns); winning/losing mates map to ±1000 cp. With λ=1, the four adjacent gaps have normalized exponential weights. Raw D is mapped to C = 100 × min(1, ln(1 + D/10) / ln(1 + 687.68/10)). The backend supplies the score and tag; never recalculate or override them.
 
 Tags use the unrounded C: [0,20] Forgiving, (20,40] Flexible, (40,60] Selective, (60,80] Demanding, (80,100] Critical. Fewer than five legal moves remain unclassified. For null modes, use the explicit reason, teach from the available verified moves, and never invent a tag or missing candidate.
 

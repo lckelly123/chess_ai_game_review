@@ -253,8 +253,8 @@ def test_invalid_fen_rejected_before_engine(monkeypatch, fen):
 
 @pytest.mark.parametrize("second_score,second_wins,label", [
     (chess.engine.Mate(5), 1000, "Forgiving"),
-    (chess.engine.Cp(900), 950, "Critical"),
-    (chess.engine.Cp(900), 900, "Critical"),
+    (chess.engine.Cp(900), 950, "Selective"),
+    (chess.engine.Cp(900), 900, "Selective"),
     (chess.engine.Cp(300), 800, "Critical"),
 ])
 def test_mate_scores_have_no_invented_cp_gap(monkeypatch, second_score, second_wins, label):
@@ -269,7 +269,7 @@ def test_mate_scores_have_no_invented_cp_gap(monkeypatch, second_score, second_w
     assert result["classification"] == label and result["delta_cp"] is None
     assert result["unclassified_reason"] is None
     assert result["top_moves"][0]["score"]["mate"] == 3
-    assert result["sharpness"]["capped_scores_cp"][0] == 2000
+    assert result["sharpness"]["capped_scores_cp"][0] == 1000
 
 
 @pytest.mark.parametrize("change", ["missing_wdl", "bound", "missing_second", "duplicate", "illegal_pv", "invalid_wdl", "reversed_cp", "reversed_wdl"])
