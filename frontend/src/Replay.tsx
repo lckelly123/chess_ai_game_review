@@ -3,7 +3,7 @@ import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, In
 import Board from './Board';
 import CoachCards from './CoachCards';
 import type { CoachResponse, GameAnalysis, GameDetail } from './types';
-import { api, perspective, readStored, store, timeControl } from './types';
+import { api, perspective, readStored, store } from './types';
 import { AUTOPLAY_TURN_MS, BETWEEN_TURNS_MS, playerTurnStops, replayNavigation, restoreReplay } from './replayNavigation';
 import { visibleCandidate, type CandidateSelection } from './boardAnnotations';
 import { analysisActive, analysisProgress, engineMoves, engineSelectionId, errorMarkers, mergeCoachResponses, visibleEngineCandidate } from './engineReview';
@@ -27,7 +27,6 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const boardPosition = game.positions[transition?.via ?? ply];
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [flipped, setFlipped] = useState(!player.isWhite);
-  const [question, setQuestion] = useState(() => readStored(`coach-question:${game.id}`));
   const [coachModel, setCoachModel] = useState<CoachModel>(() =>
     COACH_MODELS.find(option => option.value === readStored('coach-model'))?.value ?? COACH_MODELS[0].value);
   const [coachResponses, setCoachResponses] = useState<Record<string, CoachResponse>>(() => game.coach_responses ?? {});
@@ -118,7 +117,6 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   }, [transition, reducedMotion]);
 
   useEffect(() => { store(`position:${game.id}`, String(ply)); }, [game.id, ply]);
-  useEffect(() => { store(`coach-question:${game.id}`, question); }, [game.id, question]);
   useEffect(() => { store('coach-model', coachModel); }, [coachModel]);
   useEffect(() => () => { coachRequest.current?.abort(); }, []);
 
@@ -159,7 +157,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       const target = event.target as HTMLElement;
       if (target.closest('input, textarea, select, .coach-cards, [contenteditable="true"]') || event.ctrlKey || event.altKey || event.metaKey) return;
       // Space keeps its native action on focused controls. Navigation keys still
-      // work after using a replay button, without interrupting question typing.
+      // work after using a replay button, without interrupting form controls.
       if (event.key === ' ' && target.closest('button, a')) return;
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', ' '].includes(event.key)) return;
       event.preventDefault();
@@ -179,14 +177,12 @@ export default function Replay({ game, username }: { game: GameDetail; username:
 
   return <section className="replay" aria-label="Game replay">
     <div className="game-heading">
-      <div><h1>{game.white} <span>vs</span> {game.black}</h1><p>{new Date(game.end_time * 1000).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}<span className="dot">·</span><span className="capitalize">{game.time_class}</span> {timeControl(game.time_control)}</p></div>
-      <span className={`result-label ${player.result}`}>{player.result === 'win' ? 'You won' : player.result === 'loss' ? 'You lost' : 'Draw'}</span>
+      <h1>{game.white} <span>vs</span> {game.black}</h1>
     </div>
     <div className="replay-columns">
       <div className="board-column" ref={boardColumn}>
         {playerBar(top)}
         <Board position={boardPosition} flipped={flipped} candidate={candidate} candidateName={candidateName}/>
-        {candidate && <div className="board-idea" role="status"><span><strong>{candidateName}</strong>{candidate.reason && <> · {candidate.reason}</>}</span><button type="button" onClick={() => setCandidateSelection(null)}>Clear</button></div>}
         {playerBar(bottom)}
         <div className="board-controls">
           <button className="icon-button" onClick={() => setFlipped(f => !f)} title="Flip board" aria-label="Flip board"><ArrowDownUp size={19}/></button>
@@ -210,8 +206,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
             </button>)}
           </div>}
         </div>
-        {markers.length > 0 && <div className="timeline-legend" aria-label="Timeline colors"><span className="inaccuracy">Inaccuracy</span><span className="mistake">Mistake</span><span className="blunder">Blunder</span></div>}
-        <div className="position-caption" aria-live="polite">{ply === game.moves.length ? `Final position · ${game.result}` : `${turn} to move${position.check_square ? ' · Check' : ''}`}<span>{positionLabel}</span></div>
+        <div className="visually-hidden" aria-live="polite">{ply === game.moves.length ? `Final position · ${game.result}` : `${turn} to move${position.check_square ? ' · Check' : ''}`}</div>
       </div>
       <aside className="coach-panel" aria-labelledby="coach-title">
         <div className="coach-heading">
@@ -234,12 +229,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
         <div className="coach-result" aria-busy={pendingPly === ply}>
           <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}/>
         </div>
-        <div className="coach-field">
-          <label htmlFor="coach-question">Your question</label>
-          <textarea id="coach-question" className="coach-question" rows={5} placeholder="Ask about this position…" value={question} onChange={event => setQuestion(event.target.value)}/>
-        </div>
       </aside>
     </div>
-    <p className="keyboard-tip"><span>Reviewing your turns as {player.isWhite ? 'White' : 'Black'}.</span><span>Use <kbd>←</kbd> <kbd>→</kbd> to step between decisions.</span></p>
   </section>;
 }

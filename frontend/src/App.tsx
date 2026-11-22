@@ -192,7 +192,7 @@ export default function App() {
         </section>
         <footer className="library-footer">Independent project. Not affiliated with Chess.com.</footer>
       </div> : <div className="workspace" ref={workspaceRef} tabIndex={-1} aria-label="Game replay workspace">
-        <nav className="replay-navigation" aria-label="Game navigation"><a className="back-link" href="#games"><ArrowLeft size={17}/> Back to games</a><span>Replay & explore</span></nav>
+        <nav className="replay-navigation" aria-label="Game navigation"><a className="back-link" href="#games"><ArrowLeft size={17}/> Back to games</a></nav>
         {detailError ? <div className="workspace-loading" role="alert"><CircleAlert size={28}/><h1>Could not open this game</h1><p>{detailError}</p><button className="secondary-button" onClick={() => setRevision(r => r + 1)}>Try again</button></div> : detailLoading || !detail || detail.id !== replayRoute.id ? <div className="workspace-loading" role="status"><LoaderCircle className="spin" size={28}/><p>Setting up the board…</p></div> : <Replay key={`${detail.id}:${replayRoute.username}`} game={detail} username={replayRoute.username}/>}
       </div>}
     </main>
