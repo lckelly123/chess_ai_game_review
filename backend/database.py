@@ -148,6 +148,7 @@ class Database:
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING fen, NULLIF(played_move, '') AS played_move, text, model, response_id, created_at, stockfish,
                              position_analysis -> 'classification_version' AS classification_version,
+                             position_analysis -> 'sharpness_version' AS sharpness_version,
                              position_analysis -> 'structured' AS teaching,
                              position_analysis -> 'engine_evidence' AS position_evidence""",
                 (analysis.position.fen, analysis.text, analysis.model, analysis.response_id,
@@ -168,6 +169,7 @@ class Database:
             rows = db.execute(
                 """SELECT DISTINCT ON (cf.fen, cf.played_move) cf.fen, NULLIF(cf.played_move, '') AS played_move,
                           text, model, response_id, created_at, stockfish, position_analysis -> 'classification_version' AS classification_version,
+                             position_analysis -> 'sharpness_version' AS sharpness_version,
                              position_analysis -> 'structured' AS teaching,
                           position_analysis -> 'engine_evidence' AS position_evidence
                    FROM coach_feedback cf WHERE cf.fen = ANY(%s) AND cf.played_move = ANY(%s)

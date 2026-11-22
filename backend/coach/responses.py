@@ -19,6 +19,7 @@ from .settings import CoachSettings, require_api_key
 from .stockfish import StockfishAnalysisError
 from .teaching import TeachingOutput
 from .classification import CLASSIFICATION_VERSION, best_move_piece
+from .sharpness import SHARPNESS_VERSION
 
 SYSTEM_PROMPT_PATH = Path(__file__).with_name("system_prompt.md")
 MOVE_PROMPT_PATH = Path(__file__).with_name("move_prompt.md")
@@ -51,6 +52,7 @@ class CoachAnalysis:
         if self.structured is not None:
             result["structured"] = self.structured
             result["classification_version"] = CLASSIFICATION_VERSION
+            result["sharpness_version"] = SHARPNESS_VERSION
         if self.engine_evidence is not None:
             result["engine_evidence"] = self.engine_evidence
         return result
@@ -70,6 +72,7 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
         raise StockfishAnalysisError("Stockfish evidence did not match the selected position.")
     payload = {
         "decision_mode": evidence["decision_classification"],
+        "position_sharpness": evidence["sharpness"],
         "unclassified_reason": evidence["unclassified_reason"],
         "position_outlook": evidence["position_outlook"],
         "engine_verified_moves": evidence["top_moves"],
@@ -93,6 +96,9 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
                 "The top-five lines may also include unacceptable moves for comparison. Do not invent a decision mode "
                 "when it is null: use the stated reason. For terminal_position, return an empty candidate_moves array "
                 "and explain that play has ended. For single_legal_move, recommend the sole verified move."
+                " For fewer_than_five_legal_moves or insufficient_engine_evidence, explain the position using the verified moves "
+                "without assigning a sharpness tag or inventing missing candidates. Position sharpness uses capped centipawn gaps, "
+                "not WDL expected-score gaps; a high score can occur when multiple moves still win."
                 "\n\nPlayer-move information (use only for move_evaluation):\n" + json.dumps(move_evidence, ensure_ascii=False)
                 + "\n\nThe authoritative severity described in the system prompt is player-move information.move_quality.status. "
                 "Use that existing field; candidate quality uses the separate position-level policy."

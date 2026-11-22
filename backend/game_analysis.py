@@ -15,6 +15,7 @@ from .coach.move_review import MoveReview
 from .coach.move_quality import analyze_played_move
 from .coach.player_move_quality import with_player_move_quality
 from .coach.position_classification import analyze_position
+from .coach.sharpness import with_position_sharpness
 from .coach.stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
 from .coach.service import CoachResponseError, open_coach
 from .coach.settings import CoachConfigurationError, CoachModel, CoachSettings, DEFAULT_COACH_MODEL
@@ -48,7 +49,11 @@ def analysis_summary(row: dict | None) -> dict | None:
 
 
 def analysis_result(row: dict | None) -> dict | None:
-    return {**analysis_summary(row), "moves": row["moves"]} if row else None
+    if row is None:
+        return None
+    moves = {ply: {**move, **({"position_evidence": with_position_sharpness(move["position_evidence"], expected_fen=move["fen"])}
+                            if move.get("position_evidence") else {})} for ply, move in row["moves"].items()}
+    return {**analysis_summary(row), "moves": moves}
 
 
 def quality_counts(moves: dict) -> dict:
@@ -140,7 +145,8 @@ class GameAnalysisService:
                 if not current_classification(previous.get((fen, uci))):
                     await run_in_threadpool(self.db.health)
                     options = {}
-                    if evidence.get("position_evidence"):
+                    if (evidence.get("position_evidence") and with_position_sharpness(
+                            evidence["position_evidence"], expected_fen=fen)["unclassified_reason"] != "insufficient_engine_evidence"):
                         # New jobs reuse the exact evidence that selected this
                         # move. Older engine-only saves use the normal coach search.
                         options = {"position_engine": lambda _: evidence["position_evidence"],

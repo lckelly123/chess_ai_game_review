@@ -92,7 +92,7 @@ def test_mate_advice_is_separate_from_cp_formula(best, played, status, reason):
 def test_player_severity_cannot_change_position_classification_or_candidate_approval():
     position = position_evidence(chess.STARTING_FEN)
     snapshot = deepcopy(position)
-    # Both continue to use their existing WDL policy, regardless of CP severity.
+    # Sharpness and WDL candidate approval remain independent of player severity.
     prepared = prepare_position_evidence(position)
     assert prepared == snapshot
     for move in prepared["top_moves"]:

@@ -11,21 +11,11 @@ import chess
 import chess.engine
 
 from .position import CoachPosition, InvalidPositionError
+from .sharpness import with_position_sharpness
 from .stockfish import (
     StockfishAnalysisError, StockfishSettings, StockfishTimeoutError,
     StockfishUnavailableError, _candidate,
 )
-
-
-def _classification(delta_cp: int | None, delta_e_pp: Fraction) -> str | None:
-    # Fractions preserve the inclusive 5/20 pp boundaries of native WDL counts.
-    if delta_e_pp >= 20:
-        return "Critical"
-    if delta_e_pp > 5:
-        return "Clear preference"
-    if delta_cp is None:
-        return None  # A mate score has no centipawn gap to test against 35.
-    return "Flexible" if delta_cp <= 35 else "Clear preference"
 
 
 def _candidate_with_expectation(board: chess.Board, info: dict, rank: int) -> tuple[dict, Fraction]:
@@ -120,32 +110,30 @@ async def _analyze_candidates(board: chess.Board, settings: StockfishSettings, c
 
 
 def classify_position(fen: str, settings: StockfishSettings | None = None) -> dict:
-    """Classify the best/second-best choice from the side-to-move perspective.
+    """Classify five-move sharpness from the side-to-move perspective.
 
     Blocking, like analyze_move(): async callers should use a worker thread.
     The returned dictionary is JSON-compatible. Unsupported comparisons have a
     null classification and an explicit reason; engine failures raise the shared
     Stockfish exceptions. This function does not persist or trigger coaching.
     """
-    return _position_evidence(fen, settings, count=2, analyze_single=False)
+    return _position_evidence(fen, settings, analyze_short=False)
 
 
 def analyze_position(fen: str, settings: StockfishSettings | None = None) -> dict:
     """Top five moves, outlook, relative quality, and the same classification.
 
-    Fewer moves are returned when fewer are legal. A sole legal move is evaluated
-    but remains unclassified. Terminal positions need no engine process.
+    Fewer moves are returned when fewer are legal, but remain unclassified.
+    Terminal positions need no engine process.
     """
-    evidence = _position_evidence(fen, settings, count=5, analyze_single=True)
-    labels = {"Flexible": "flexible", "Clear preference": "clear_preference", "Critical": "critical"}
-    evidence["decision_classification"] = labels.get(evidence["classification"])
+    evidence = _position_evidence(fen, settings, analyze_short=True)
     best = next(iter(evidence["top_moves"]), None)
     evidence["position_outlook"] = {key: best[key] for key in ("score", "wdl", "probabilities", "expected_score")} if best else None
     evidence["permitted_candidate_uci"] = [move["uci"] for move in evidence["top_moves"]]
     return evidence
 
 
-def _position_evidence(fen: str, settings: StockfishSettings | None, *, count: int, analyze_single: bool) -> dict:
+def _position_evidence(fen: str, settings: StockfishSettings | None, *, analyze_short: bool) -> dict:
     position = CoachPosition.from_fen(fen)
     board = chess.Board(position.fen)
     legal_move_count = board.legal_moves.count()
@@ -162,13 +150,13 @@ def _position_evidence(fen: str, settings: StockfishSettings | None, *, count: i
         "limits": None,
     }
     if board.is_game_over():
-        return {**result, "unclassified_reason": "terminal_position"}
-    if legal_move_count < 2 and not analyze_single:
-        return {**result, "unclassified_reason": "single_legal_move"}
+        return with_position_sharpness(result)
+    if legal_move_count < 5 and not analyze_short:
+        return with_position_sharpness(result)
 
     settings = settings or StockfishSettings.from_env()
     try:
-        engine_name, infos = asyncio.run(_analyze_candidates(board, settings, min(count, legal_move_count)))
+        engine_name, infos = asyncio.run(_analyze_candidates(board, settings, min(5, legal_move_count)))
         evaluated = _validated_candidates(board, infos)
         candidates = [candidate for candidate, _ in evaluated]
         best, best_e = evaluated[0]
@@ -181,11 +169,8 @@ def _position_evidence(fen: str, settings: StockfishSettings | None, *, count: i
             }
         delta_cp = candidates[1]["relative_quality"]["cp_loss_from_best"] if len(candidates) > 1 else None
         delta_e_pp = 100 * (best_e - evaluated[1][1]) if len(candidates) > 1 else None
-        classification = _classification(delta_cp, delta_e_pp) if delta_e_pp is not None else None
-        return {
+        return with_position_sharpness({
             **result,
-            "classification": classification,
-            "unclassified_reason": ("single_legal_move" if len(candidates) == 1 else "mate_score") if classification is None else None,
             "delta_cp": delta_cp,
             "delta_e_pp": float(delta_e_pp) if delta_e_pp is not None else None,
             "top_moves": candidates,
@@ -193,7 +178,7 @@ def _position_evidence(fen: str, settings: StockfishSettings | None, *, count: i
             "limits": {"depth": settings.depth, "seconds_per_search": settings.time_limit},
             "threads": settings.threads,
             "hash_mb": settings.hash_mb,
-        }
+        })
     except TimeoutError as exc:
         raise StockfishTimeoutError("Stockfish exceeded its response deadline during position classification.") from exc
     except OSError as exc:
@@ -206,7 +191,7 @@ def main() -> int:
     from dotenv import load_dotenv
 
     load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
-    parser = argparse.ArgumentParser(description="Classify a position using Stockfish's top two moves; no model calls.")
+    parser = argparse.ArgumentParser(description="Classify five-move centipawn sharpness; no model calls.")
     parser.add_argument("--fen", required=True, help="Complete six-field FEN.")
     args = parser.parse_args()
     if hasattr(sys.stdout, "reconfigure"):

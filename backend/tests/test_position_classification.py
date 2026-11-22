@@ -23,7 +23,8 @@ def info(uci, cp, wdl, rank, *, color=chess.WHITE, depth=12, score=None, **extra
 
 
 def pair(cp_gap=35, best_wdl=(600, 0, 400), second_wdl=(550, 0, 450)):
-    return [info("e2e4", 30 + cp_gap, best_wdl, 1), info("d2d4", 30, second_wdl, 2)]
+    return [info("e2e4", 30 + cp_gap, best_wdl, 1),
+            *[info(uci, 30, second_wdl, rank) for rank, uci in enumerate(["d2d4", "g1f3", "c2c4", "b1c3"], 2)]]
 
 
 class FakeAnalysis:
@@ -76,14 +77,15 @@ def install(monkeypatch, engine):
 
 
 @pytest.mark.parametrize("cp_gap,best_wins,second_wins,expected", [
-    (0, 500, 500, "Flexible"),
-    (35, 600, 550, "Flexible"),  # Both inclusive boundaries, exactly 5 pp.
-    (36, 600, 550, "Clear preference"),
-    (35, 601, 550, "Clear preference"),
-    (10, 799, 600, "Clear preference"),
-    (10, 800, 600, "Critical"),  # Exactly 20 pp, irrespective of CP gap.
+    (0, 500, 500, "Forgiving"),
+    (35, 600, 550, "Flexible"),
+    (36, 600, 550, "Flexible"),
+    (35, 601, 550, "Flexible"),
+    (10, 799, 600, "Forgiving"),
+    (10, 800, 600, "Forgiving"),  # WDL does not set the position tag.
     (500, 1000, 0, "Critical"),
-    (100, 1000, 1000, "Clear preference"),  # Large CP gap, unchanged expectation.
+    (100, 1000, 1000, "Selective"),
+    (200, 1000, 1000, "Demanding"),
 ])
 def test_exact_classification_thresholds(monkeypatch, cp_gap, best_wins, second_wins, expected):
     engine = FakeEngine(pair(cp_gap, (best_wins, 0, 1000 - best_wins), (second_wins, 0, 1000 - second_wins)))
@@ -103,7 +105,7 @@ def test_native_wdl_draws_configuration_and_evidence(monkeypatch):
     result = classify_position(chess.STARTING_FEN, StockfishSettings(depth=14, time_limit=3, threads=1, hash_mb=32))
     assert engine.configured == {"Threads": 1, "Hash": 32, "UCI_ShowWDL": True}
     fen, limit, options = engine.request
-    assert fen == chess.STARTING_FEN and options == {"multipv": 2}
+    assert fen == chess.STARTING_FEN and options == {"multipv": 5}
     assert limit.depth == 14 and limit.time == 3
     assert result["engine"] == "Stockfish test" and result["perspective"] == "White"
     assert result["top_moves"][0]["expected_score"] == .6
@@ -119,6 +121,9 @@ def test_black_perspective_flips_both_cp_and_wdl(monkeypatch):
     engine = FakeEngine([
         info("e7e5", -65, (100, 600, 300), 1),
         info("c7c5", -30, (100, 700, 200), 2),
+        info("g8f6", -30, (100, 700, 200), 3),
+        info("e7e6", -30, (100, 700, 200), 4),
+        info("d7d6", -30, (100, 700, 200), 5),
     ])
     install(monkeypatch, engine)
     result = classify_position(board.fen(en_passant="fen"))
@@ -136,7 +141,7 @@ def test_partial_latest_iteration_uses_last_complete_depth(monkeypatch):
     install(monkeypatch, engine)
     result = classify_position(chess.STARTING_FEN)
     assert result["classification"] == "Flexible"
-    assert [move["depth"] for move in result["top_moves"]] == [12, 12]
+    assert [move["depth"] for move in result["top_moves"]] == [12] * 5
     assert result["top_moves"][0]["uci"] == "e2e4"
 
 
@@ -158,7 +163,7 @@ def test_rank_changes_do_not_corrupt_saved_five_move_batch(monkeypatch, finish_m
     assert [move["uci"] for move in result["top_moves"]] == roots
     assert [move["depth"] for move in result["top_moves"]] == [14] * 5
     assert result["delta_cp"] == 1 and result["delta_e_pp"] == 0
-    assert result["classification"] == "Flexible"
+    assert result["classification"] == "Forgiving"
 
 
 @pytest.mark.parametrize("change", ["partial", "missing_first", "mixed_depth", "duplicate", "reversed_cp",
@@ -166,6 +171,7 @@ def test_rank_changes_do_not_corrupt_saved_five_move_batch(monkeypatch, finish_m
 def test_bad_later_batch_preserves_last_valid_snapshot(monkeypatch, change):
     completed = pair()
     later = [info("g1f3", 100, (700, 0, 300), 1), info("c2c4", 90, (690, 0, 310), 2)]
+    later += [info(uci, 80, (680, 0, 320), rank) for rank, uci in enumerate(["e2e4", "d2d4", "b1c3"], 3)]
     if change == "partial":
         later.pop()
     elif change == "missing_first":
@@ -187,14 +193,15 @@ def test_bad_later_batch_preserves_last_valid_snapshot(monkeypatch, change):
     engine = FakeEngine([*completed, *later])
     install(monkeypatch, engine)
     result = classify_position(chess.STARTING_FEN)
-    assert [move["uci"] for move in result["top_moves"]] == ["e2e4", "d2d4"]
+    assert [move["uci"] for move in result["top_moves"]] == ["e2e4", "d2d4", "g1f3", "c2c4", "b1c3"]
     assert result["delta_cp"] == 35 and result["delta_e_pp"] == 5
 
 
 @pytest.mark.parametrize("depth,expected", [(11, "e2e4"), (12, "g1f3"), (13, "g1f3")])
 def test_latest_valid_batch_at_deepest_completed_depth_is_used(monkeypatch, depth, expected):
     engine = FakeEngine([*pair(), info("g1f3", 100, (700, 0, 300), 1, depth=depth),
-                         info("c2c4", 90, (690, 0, 310), 2, depth=depth)])
+                         info("c2c4", 90, (690, 0, 310), 2, depth=depth),
+                         *[info(uci, 80, (680, 0, 320), rank, depth=depth) for rank, uci in enumerate(["e2e4", "d2d4", "b1c3"], 3)]])
     install(monkeypatch, engine)
     result = classify_position(chess.STARTING_FEN)
     assert result["top_moves"][0]["uci"] == expected
@@ -228,6 +235,7 @@ def test_search_without_valid_snapshot_retries_once(monkeypatch, recover):
     ("7k/5K2/7Q/8/8/8/8/8 b - - 0 1", "terminal_position"),
     ("7k/8/6K1/8/8/8/8/8 b - - 0 1", "terminal_position"),
     ("7k/8/6K1/8/8/8/8/R7 b - - 0 1", "single_legal_move"),
+    ("7k/8/5K2/8/8/8/8/R7 b - - 0 1", "fewer_than_five_legal_moves"),
 ])
 def test_undefined_positions_do_not_launch_engine(monkeypatch, fen, reason):
     monkeypatch.setattr(StockfishSettings, "executable", lambda self: pytest.fail("No engine needed"))
@@ -244,20 +252,24 @@ def test_invalid_fen_rejected_before_engine(monkeypatch, fen):
 
 
 @pytest.mark.parametrize("second_score,second_wins,label", [
-    (chess.engine.Mate(5), 1000, None),
-    (chess.engine.Cp(900), 950, None),
-    (chess.engine.Cp(900), 900, "Clear preference"),
+    (chess.engine.Mate(5), 1000, "Forgiving"),
+    (chess.engine.Cp(900), 950, "Critical"),
+    (chess.engine.Cp(900), 900, "Critical"),
     (chess.engine.Cp(300), 800, "Critical"),
 ])
 def test_mate_scores_have_no_invented_cp_gap(monkeypatch, second_score, second_wins, label):
     engine = FakeEngine([
         info("e2e4", None, (1000, 0, 0), 1, score=chess.engine.Mate(3)),
         info("d2d4", None, (second_wins, 0, 1000 - second_wins), 2, score=second_score),
+        *[info(uci, None, (second_wins, 0, 1000 - second_wins), rank, score=second_score)
+          for rank, uci in enumerate(["g1f3", "c2c4", "b1c3"], 3)],
     ])
     install(monkeypatch, engine)
     result = classify_position(chess.STARTING_FEN)
     assert result["classification"] == label and result["delta_cp"] is None
-    assert result["unclassified_reason"] == ("mate_score" if label is None else None)
+    assert result["unclassified_reason"] is None
+    assert result["top_moves"][0]["score"]["mate"] == 3
+    assert result["sharpness"]["capped_scores_cp"][0] == 2000
 
 
 @pytest.mark.parametrize("change", ["missing_wdl", "bound", "missing_second", "duplicate", "illegal_pv", "invalid_wdl", "reversed_cp", "reversed_wdl"])
@@ -320,7 +332,7 @@ def test_stalled_stream_has_a_deadline(monkeypatch):
     assert requested == [7] and engine.closed and engine.stream.stopped
 
 
-@pytest.mark.parametrize("analyzer,count", [(classify_position, 2), (analyze_position, 5)])
+@pytest.mark.parametrize("analyzer,count", [(classify_position, 5), (analyze_position, 5)])
 def test_real_stockfish_classification(analyzer, count):
     settings = StockfishSettings(depth=4, time_limit=2, threads=1, hash_mb=16)
     try:
@@ -333,7 +345,7 @@ def test_real_stockfish_classification(analyzer, count):
     board.push_uci("e2e4")
     result = analyzer(board.fen(en_passant="fen"), settings)
     assert "Stockfish" in result["engine"] and result["perspective"] == "Black"
-    assert result["classification"] in ("Flexible", "Clear preference", "Critical")
+    assert result["classification"] in ("Forgiving", "Flexible", "Selective", "Demanding", "Critical")
     assert len(result["top_moves"]) == count
     first, second = result["top_moves"][:2]
     assert first["depth"] == second["depth"] > 0
@@ -348,7 +360,7 @@ def test_real_stockfish_classification(analyzer, count):
 
 
 def test_top_five_share_classification_and_relative_evaluations(monkeypatch):
-    infos = [*pair(), info("g1f3", 20, (540, 0, 460), 3),
+    infos = [*pair()[:2], info("g1f3", 20, (540, 0, 460), 3),
              info("c2c4", 10, (530, 0, 470), 4), info("b1c3", 0, (520, 0, 480), 5)]
     engine = FakeEngine(infos)
     install(monkeypatch, engine)
@@ -372,8 +384,8 @@ def test_coach_evidence_includes_all_moves_when_fewer_than_five(monkeypatch, fen
     install(monkeypatch, engine)
     result = analyze_position(fen)
     assert len(result["top_moves"]) == count and engine.request[2] == {"multipv": count}
-    assert result["decision_classification"] == (None if count == 1 else "flexible")
-    assert result["unclassified_reason"] == ("single_legal_move" if count == 1 else None)
+    assert result["decision_classification"] is None and result["sharpness"]["score"] is None
+    assert result["unclassified_reason"] == ("single_legal_move" if count == 1 else "fewer_than_five_legal_moves")
 
 
 def test_terminal_coach_evidence_has_no_candidates(monkeypatch):

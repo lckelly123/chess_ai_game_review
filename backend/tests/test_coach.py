@@ -95,7 +95,8 @@ def test_responses_request_and_output_through_real_sdk():
         assert "1  R N B Q K B N R" in message["content"]
         assert "a b c d e f g h" in message["content"]
         payload = json.loads(message["content"].split("Stockfish position evidence:\n", 1)[1].split("\n\n", 1)[0])
-        assert payload["decision_mode"] == "flexible"
+        assert payload["decision_mode"] == "forgiving"
+        assert payload["position_sharpness"]["a_cp"] == 10
         assert len(payload["engine_verified_moves"]) == 5
         assert payload["position_outlook"] == position_evidence(fen)["position_outlook"]
         assert "played_move" not in payload and "previous_analysis" not in payload

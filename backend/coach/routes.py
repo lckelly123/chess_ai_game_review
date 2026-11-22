@@ -21,6 +21,7 @@ from .stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishU
 from .teaching import TeachingAnalysis
 from .classification import CLASSIFICATION_VERSION
 from .player_move_quality import with_player_move_quality
+from .sharpness import SHARPNESS_VERSION, with_position_sharpness
 
 
 class AnalyzePositionRequest(BaseModel):
@@ -49,6 +50,18 @@ class AnalyzePositionResponse(BaseModel):
     stockfish: dict | None = None
     teaching: TeachingAnalysis | None = None
     classification_version: int | None = None
+    sharpness_version: int | None = None
+
+    @computed_field
+    @property
+    def sharpness_current(self) -> bool:
+        return self.sharpness_version == SHARPNESS_VERSION
+
+    @model_validator(mode="after")
+    def refresh_position_sharpness(self):
+        if self.position_evidence is not None:
+            self.position_evidence = with_position_sharpness(self.position_evidence, expected_fen=self.fen)
+        return self
 
     @computed_field
     @property
