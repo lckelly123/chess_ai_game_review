@@ -1,16 +1,106 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, CircleAlert, RefreshCw } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, CircleAlert, RefreshCw } from 'lucide-react';
 import { api } from './types';
 import type { Profile } from './types';
-import { lessonCoverage } from './lessonsData';
-import type { ErrorCounts, LessonAnalytics } from './lessonsData';
+import { filteredLessonRows, lessonCoverage, lessonGroupCounts, lessonSeverities, severitySummary } from './lessonsData';
+import type { ErrorCounts, LessonAnalytics, LessonFilter, LessonGroup } from './lessonsData';
 import './lessons.css';
 
-function Counts({counts}: {counts: ErrorCounts}) {
-  return <>{(['inaccuracy', 'mistake', 'blunder', 'total'] as const).map(severity =>
-    <td key={severity} className={`lesson-count ${severity}${counts[severity] === 0 ? ' zero' : ''}`}>
-      {counts[severity].toLocaleString()}
-    </td>)}</>;
+const severityLabels = { all: 'All', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
+const groupLabels = { positional: 'Positional', tactical: 'Tactical', unclassified: 'Unclassified' };
+const tacticalCategories = [
+  { key: 'tactical_miss', label: 'Missed tactics' },
+  { key: 'tactical_allowed', label: 'Allowed tactics' },
+] as const;
+
+function SeverityBar({counts}: {counts: ErrorCounts}) {
+  return <span className="lesson-severity-bar" aria-hidden="true">
+    {lessonSeverities.filter(severity => counts[severity] > 0).map(severity =>
+      <span key={severity} className={severity} style={{width: `${counts[severity] / counts.total * 100}%`}}/>
+    )}
+  </span>;
+}
+
+function SeverityBreakdown({counts}: {counts: ErrorCounts}) {
+  return <dl className="lesson-severity-breakdown">{lessonSeverities.map(severity =>
+    <div key={severity}><dt><span className={`lesson-severity-dot ${severity}`} aria-hidden="true"/>{severityLabels[severity]}</dt>
+      <dd>{counts[severity].toLocaleString()}</dd></div>
+  )}</dl>;
+}
+
+function LessonExplorer({data}: {data: LessonAnalytics}) {
+  const groups = lessonGroupCounts(data);
+  const [group, setGroup] = useState<LessonGroup>(() => groups.tactical.total > 0 ? 'tactical'
+    : groups.positional.total > 0 || !groups.unclassified.total ? 'positional' : 'unclassified');
+  const [tactical, setTactical] = useState<string>(() => data.categories.find(category => category.key === 'tactical_miss')?.counts.total
+    ? 'tactical_miss' : 'tactical_allowed');
+  const [filter, setFilter] = useState<LessonFilter>('all');
+  const category = data.categories.find(item => item.key === (group === 'tactical' ? tactical : group));
+  const counts = group === 'unclassified' ? data.unclassified : category?.counts;
+  const matching = counts?.[filter === 'all' ? 'total' : filter] ?? 0;
+  const rows = filteredLessonRows(category, filter);
+
+  return <>
+    <div className="lesson-overview" role="group" aria-label="Lesson category">
+      {(['positional', 'tactical'] as const).map(key => <button key={key} type="button"
+        className="lesson-overview-card" aria-pressed={group === key} aria-controls="lesson-explorer" onClick={() => setGroup(key)}>
+        <span className="lesson-card-heading"><span>{groupLabels[key]}</span>
+          <span className="lesson-card-selection" aria-hidden="true">{group === key && <Check size={14}/>}</span>
+        </span>
+        <strong className="lesson-card-count">{groups[key].total.toLocaleString()}</strong>
+        <SeverityBar counts={groups[key]}/>
+        <span className="lesson-card-description">{severitySummary(groups[key])}</span>
+      </button>)}
+    </div>
+    {data.unclassified.total > 0 && <button type="button" className="lesson-unclassified"
+      aria-pressed={group === 'unclassified'} aria-controls="lesson-explorer" onClick={() => setGroup('unclassified')}>
+      <span>Unclassified <span className="lesson-unclassified-count">· {data.unclassified.total.toLocaleString()} {data.unclassified.total === 1 ? 'error' : 'errors'}</span></span>
+      <ChevronRight size={20} aria-hidden="true"/>
+    </button>}
+    <section id="lesson-explorer" className="lesson-explorer" aria-labelledby="lesson-explorer-title">
+      <div className="lesson-explorer-heading">
+        <h2 id="lesson-explorer-title">Explore {groupLabels[group].toLowerCase()} errors</h2>
+        <span role="status" aria-live="polite" aria-atomic="true">{matching.toLocaleString()} matching</span>
+      </div>
+      {group === 'tactical' && <div className="lesson-tactic-filters" role="group" aria-label="Tactical category">
+        {tacticalCategories.map(item => <button type="button" key={item.key} aria-pressed={tactical === item.key}
+          onClick={() => setTactical(item.key)}>{item.label} <span>({(data.categories.find(category => category.key === item.key)?.counts.total ?? 0).toLocaleString()})</span></button>)}
+      </div>}
+      <div className="lesson-severity-filters" role="group" aria-label="Error severity">
+        {(['all', ...lessonSeverities] as const).map(severity => <button type="button" key={severity}
+          aria-pressed={filter === severity} onClick={() => setFilter(severity)}>{severityLabels[severity]}</button>)}
+      </div>
+      {group === 'positional' && <p className="lesson-explorer-context">Grouped by the piece in Stockfish’s best move.</p>}
+      {matching === 0 ? <div className="lesson-no-matches" role="status">
+        <p>{filter === 'all' ? `No ${group === 'tactical' ? category?.label.toLowerCase() ?? 'tactical errors' : `${group} errors`} in your saved analysis.`
+          : `No ${filter === 'inaccuracy' ? 'inaccuracies' : `${filter}s`} in this category.`}</p>
+        {filter !== 'all' && <button type="button" className="text-button" onClick={() => setFilter('all')}>Show all severities</button>}
+      </div> : group === 'unclassified' ? <div className="lesson-unclassified-detail">
+        <p>These moves do not have a current tactical or positional label.</p>
+        <SeverityBreakdown counts={filter === 'all' ? data.unclassified : {
+          inaccuracy: 0, mistake: 0, blunder: 0, total: matching, [filter]: matching,
+        }}/>
+        <a className="back-link" href="#games">Review games to add lesson categories <ArrowRight size={16}/></a>
+      </div> : <div className="lesson-topics" key={`${group}:${tactical}:${filter}`}>
+        {rows.map(row => <details className="lesson-topic" key={row.key}>
+          <summary>
+            <span className="lesson-topic-heading"><span>{row.label}</span>
+              <span className="lesson-topic-count">{row.matching.toLocaleString()}<ChevronRight size={19} aria-hidden="true"/></span>
+            </span>
+            <span className="lesson-topic-track" aria-hidden="true"><span style={{width: `${row.matching / matching * 100}%`}}/></span>
+            <span className="visually-hidden">{Math.round(row.matching / matching * 100)}% of matching errors. Expand severity breakdown.</span>
+          </summary>
+          <div className="lesson-topic-detail">
+            <p>{row.matching.toLocaleString()} of {matching.toLocaleString()} matching errors · {Math.round(row.matching / matching * 100)}%</p>
+            <SeverityBreakdown counts={row.counts}/>
+          </div>
+        </details>)}
+      </div>}
+      <div className="lesson-legend" aria-label="Severity colors">{lessonSeverities.map(severity =>
+        <span key={severity}><span className={`lesson-severity-dot ${severity}`} aria-hidden="true"/>{severityLabels[severity]}</span>
+      )}</div>
+    </section>
+  </>;
 }
 
 export default function Lessons({profiles, username, onSelectPlayer, profilesLoading, profileError, onRetryProfiles}: {
@@ -48,7 +138,7 @@ export default function Lessons({profiles, username, onSelectPlayer, profilesLoa
     {failure ? <div className="lessons-empty" role="alert"><CircleAlert size={24}/><h2>Could not load lessons</h2><p>{failure}</p>
       <button className="secondary-button" onClick={() => profileError ? onRetryProfiles() : setRevision(value => value + 1)}>Try again</button></div>
       : busy ? <div className="lessons-loading" role="status"><p>Loading your error breakdown…</p>
-        <div className="lesson-skeleton" aria-hidden="true">{[0, 1, 2, 3, 4].map(row => <div key={row}/>)}</div></div>
+        <div className="lesson-skeleton" aria-hidden="true"><div/><div/><div/></div></div>
       : !data?.analyzed_moves ? <div className="lessons-empty"><h2>Start with a game analysis</h2>
         <p>Analyze a game from your library to see inaccuracies, mistakes, and blunders here. Saved coach reviews add the tactical and positional categories.</p>
         <a className="back-link" href="#games">Go to your game library <ArrowRight size={16}/></a></div>
@@ -56,30 +146,12 @@ export default function Lessons({profiles, username, onSelectPlayer, profilesLoa
         <div className="lessons-summary"><p><strong>{data.errors.total.toLocaleString()}</strong> {data.errors.total === 1 ? 'error' : 'errors'} in your analyzed moves</p>
           <span>{lessonCoverage(data)}</span></div>
         {data.errors.total === 0 && <p className="lessons-note">No inaccuracies, mistakes, or blunders in the saved analysis so far.</p>}
-          {data.outdated_reviews > 0 && <p className="lessons-note lessons-update">{data.outdated_reviews} {data.outdated_reviews === 1 ? 'error needs an updated coach review' : 'errors need updated coach reviews'}. Earlier reviews use different categories.
-            {' '}<a href="#games">Update reviews in your game library</a>, or run coach on individual moves.</p>}
-        <div className="lesson-table-wrap">
-          <table className="lesson-table">
-            <caption className="visually-hidden">Inaccuracies, mistakes, and blunders by tactical and positional subcategory for {username}</caption>
-            <colgroup><col className="lesson-name-column"/><col/><col/><col/><col/></colgroup>
-            <thead><tr><th scope="col">Subcategory</th>
-              <th scope="col" className="inaccuracy"><span className="severity-full">Inaccuracy</span><abbr className="severity-short" title="Inaccuracy">Inacc.</abbr></th>
-              <th scope="col" className="mistake">Mistake</th><th scope="col" className="blunder">Blunder</th><th scope="col">Total</th></tr></thead>
-            {data.categories.map(category => <tbody key={category.key}>
-              <tr className="lesson-group"><th scope="rowgroup">{category.label}</th><Counts counts={category.counts}/></tr>
-              {category.subcategories.map(row => <tr className="lesson-detail" key={row.key}>
-                <th scope="row">{row.label}</th><Counts counts={row.counts}/></tr>)}
-            </tbody>)}
-            {data.unclassified.total > 0 && <tbody><tr className="lesson-unclassified"><th scope="row">Unclassified</th><Counts counts={data.unclassified}/></tr></tbody>}
-            <tfoot><tr><th scope="row">All errors</th><Counts counts={data.errors}/></tr></tfoot>
-          </table>
-        </div>
+        <LessonExplorer data={data}/>
         <div className="lessons-notes">
-          <p>Positional rows identify the piece moved by Stockfish’s best move, not the piece you played.</p>
+          {data.outdated_reviews > 0 && <p>{data.outdated_reviews} {data.outdated_reviews === 1 ? 'error needs an updated coach review' : 'errors need updated coach reviews'}. Earlier reviews use different categories.
+            {' '}<a href="#games">Update reviews in your game library</a>, or run coach on individual moves.</p>}
+          {data.pending_reviews > 0 && <p>{data.pending_reviews} {data.pending_reviews === 1 ? 'error still needs' : 'errors still need'} a coach review to add lesson categories.</p>}
           <p>Each move is counted once per game. Good and uncertain moves are excluded.</p>
-          {data.unclassified.total > 0 && <p>{data.unclassified.total} {data.unclassified.total === 1 ? 'error has' : 'errors have'} no current tactical or positional label.
-            {data.pending_reviews > 0 && <> {data.pending_reviews} {data.pending_reviews === 1 ? 'still needs' : 'still need'} a coach review.</>}</p>}
-
         </div>
       </>}
   </div>;

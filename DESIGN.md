@@ -1,12 +1,12 @@
 ---
 name: Chess study
-description: A focused charcoal workspace for revisiting your games, one position at a time.
+description: A focused pure-black workspace for revisiting your games, one position at a time.
 colors:
   primary: "#f1f2f4"
   primary-hover: "#d9dce1"
   focus: "#91b4d3"
-  workspace: "#0c0d0f"
-  surface: "#16181c"
+  workspace: "#000000"
+  surface: "#000000"
   ink: "#f1f2f4"
   muted: "#a5adb8"
   line: "#2b2e34"
@@ -73,6 +73,17 @@ typography:
     fontFamily: "'DM Sans Variable', sans-serif"
     fontSize: "11px"
     fontWeight: 400
+  lesson-heading:
+    fontFamily: "'DM Sans Variable', sans-serif"
+    fontSize: "20px"
+    fontWeight: 600
+    letterSpacing: "-0.02em"
+  lesson-total:
+    fontFamily: "'DM Sans Variable', sans-serif"
+    fontSize: "36px"
+    fontWeight: 550
+    lineHeight: 1
+    letterSpacing: "-0.03em"
 rounded:
   board: "0px"
   move: "4px"
@@ -147,11 +158,26 @@ components:
     padding: "0px 2px"
   navigation-tab-current:
     textColor: "{colors.ink}"
-  lessons-table:
+  lessons-overview-card:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
     rounded: "{rounded.panel}"
-    width: "100%"
+    padding: "22px 24px"
+  lessons-filter:
+    backgroundColor: "transparent"
+    textColor: "{colors.muted}"
+    rounded: "{rounded.control}"
+    padding: "10px 12px"
+  lessons-tactic-filter-selected:
+    backgroundColor: "{colors.selected-row}"
+    textColor: "{colors.accent-hover}"
+  lessons-severity-filter-selected:
+    backgroundColor: "{colors.hover}"
+    textColor: "{colors.ink}"
+  lessons-topic:
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    padding: "18px 16px"
 ---
 
 # Design System: Chess study
@@ -160,9 +186,9 @@ components:
 
 **Creative North Star: "A focused study desk"**
 
-A focused charcoal workspace gives the chess position a clear visual anchor while providing comfortable room for coaching. Blue-grey squares, soft white text, and a compact library support patient review. DM Sans carries headings and the working interface.
+A focused pure-black workspace gives the chess position a clear visual anchor while providing comfortable room for coaching. Blue-grey squares, soft white text, and a compact library support patient review. DM Sans carries headings and the working interface.
 
-This records the implemented import and replay UI and the user's approved replacement of the light workspace with a dark theme. Near-black canvas, charcoal panels, blue selection, and white primary actions define the surrounding interface. The board artwork follows the user's November 15, 2026 reference and retains its established texture and pieces.
+This records the implemented import and replay UI and the user's approved replacement of the light workspace with a dark theme. Pure-black canvas and panels, blue selection, and white primary actions define the surrounding interface. The board artwork follows the user's November 15, 2026 reference and retains its established texture and pieces.
 
 **Key Characteristics:**
 - Dark, flat surfaces separated by fine rules and tonal changes.
@@ -180,15 +206,15 @@ Soft white identifies primary actions such as Import games and Run coach, with c
 
 ### Neutral
 
-The near-black workspace surrounds charcoal panels and fields. Soft white carries headings and controls, lighter grey carries coaching prose, and muted grey carries supporting text. Subtle rules divide sections; brighter field borders define interactive controls. Dark blue fills identify selections and the Analyze hover state. The header shares the workspace canvas.
+The workspace, panels, and fields share a pure jet-black (#000000) background. Soft white carries headings and controls, lighter grey carries coaching prose, and muted grey carries supporting text. Subtle rules divide sections; brighter field borders define interactive controls. Dark blue fills identify selections and the Analyze hover state. The header shares the workspace canvas.
 
 ### Semantic and board colors
 
 The locally bundled Icy Sea image supplies the board's textured light and blue squares; board color tokens are fallback colors. Translucent olive marks the last move and muted coral marks check, preserving the texture beneath each highlight. Wins use light sage on dark green, losses and errors use light coral on dark clay, and draws use muted grey on a neutral fill, always accompanied by text. Amber on dark ochre marks a clear decision preference.
 
-**The Position State Rule.** Keep the position caption, last-move squares, and check distinguishable; each communicates a different part of the replay state.
+**The Position State Rule.** Keep last-move squares and check distinguishable, and announce the settled side to move or final position to screen readers.
 
-Lessons severity headings use warning amber for Inaccuracy, warm orange for Mistake, and the existing negative coral for Blunder. Counts stay neutral, with muted but readable zeros; severity is also named in each column. These table roles match the library severity counts; the replay timeline retains its distinct stronger red Blunder marker.
+Lessons segmented bars and severity dots use warning amber for Inaccuracy, warm orange for Mistake, and the existing negative coral for Blunder. Text summaries, named breakdowns, and a legend explain every severity color; counts remain neutral. Sky blue identifies the selected overview card and proportional topic bars. These severity roles match the library counts; the replay timeline retains its distinct stronger red Blunder marker.
 
 ## Typography
 
@@ -196,11 +222,13 @@ Locally bundled DM Sans Variable supplies all headings, controls, names, metadat
 
 The library title is (38px), saved-games heading (19px), opponent names (14px), and working controls (12-14px). At narrow widths the library title becomes (32px) and game titles (23px). Below (370px), the library title becomes (29px). Coach prose uses (16px) text at (1.65) line height with a maximum line length of (72ch); section headings use (17px). Candidate explanations use (14px), SAN (16px), and score chips (13px). Counts, dates, and evaluations use tabular numerals where applicable.
 
+Lessons reuses the display title, with its own heading and total roles from the frontmatter. Topic labels use (16px) at (550) weight, while supporting descriptions and matching counts use (13px). Overview totals and all breakdown counts use tabular numerals. Mobile size changes are recorded in Layout.
+
 ## Layout
 
 The app has library, replay, and Lessons screens. The root URL opens the game library without a board. The library is centered at a maximum outer width of (1120px), with (38px 36px 24px) padding. A (68px) canvas-colored header sits above it. A short title leads into one compact import form, then saved-player selection, search, filters, and a scrollable list. Desktop rows align result, opponent, time control, date, and Analyze in columns.
 
-Lessons shares the library container. Its title and player/refresh controls sit opposite each other with a (24px) gap and (32px) space before the content. The title reuses the (38px) display treatment. A compact error count and library-coverage summary precede one full-width grouped table, with (18px) separation. Notes follow the table after (16px).
+Lessons shares the library container. Its title and player/refresh controls sit opposite each other with a (24px) gap and (28px) space before the content. A compact error count and library-coverage summary precede two equal-width Positional and Tactical overview buttons with an (18px) separation and a (16px) grid gap. A separate Unclassified row appears below when needed. A fine rule introduces the explorer, with (20px) outer separation and (28px) top padding. Tactical subgroup controls form two equal columns; severity filters form four. Topic disclosures occupy the full width beneath them. Coverage notes follow after (28px), separated by a rule and (18px) top padding.
 
 Analyze opens a hash route containing the game ID and player. The dedicated replay screen has a maximum outer width of (1680px), a Back to games link, game heading, board, and Coach panel. The board caps at (620px). Board and Coach share the width in a 1:1.45 ratio with a (32px) gap. Inside Coach, one outlined response panel spans the available width. Position teaching, candidates, and move feedback share one card. The panel grows with its content and the page scrolls naturally. Browser navigation and direct replay links work. Returning within the session restores filters, list/page scrolling, and focus to the originating Analyze link. Replay position remains saved per game.
 
@@ -208,13 +236,13 @@ Analyze opens a hash route containing the game ID and player. The dedicated repl
 - At (960px) and below, page side padding becomes (24px), game columns tighten, and the replay gap becomes (24px).
 - At (900px) and below, Coach moves below the centered board; the combined response remains one panel.
 - At (700px) and below, the header wraps into two rows with a minimum height of (108px) and padding of (12px 18px 0). The full-width second row keeps both navigation links visible with targets at least (44px) tall. Library side padding becomes (18px), and import controls wrap under the username. Filters sit below search. Game rows place their Analyze link on the right with date beneath it. The list caps at (520px).
-- At (700px) and below, Lessons stacks its heading and controls with a (16px) gap, uses a (32px) title, and stacks the summary. Table horizontal cell padding becomes (12px), with (20px) for subcategory labels. At (520px) and below, the table uses (14px) body and (11px) column headings, (6px) horizontal cell padding, and (12px) outer text insets; labels wrap and Inaccuracy shortens to Inacc. with its full expansion retained. The name column changes from (40%) to (36%), and each of the four numeric columns from (15%) to (16%).
+- At (700px) and below, Lessons stacks its heading and controls with a (16px) gap, uses a (32px) title, and stacks the coverage summary. Overview buttons retain two columns with a (12px) gap and (18px 16px) padding; their headings become (18px) and totals (32px). Topic summaries use (16px 8px) padding and filters use (13px) text. At (440px) and below, overview buttons and loading placeholders stack into one column, card padding becomes (18px), and the explorer heading may wrap. Filter text becomes (12px) with (4px) grid gaps, preserving two tactical choices and four full severity labels; controls retain a minimum (44px) height. Severity breakdowns and legends wrap naturally.
 - At (700px) and below, replay uses one column. Replay side padding is (16px); the response body uses (18px) padding. Candidate rows and stronger-move links retain touch targets at least (44px) tall.
 - At (370px) and below, spacing and replay controls tighten and response padding becomes (14px). The body has no fixed minimum width, so (320px) viewports accommodate the scrollbar without horizontal overflow.
 
 ## Elevation & Depth
 
-The implementation has no shadows. Charcoal panels, the near-black workspace, thin borders, and tonal hover or selection fills establish hierarchy. Interactive feedback is a color change, not movement or elevation.
+The implementation has no shadows. Thin borders and tonal hover or selection fills establish hierarchy on the pure-black workspace and panels. Interactive feedback is a color change, not movement or elevation.
 
 ## Shapes
 
@@ -224,23 +252,27 @@ The board has square outer corners to match the reference. Player tokens retain 
 
 ### Buttons and focus
 
-Primary actions use soft white with charcoal labels; import includes a trailing arrow. Replay play/pause uses a neutral tonal fill in a compact icon control. Secondary retry actions use charcoal with an outline. Text actions have no container and underline on hover. Icon controls are transparent until hovered. Disabled buttons use reduced opacity (.42) and a default cursor.
+Primary actions use soft white with charcoal labels; import includes a trailing arrow. Replay play/pause uses a neutral tonal fill in a compact icon control. Secondary retry actions use pure black with an outline. Text actions have no container and underline on hover. Icon controls are transparent until hovered. Disabled buttons use reduced opacity (.42) and a default cursor.
 
 Button color transitions take (140ms). Interactive focus uses a solid blue outline (2px) with an offset (4px). Import and loading spinners rotate over (1s); reduced-motion preference removes animations and transitions.
 
 ### Inputs and filters
 
-Charcoal fields use clearly visible grey borders and gently curved corners. The username field reserves room for its clear control. Search has a leading icon, while native select controls handle imported player, import count, speed, and result. Keep visible labels or accessible names on all fields.
+Pure-black fields use clearly visible grey borders and gently curved corners. The username field reserves room for its clear control. Search has a leading icon, while native select controls handle imported player, import count, speed, and result. Keep visible labels or accessible names on all fields.
 
 ### Primary navigation
 
 The persistent header contains real links to Your game library and Lessons. Muted (13px) labels and compact outline SVG icons sit (8px) apart within links; the links are separated by (24px). Hover uses soft white, while the current page combines soft white with a blue bottom rule (2px) and `aria-current="page"`. Replay keeps the library tab current. Existing keyboard focus remains visible. The header gap between brand and navigation is (40px), reducing to (24px) at (960px); its mobile treatment is defined in Layout.
 
-### Lessons table
+### Lessons category explorer
 
-One charcoal panel with the established (12px) corners and fine border contains a semantic, fixed-layout table. Missed tactics, Allowed tactics, and Positional groups have bold totals above indented, regular-weight subcategories. Positional rows identify the piece in Stockfish’s best move. An earlier-review notice uses neutral text and a blue library link above the table; it is not a success state. The first column is left aligned; numeric columns are right aligned with tabular numerals. Cell padding is (13px 24px) with (1.5) line height. Column headings use muted (13px) text with (16px) vertical padding, aside from the named severity colors. Group rows use (650) weight and (20px 24px 12px) padding; desktop subcategory labels have a (40px) left inset. Detail rows gain a neutral hover fill. Fine rules separate groups, and a brighter field-border rule distinguishes the All errors footer with (18px) vertical padding and (650) weight.
+Two pure-black overview buttons use the established panel corners and fine borders. Each combines a category heading, prominent total, segmented severity bar, and a written severity summary. The selected button adds a sky-blue border and filled check indicator; hover brightens the border. Both expose their pressed state and control the same explorer. The Tactical total combines Missed tactics and Allowed tactics, which remain separate choices inside the explorer. Positional topics identify the piece in Stockfish’s best move. Unclassified errors use a separate quiet button with a count and chevron, never merged into another group.
 
-Keep the total column semibold and zeros visible in muted text. Unclassified errors receive a separate row when present. The table has a descriptive accessible caption and scoped row, row-group, and column headings. Player selection and refresh reuse existing controls with a minimum (44px) height. Loading uses quiet table-shaped placeholders; errors offer retry, and the empty state links to the game library. Notes below the table explain count coverage without another panel.
+Tactical subgroup and severity filters are native buttons with pressed states and minimum (44px) height. The selected tactical choice uses the existing blue selection fill; the selected severity uses a neutral hover fill. The matching total updates in a polite live region. Filtering uses saved counts to remove zero-match topics, sort by matching count with alphabetical ties, and recompute each bar as a share of the matching set.
+
+Each topic is a native details/summary disclosure with its name on the left, count and chevron on the right, and a thin sky-blue proportion bar below. Hover adds a neutral fill; opening rotates the chevron and reveals the matching proportion and the topic's complete severity breakdown, including zeros. Text gives the bar's percentage to assistive technology. Disclosures show aggregate counts rather than individual move lists. The summary uses the established control radius and visible keyboard focus; its color and chevron transitions take (140ms) and respect reduced-motion preference.
+
+Player selection and refresh reuse existing controls with minimum (44px) targets. Loading uses two overview placeholders and one full-width explorer placeholder. Errors offer retry; the empty state links to the game library. A filter with no matches explains the result and offers Show all severities. Unclassified detail offers a library link for adding categories. Earlier-review and pending-review notices appear below the explorer as neutral text with blue links, followed by the counting rule; these notices are not success states.
 
 ### Library rows and result markers
 
@@ -250,13 +282,13 @@ Each semantic list item contains a Win/Loss/Draw badge, opponent, rating, played
 
 Flip, first, previous turn, play/pause, next turn, and final controls sit below the board. Replay stops at the imported player's decision points, determined from the FEN side to move. A normal forward/back step briefly shows the intervening board for (100ms), then settles two half-moves away. Black's first forward step from the standard starting position advances only one half-move. Starting and final positions remain reachable for either colour. Board orientation does not change which player's turns are followed.
 
-The slider selects these same decision points while the caption and counter retain the actual PGN half-move. Older bookmarks on an opponent's turn restore to the preceding player decision. Coach content and the announced position remain at the previous settled position during the brief board preview, and Run coach is disabled until it finishes. Rapid clicks advance from the pending destination; obsolete transition timers cannot overwrite newer input. Autoplay rests for (850ms) at each decision, then follows the same step sequence. Manual navigation pauses it. Pausing during a preview completes that pair before resting. Reduced-motion preference skips the intermediate board. A short keyboard hint identifies the player colour being followed.
+The slider selects these same decision points while the counter retains the actual PGN half-move and a visually hidden live region announces the side to move or final position. Older bookmarks on an opponent's turn restore to the preceding player decision. Coach content and the announced position remain at the previous settled position during the brief board preview, and Run coach is disabled until it finishes. Rapid clicks advance from the pending destination; obsolete transition timers cannot overwrite newer input. Autoplay rests for (850ms) at each decision, then follows the same step sequence. Manual navigation pauses it. Pausing during a preview completes that pair before resting. Reduced-motion preference skips the intermediate board. The replay omits the keyboard hint, last-move caption, date/time-control subtitle, result badge, and Replay & explore label.
 
 The Coach response is one spacious outlined card without tabs. The toolbar sits directly above it with Coach, an info icon for saved response details, the model selector, and Run coach. Idle saved-status text and the redundant Coach response label are omitted; active requests and failures still show status messages. The card starts near the top of the board.
 
 An engine-only result renders just the Moves section in the existing coaching card. It contains the first three Stockfish choices plus a separate player row only when necessary, with scores and the player's severity but no generated explanations. Board selection derives arrows and highlights from UCI. The position and needs sections appear when coach feedback exists. Partial analysis updates do not reset the replay position or board selection.
 
-Under the board slider, small amber, orange, and red markers identify inaccuracies, mistakes, and blunders. Good and uncertain moves are unmarked. A compact legend, hover/focus tooltips, and accessible labels give meaning beyond color. Marker placement uses the same player-turn stops as the slider; clicking jumps to the pre-move decision and pauses replay.
+Under the board slider, small amber, orange, and red markers identify inaccuracies, mistakes, and blunders. Good and uncertain moves are unmarked. Hover/focus tooltips and accessible labels give meaning beyond color; the visible legend and turn caption are omitted. Marker placement uses the same player-turn stops as the slider; clicking jumps to the pre-move decision and pauses replay.
 
 Understand the position has a small sharpness tag on the same heading row: Forgiving uses muted green, Flexible blue, Selective lavender, Demanding amber, and Critical coral. The tooltip and accessible description include the normalized 0–100 score and explain evaluation differences among Stockfish's top five moves. Tags use unrounded cutoffs at 20/40/60/80. Terminal positions, fewer than five legal moves, and incomplete evidence use neutral labels; mate scores can be classified with the ±20-pawn cap. Classification is computed by the backend from saved Stockfish evidence. Earlier coaching prose gets a separate refresh notice; loading it makes no model request.
 
@@ -264,11 +296,11 @@ A supported mistake classification appears as compact Tactical or Positional and
 
 The thesis and needs paragraphs lead into one Moves list. Each row places SAN and optional Player move and quality indicators on the left, with its color-coded evaluation and board-preview icon aligned on the right. Its explanation appears immediately below. Positive side-to-move scores use green, negative scores muted red, and near-equal or bounded scores slate; tooltip and accessible labels identify perspective and meaning. Each move keeps its own score. Missing engine evidence stays blank. The played move appears once: a matching recommendation gains a blue Player move badge and dark blue row fill without a left stripe; an unlisted played move becomes the final row in the same list. Player severity labels are Good, Inaccuracy, Mistake, Blunder, or Quality uncertain. Good uses green, Inaccuracy amber, and Mistake/Blunder muted red with stronger weight for Blunder. The label tooltip explains the logistic winning-chance loss or mate transition. Severity remains separate from the blue identity marker and the unchanged position decision tag. A sound matching move reuses its candidate reason. Additional move feedback and any stronger-candidate link stay within the played row. The stored candidate pool and ordering do not change.
 
-The selected row adds a blue (1px) outline and dark blue fill; keyboard focus remains a distinct (2px) outline. Selecting a row pauses autoplay and previews its arrow without playing the move. Recommendations retain their instructional squares; a separately listed player move highlights its origin and destination. Clear, navigation, new responses, and transient replay states prevent stale annotations. The board layout and controls retain their established styling. Older teaching and Markdown remain readable; missing combined feedback invites a rerun. No second-node essay is displayed.
+The selected row adds a blue (1px) outline and dark blue fill; keyboard focus remains a distinct (2px) outline. Selecting a row pauses autoplay and previews its arrow without playing the move. Recommendations retain their instructional squares; a separately listed player move highlights its origin and destination. Selecting the same row again, navigation, new responses, and transient replay states clear annotations. The separate explanation and Clear strip below the board is omitted. The board layout and controls retain their established styling. Older teaching and Markdown remain readable; missing combined feedback invites a rerun. No second-node essay is displayed.
 
-The card uses (24px) padding, (16px) body text, 1.65 line height, and (17px) headings. Consecutive sections have (24px) top margin, (20px) top padding, and a fine divider. Move rows use (14px 12px) padding and (14px) explanations, with fine horizontal rules. At mobile widths the card padding becomes (18px), then (14px) below (370px); heading tags and move labels wrap naturally, and coarse-pointer comparison links remain at least (44px) tall. Repeated engine-source text and Show on board labels are replaced by one compact hint and row icons. Raw HTML and embedded Markdown images remain excluded.
+The card uses (24px) padding, (16px) body text, 1.65 line height, and (17px) headings. Consecutive sections have (24px) top margin, (20px) top padding, and a fine divider. Move rows use (14px 12px) padding and (14px) explanations, with fine horizontal rules. At mobile widths the card padding becomes (18px), then (14px) below (370px); heading tags and move labels wrap naturally, and coarse-pointer comparison links remain at least (44px) tall. Repeated engine-source text and Show on board labels are replaced by row icons. Raw HTML and embedded Markdown images remain excluded.
 
-The dropdown offers GPT-6 Astra and GPT-6.1 Terra, defaults to Astra, remembers the selection, and is disabled during a run. Both models use the same single-node, single-call flow. The info icon reveals the saved model, position, and timestamp on hover or focus. Changing model applies to the next run. Reruns retain the prior answer until success; failures appear inline. The editable Your question field remains below the card with a per-game local draft that is never submitted.
+The dropdown offers GPT-6 Astra and GPT-6.1 Terra, defaults to Astra, remembers the selection, and is disabled during a run. Both models use the same single-node, single-call flow. The info icon reveals the saved model, position, and timestamp on hover or focus. Changing model applies to the next run. Reruns retain the prior answer until success; failures appear inline. The question field and its draft persistence have been removed.
 
 
 Keyboard arrows, Home, End, and Space support replay without intercepting typing in fields or interaction inside the Coach content. Factor summaries retain native Enter/Space activation and visible keyboard focus. Focused buttons keep their native Space activation.
@@ -279,7 +311,7 @@ Markdown blockquotes use a neutral (2px) quotation rule. This is an intentional 
 
 Locally bundled Classic PNG pieces occupy each cell of an eight-by-eight CSS grid. Each square samples its corresponding tile from the full Icy Sea texture using an 800% background size. All twelve piece images and the texture are in `frontend/public/assets/chess/`; `SOURCES.json` records provenance. The header knight remains the original SVG.
 
-Coordinates remain at the board's left and bottom edges after flipping. They use the opposite square color and scale with board width, matching the supplied reference. Their lower contrast is an intentional reference-matching exception confined to board coordinates; the existing accessible position summary is retained. Player bars follow orientation and identify the user's side; the caption announces position changes.
+Coordinates remain at the board's left and bottom edges after flipping. They use the opposite square color and scale with board width, matching the supplied reference. Their lower contrast is an intentional reference-matching exception confined to board coordinates; the existing accessible position summary is retained. Player bars follow orientation and identify the user's side; a visually hidden live region announces position changes.
 
 ### Status and empty states
 
@@ -288,8 +320,8 @@ Loading and import feedback combine short text with a small icon. Failures use a
 ## Do's and Don'ts
 
 ### Do:
-- **Do** preserve the approved charcoal workspace, blue-grey board, and compact library.
-- **Do** keep the settled board, slider, caption, and coaching synchronized to the actual PGN half-move; only the board previews the intervening position during a turn transition.
+- **Do** preserve the approved pure-black workspace and panels, blue-grey board, and compact library.
+- **Do** keep the settled board, slider, accessible position announcement, and coaching synchronized to the actual PGN half-move; only the board previews the intervening position during a turn transition.
 - **Do** use text alongside result and status colors.
 - **Do** preserve visible keyboard focus and the implemented reduced-motion behavior.
 - **Do** retain the locally bundled DM Sans, reference-matched board assets, and original header icon.
