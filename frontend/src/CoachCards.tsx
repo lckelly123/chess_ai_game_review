@@ -76,15 +76,6 @@ export default function CoachCards({ response, engineReview, engineMode = false,
           {content.thesis && <div className="coach-subsection positional-thesis"><h4>Positional thesis</h4><Prose>{content.thesis}</Prose></div>}
         </> : <p className="coach-placeholder">{waiting} Its classification and positional thesis will appear here.</p>}
       </section>
-      <section className="coach-section" aria-labelledby={`${id}-plan-title`}>
-        <h3 id={`${id}-plan-title`}>{teaching ? 'Needs of the position' : 'Develop a plan'}</h3>
-        {teaching ? <p className="teaching-paragraph">{teaching.needs_of_position}</p> : <>
-        {content.planIntro && <Prose>{content.planIntro}</Prose>}
-        {content.objective && <div className="coach-subsection"><h4>Strategic objective</h4><Prose>{content.objective}</Prose></div>}
-        {content.approach && <div className="coach-subsection"><h4>How to approach the position</h4><Prose>{content.approach}</Prose></div>}
-        {!content.planIntro && !content.objective && !content.approach && <p className="coach-placeholder">{response ? 'No plan is included in this saved response.' : 'The needs of the position and candidate moves will appear here.'}</p>}
-        </>}
-      </section>
       </>}
       <section className="coach-section coach-moves-section" aria-labelledby={`${id}-moves-title`}>
         <div className="coach-section-heading moves-heading"><h3 id={`${id}-moves-title`}>Moves</h3></div>

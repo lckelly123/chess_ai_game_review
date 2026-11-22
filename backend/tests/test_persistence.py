@@ -2,6 +2,7 @@ import hashlib
 import json
 import shutil
 import sqlite3
+from copy import deepcopy
 
 import chess
 import httpx2
@@ -15,7 +16,7 @@ from backend.database import Database
 from backend.main import create_app
 from backend.migrate_sqlite import MIGRATION, migrate_sqlite
 from backend.tests.test_app import raw_game
-from backend.tests.test_coach import completed_response
+from backend.tests.test_coach import completed_response, teaching_output
 from backend.tests.test_coach_routes import mock_coach_factory
 
 
@@ -103,6 +104,11 @@ def test_feedback_restores_after_restart_and_is_position_specific(test_db_url):
         assert client.get('/api/coach/feedback', params={"fen": fen}).json() is None
         saved = client.post('/api/coach/analyze', json={"fen": fen}).json()
         assert saved["created_at"] and saved["text"]
+        assert set(saved["teaching"]) == {"positional_thesis", "candidate_moves", "move_evaluation"}
+        assert "Needs of the Position" not in saved["text"]
+        with db.connection() as conn:
+            structured = conn.execute("SELECT position_analysis -> 'structured' AS teaching FROM coach_feedback").fetchone()["teaching"]
+            assert structured == saved["teaching"]
     with TestClient(create_app(test_db_url, coach_factory=factory)) as restarted:
         assert restarted.get('/api/coach/feedback', params={"fen": fen}).json() == saved
         detail = restarted.get(f'/api/games/{game["id"]}').json()
@@ -110,6 +116,48 @@ def test_feedback_restores_after_restart_and_is_position_specific(test_db_url):
         assert restarted.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN}).json() is None
         assert restarted.get('/api/coach/feedback', params={"fen": "invalid"}).status_code == 422
     assert len(calls) == 1  # Reading/reopening never generates another paid answer.
+
+
+def test_retired_needs_migration_preserves_history_and_runs_once(test_db_url):
+    db = Database(test_db_url)
+    position = CoachPosition.from_fen(chess.STARTING_FEN)
+    current = teaching_output()
+    legacy = {**current, "needs_of_position": "Archived planning paragraph."}
+    for index, payload in enumerate([
+        None,
+        {"structured": None},
+        {"structured": current},
+        {"structured": legacy, "engine_evidence": {"top_moves": []},
+         "classification_version": 2, "text": json.dumps(legacy)},
+    ]):
+        db.save_coach_feedback(CoachAnalysis(
+            "Archived response text", f"resp_{index}", "model", position, {"total_tokens": 10},
+            position_analysis=payload,
+        ))
+    with db.connection() as conn:
+        before = conn.execute("SELECT * FROM coach_feedback ORDER BY id").fetchall()
+        # Simulate an existing database before this migration was introduced.
+        conn.execute("DELETE FROM schema_migrations WHERE name = 'coach_remove_needs_of_position_v1'")
+
+    migrated = Database(test_db_url)
+    expected = deepcopy(before)
+    del expected[-1]["position_analysis"]["structured"]["needs_of_position"]
+    with migrated.connection() as conn:
+        assert conn.execute("SELECT * FROM coach_feedback ORDER BY id").fetchall() == expected
+        marker = conn.execute("SELECT * FROM schema_migrations WHERE name = 'coach_remove_needs_of_position_v1'").fetchone()
+        assert marker is not None
+        versions = conn.execute("SELECT xmin::text AS version FROM coach_feedback ORDER BY id").fetchall()
+
+    restarted = Database(test_db_url)
+    with restarted.connection() as conn:
+        assert conn.execute("SELECT * FROM coach_feedback ORDER BY id").fetchall() == expected
+        assert conn.execute("SELECT xmin::text AS version FROM coach_feedback ORDER BY id").fetchall() == versions
+        assert conn.execute("SELECT * FROM schema_migrations WHERE name = 'coach_remove_needs_of_position_v1'").fetchone() == marker
+    with TestClient(create_app(test_db_url)) as client:
+        response = client.get('/api/coach/feedback', params={"fen": position.fen})
+        assert response.status_code == 200
+        assert response.json()["teaching"] == current
+        assert response.json()["text"] == "Archived response text"
 
 
 def test_reruns_keep_history_and_failed_generation_preserves_latest(test_db_url):

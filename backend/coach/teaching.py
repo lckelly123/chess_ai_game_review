@@ -3,7 +3,7 @@
 from typing import Annotated, Literal
 
 import chess
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .classification import best_move_piece
 
@@ -70,12 +70,11 @@ class TeachingOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     positional_thesis: str = Field(min_length=1)
-    needs_of_position: str = Field(min_length=1)
     # Zero is valid only in terminal positions; that depends on the input FEN.
     candidate_moves: list[CandidateMove] = Field(max_length=3)
     move_evaluation: MoveEvaluation
 
-    @field_validator("positional_thesis", "needs_of_position")
+    @field_validator("positional_thesis")
     @classmethod
     def nonblank_paragraph(cls, value):
         if not value.strip():
@@ -145,8 +144,7 @@ class TeachingOutput(BaseModel):
         text = (
             "### 1. Understand the Position\n\n"
             f"**Positional Thesis**\n\n{self.positional_thesis}\n\n"
-            f"### 2. Develop a Plan\n\n**Needs of the Position**\n\n{self.needs_of_position}\n\n"
-            "**Candidate Moves**\n\n" + (candidates or "No legal moves are available.")
+            "### 2. Move Exploration\n\n" + (candidates or "No legal moves are available.")
         )
         if self.move_evaluation is not None:
             feedback = self.move_evaluation.explanation or "Your move follows the recommended idea."
@@ -172,7 +170,14 @@ class SavedMoveEvaluation(MoveEvaluation):
 
 
 class TeachingAnalysis(TeachingOutput):
-    """Read old saved teaching while omitting its obsolete model-made label."""
+    """Read saved teaching while omitting obsolete fields and labels."""
 
     position_character: Literal["quiet", "tense", "forcing"] | None = Field(default=None, exclude=True)
     move_evaluation: SavedMoveEvaluation | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def omit_legacy_needs(cls, value):
+        if isinstance(value, dict):
+            return {key: item for key, item in value.items() if key != "needs_of_position"}
+        return value

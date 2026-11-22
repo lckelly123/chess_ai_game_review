@@ -63,7 +63,7 @@ def invalid_outputs():
     yield "not JSON"
     yield "```json\n" + json.dumps(baseline) + "\n```"
     for key, value in [("position_character", "winning"), ("positional_thesis", " "),
-                       ("needs_of_position", ""), ("candidate_moves", []), ("extra", "field")]:
+                       ("needs_of_position", "Retired plan."), ("candidate_moves", []), ("extra", "field")]:
         yield {**baseline, key: value}
     for key, value in [("uci", "e7e5"), ("uci", "e1g1"), ("uci", "e2e5"), ("uci", "0000"),
                        ("uci", "g1h3q"), ("reason", " "), ("highlight_squares", ["a1"]),
@@ -143,14 +143,15 @@ def test_mismatched_position_evidence_never_reaches_model():
     upstream.assert_not_called()
 
 
-def test_legacy_teaching_still_loads_without_exposing_model_classification():
-    data = {**teaching_output(), "position_character": "forcing"}
+def test_legacy_teaching_still_loads_without_exposing_retired_fields():
+    data = {**teaching_output(), "position_character": "forcing", "needs_of_position": "Retired plan."}
     response = AnalyzePositionResponse(fen=chess.STARTING_FEN, text="Earlier analysis", model="model",
                                       response_id="old", created_at=datetime.now(timezone.utc), teaching=data)
     payload = response.model_dump()
     assert payload["teaching"] == teaching_output()
     assert payload["position_evidence"] is None
     assert response.candidate_san
+    assert data["needs_of_position"] == "Retired plan."
 
 
 def test_stored_engine_classification_is_exposed_independently_of_teaching():
