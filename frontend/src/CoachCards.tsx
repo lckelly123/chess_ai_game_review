@@ -109,6 +109,10 @@ export default function CoachCards({ response, engineReview, engineMode = false,
         </div> : <p className="coach-placeholder">{engineOnly ? nextMove ? 'No saved engine analysis for this position.' : 'No recorded move remains.' : positionEvidence?.unclassified_reason === 'terminal_position' ? 'This position has ended.' : response ? 'No candidate moves are included in this saved response.' : 'Candidate moves and player feedback will appear here.'}</p>}
         {response && !response.played_move && <p className="move-empty-note">{moveFeedback?.explanation ?? (nextMove ? 'Run coach for feedback on the recorded move.' : 'No recorded move is available to evaluate.')}</p>}
       </section>
+      {response && <p className="telemetry-classification">
+        <span>Telemetry classification:</span>{' '}
+        {response.telemetry_classification?.label ?? 'Unavailable — insufficient reliable evidence'}
+      </p>}
     </div>
   </div>;
 }
