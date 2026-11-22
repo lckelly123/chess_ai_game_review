@@ -42,6 +42,19 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
 );
+-- Remove the retired teaching field once, preserving review history, raw text,
+-- engine evidence, classifications, and all other structured fields.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE name = 'coach_remove_needs_of_position_v1') THEN
+        UPDATE coach_feedback
+        SET position_analysis = position_analysis #- '{structured,needs_of_position}'
+        WHERE jsonb_typeof(position_analysis -> 'structured') = 'object'
+          AND (position_analysis -> 'structured') ? 'needs_of_position';
+        INSERT INTO schema_migrations (name) VALUES ('coach_remove_needs_of_position_v1');
+    END IF;
+END
+$$;
 -- Engine-only work is separate from paid coach feedback. Each key in moves is
 -- the zero-based pre-move ply, so UI markers open the decision before the move.
 CREATE TABLE IF NOT EXISTS game_engine_analysis (

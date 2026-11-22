@@ -46,8 +46,7 @@ test('splits saved reviews without losing factor or move-review content', () => 
   assert.match(content.factors[1].body, /\*\*\.\.\.Nge7\*\*/);
   assert.match(content.factors[1].body, /Keep the pieces coordinated/);
   assert.equal(content.thesis, 'Challenge the center without rushing.');
-  assert.equal(content.objective, 'Improve the knight.');
-  assert.equal(content.approach, 'Connect development to central pressure.');
+  assert.doesNotMatch(JSON.stringify(content), /Improve the knight|Connect development to central pressure/);
   assert.doesNotMatch(JSON.stringify(content), /6\.\.\.Qb6/);
   assert.match(content.evaluation, /6\.\.\.Nge7/);
   assert.match(content.evaluation, /Better Alternatives/);
@@ -70,8 +69,7 @@ Do not display this old subsection.`);
   assert.equal(content.factors.length, 3);
   assert.equal(content.factors[0].title, 'King Safety');
   assert.equal(content.thesis, 'Keep the king safe.');
-  assert.equal(content.objective, 'Defend first.');
-  assert.equal(content.approach, 'Safety takes priority.');
+  assert.doesNotMatch(JSON.stringify(content), /Defend first|Safety takes priority/);
   assert.equal(content.evaluation, '');
   assert.doesNotMatch(JSON.stringify(content), /Do not display/);
 });
@@ -82,6 +80,33 @@ test('preserves legacy freeform text and does not mistake inline phrases for hea
   assert.match(content.positionIntro, /mid-sentence/);
   assert.equal(content.factors.length, 0);
   assert.equal(parseCoachContent('').evaluation, '');
+});
+
+test('keeps retired needs and exported move sections out of the positional thesis', () => {
+  for (const heading of ['Develop a Plan', 'Needs of the Position', 'Move Exploration']) {
+    const content = parseCoachContent(`### 1. Understand the Position
+
+**Positional Thesis**
+
+The center is open.
+
+### 2. ${heading}
+
+**Needs of the Position**
+
+Retired planning paragraph.
+
+**Candidate Moves**
+
+- **Nf3**: Develop toward the center.
+
+### 3. Your Move
+
+Your move develops a piece.`);
+    assert.equal(content.thesis, 'The center is open.');
+    assert.equal(content.evaluation, 'Your move develops a piece.');
+    assert.doesNotMatch(JSON.stringify(content), /Retired planning|Develop toward/);
+  }
 });
 
 const engine = (cp, perspective = 'Black', mate = null, bound = 'exact') => ({

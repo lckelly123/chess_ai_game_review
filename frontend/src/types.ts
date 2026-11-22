@@ -41,7 +41,6 @@ export type MistakeClassification =
   | { category: 'positional'; subcategory: 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king' };
 export type PositionTeaching = {
   positional_thesis: string;
-  needs_of_position: string;
   candidate_moves: CandidateMove[];
   move_evaluation?: {
     plan_alignment: 'aligned' | 'partially_aligned' | 'alternative_plan' | 'not_aligned' | 'unclear';

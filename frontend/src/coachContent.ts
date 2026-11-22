@@ -31,7 +31,9 @@ export function parseCoachContent(markdown: string) {
   let section: Section = 'position';
   for (const node of fromMarkdown(markdown).children) {
     const title = label(node);
-    const next = title === 'understand the position' ? 'position' : title === 'develop a plan' ? 'plan' : title === 'evaluate your move' ? 'move' : null;
+    const next = title === 'understand the position' ? 'position'
+      : ['develop a plan', 'needs of the position', 'move exploration', 'candidate moves'].includes(title) ? 'plan'
+        : ['evaluate your move', 'your move'].includes(title) ? 'move' : null;
     if (next) section = next;
     else sections[section].push(node);
   }
@@ -62,21 +64,9 @@ export function parseCoachContent(markdown: string) {
     else intro.push(source(node));
   }
 
-  const plan: Record<'intro' | 'objective' | 'approach' | 'moves', string[]> = { intro: [], objective: [], approach: [], moves: [] };
-  let part: keyof typeof plan = 'intro';
-  for (const node of sections.plan) {
-    const title = label(node);
-    const next = ['strategic objective', 'identify the objective'].includes(title) ? 'objective'
-      : ['how to approach the position', 'explain the chess reasoning'].includes(title) ? 'approach'
-        : ['moves to look for', 'candidate moves', 'find candidate moves'].includes(title) ? 'moves' : null;
-    if (next) {
-      part = next;
-      if (afterLabel(node)) plan[part].push(afterLabel(node));
-    } else plan[part].push(source(node));
-  }
+  // Retired plan paragraphs stay out of the card, including saved Markdown.
   return {
     factors, positionIntro: intro.join('\n\n'), thesis: thesis.join('\n\n'),
-    planIntro: plan.intro.join('\n\n'), objective: plan.objective.join('\n\n'), approach: plan.approach.join('\n\n'),
     evaluation: sections.move.map(source).join('\n\n'),
   };
 }

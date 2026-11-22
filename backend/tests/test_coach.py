@@ -24,7 +24,6 @@ def teaching_output(fen=chess.STARTING_FEN):
     move = next(iter(board.legal_moves), None) if not board.is_game_over() else None
     return {
         "positional_thesis": "Test analysis.",
-        "needs_of_position": "Test plan.",
         "move_evaluation": {"plan_alignment": "unclear", "explanation": "Test move feedback.", "better_candidate_uci": None, "mistake_classification": None},
         "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning.",
                              "highlight_squares": [chess.square_name(move.from_square), chess.square_name(move.to_square)]}] if move else [],
@@ -84,7 +83,9 @@ def test_responses_request_and_output_through_real_sdk():
         assert set(body) == {"model", "reasoning", "input", "max_output_tokens", "store", "text"}
         assert body["text"]["format"]["strict"] is True
         assert body["text"]["format"]["type"] == "json_schema"
-        assert set(body["text"]["format"]["schema"]["properties"]) == {"positional_thesis", "needs_of_position", "candidate_moves", "move_evaluation"}
+        schema = body["text"]["format"]["schema"]
+        assert set(schema["properties"]) == {"positional_thesis", "candidate_moves", "move_evaluation"}
+        assert set(schema["required"]) == set(schema["properties"])
         assert body["input"][0] == {"role": "system", "content": SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")}
         message = body["input"][1]
         assert message["role"] == "user"
