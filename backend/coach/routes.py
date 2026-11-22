@@ -13,6 +13,7 @@ from openai import (
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from ..chess_games import replay
+from ..telemetry import TelemetryClassification, classify_review
 from .move_review import MoveReview
 from .position import CoachPosition, InvalidPositionError
 from .service import CoachResponseError, open_coach
@@ -78,6 +79,11 @@ class AnalyzePositionResponse(BaseModel):
     @property
     def candidate_san(self) -> dict[str, str]:
         return self.teaching.candidate_san(self.fen) if self.teaching is not None else {}
+
+    @computed_field
+    @property
+    def telemetry_classification(self) -> TelemetryClassification:
+        return classify_review(self.fen, self.played_move, self.stockfish)
 
 
 def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRouter:
