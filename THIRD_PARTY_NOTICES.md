@@ -1,7 +1,5 @@
 # Third-party components
 
-The display-only telemetry comparison includes an unmodified `motifs.py` snapshot from [PulfordJ/chess-telemetry](https://github.com/PulfordJ/chess-telemetry/tree/186ad9c61b770daf9c1778600a6a443be4ce3366), revision `186ad9c61b770daf9c1778600a6a443be4ce3366`. The score clamp and phase rule in its adapter also follow that revision. Upstream ownership remains with its authors; no additional license is asserted. See `backend/telemetry/README.md` for integration boundaries.
-
 The replay board uses Chess.com's Classic piece set and Icy Sea board texture to match the reference image explicitly supplied by the user on November 15, 2026. These assets are bundled under `frontend/public/assets/chess/`; their exact source URLs are recorded in `SOURCES.json`. Artwork ownership remains with its respective rights holders; bundling does not grant a separate license or imply affiliation. The application icon and header knight remain original SVG geometry.
 
 Dependencies retain their upstream licenses, available in their installed packages and source repositories:

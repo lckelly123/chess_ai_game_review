@@ -68,14 +68,6 @@ export type CoachResponse = {
   sharpness_version?: number | null;
   position_evidence?: PositionEvidence | null;
   candidate_san?: Record<string, string>;
-  telemetry_classification?: {
-    status: 'classified' | 'below_threshold' | 'unavailable';
-    label: string;
-    motif: string | null;
-    cp_loss: number | null;
-    threshold_cp: number;
-    source_revision: string;
-  };
 };
 
 export function perspective(game: Game, username: string) {

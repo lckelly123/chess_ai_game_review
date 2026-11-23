@@ -190,6 +190,7 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
         result = client.post('/api/coach/analyze', json={"game_id": game["id"], "ply": 0, "model": model})
         assert result.status_code == 200
         saved = result.json()
+        assert "telemetry_classification" not in saved
         assert saved["text"] == FIRST
         assert saved["played_move"] == "e2e4"
         assert saved["model"] == model
