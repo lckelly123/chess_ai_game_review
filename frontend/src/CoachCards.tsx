@@ -14,8 +14,6 @@ function Prose({ children }: { children: string }) {
 const mistakeCategories = { tactical_miss: 'Missed tactic', tactical_allowed: 'Allowed tactic', positional: 'Positional' };
 const mistakeSubcategories = {
   hanging_piece: 'Hanging piece', fork: 'Fork', pin_skewer: 'Pin / skewer', discovered_attack: 'Discovered attack',
-  pawn: 'Best move: pawn', knight: 'Best move: knight', bishop: 'Best move: bishop',
-  rook: 'Best move: rook', queen: 'Best move: queen', king: 'Best move: king',
 };
 const mateQualityDescriptions: Record<string, string> = {
   mate_created: 'Allows a forced checkmate against you.',
@@ -98,7 +96,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
                 {move.feedback && move.feedback !== move.reason && <span className="candidate-feedback">{move.feedback}</span>}
                 {move.isPlayed && mistake && <span className="mistake-classification" id={`${id}-mistake`}>
                   <span className="mistake-category">{mistakeCategories[mistake.category]}</span>
-                  {mistake.subcategory && <span className="mistake-subcategory">{mistakeSubcategories[mistake.subcategory]}</span>}
+                  {mistake.category !== 'positional' && <span className="mistake-subcategory">{mistakeSubcategories[mistake.subcategory]}</span>}
                 </span>}
               </button>
               {move.isPlayed && betterUci && <button className="better-candidate" type="button" disabled={transitioning} onClick={() => onSelectCandidate(betterUci)}>

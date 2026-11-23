@@ -5,10 +5,11 @@ from typing import Annotated, Literal
 import chess
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .classification import best_move_piece
+from .classification import positional_details
 
 Square = Annotated[str, Field(pattern=r"^[a-h][1-8]$")]
 Uci = Annotated[str, Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")]
+PieceType = Literal["pawn", "knight", "bishop", "rook", "queen", "king"]
 
 
 class TacticalMistake(BaseModel):
@@ -18,14 +19,30 @@ class TacticalMistake(BaseModel):
     subcategory: Literal["hanging_piece", "fork", "pin_skewer", "discovered_attack"]
 
 
-class PositionalMistake(BaseModel):
+class OtherMistake(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
+    category: Literal["other"]
+    subcategory: None
+
+
+class LegacyPositionalMistake(BaseModel):
+    """Version 2 records remain readable without fabricating piece metadata."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
     category: Literal["positional"]
-    subcategory: Literal["pawn", "knight", "bishop", "rook", "queen", "king"]
+    subcategory: PieceType
 
 
-MistakeClassification = TacticalMistake | PositionalMistake
+class PositionalMistake(LegacyPositionalMistake):
+    """Backend-derived metadata, excluded from the LLM output schema."""
+
+    best_move_piece: PieceType
+    played_piece: PieceType
+    same_piece: bool
+
+
+MistakeClassification = TacticalMistake | OtherMistake
 
 
 class MoveEvaluation(BaseModel):
@@ -99,8 +116,7 @@ class TeachingOutput(BaseModel):
             seen.add(candidate.uci)
         return self
 
-    def validate_move_evaluation(self, *, played_move: str | None, evidence: dict | None,
-                                 position_evidence: dict | None = None) -> "TeachingOutput":
+    def validate_move_evaluation(self, *, played_move: str | None, evidence: dict | None) -> "TeachingOutput":
         from .player_move_quality import ERROR_STATUSES, assess_player_move
 
         evaluation = self.move_evaluation
@@ -108,11 +124,8 @@ class TeachingOutput(BaseModel):
         quality = evidence.get("move_quality", {}).get("status") if evidence else None
         if evaluation.mistake_classification is not None and (played_move is None or quality not in ERROR_STATUSES):
             raise ValueError("Mistake classification requires a recorded move with a reliable error severity.")
-        if isinstance(evaluation.mistake_classification, PositionalMistake):
-            source = position_evidence or evidence
-            piece = best_move_piece(source.get("fen", ""), source) if source else None
-            if piece is None or evaluation.mistake_classification.subcategory != piece:
-                raise ValueError("Positional classification must use the piece from Stockfish's top-ranked move.")
+        if played_move is not None and quality in ERROR_STATUSES and evaluation.mistake_classification is None:
+            raise ValueError("A recorded error requires a mistake classification.")
         if played_move in candidates and quality == "good" and (
             evaluation.plan_alignment != "aligned" or evaluation.explanation is not None
             or evaluation.better_candidate_uci is not None
@@ -132,6 +145,15 @@ class TeachingOutput(BaseModel):
                     or comparison is None or comparison["status"] not in ERROR_STATUSES):
                 raise ValueError("A better candidate must be selected and demonstrably stronger than the played move.")
         return self
+
+    def as_analysis(self, fen: str, *, played_move: str | None, evidence: dict | None) -> "TeachingAnalysis":
+        """Normalize the model verdict before it reaches storage or the UI."""
+        data = self.model_dump()
+        if isinstance(self.move_evaluation.mistake_classification, OtherMistake):
+            details = positional_details(fen, played_move, evidence)
+            classification = PositionalMistake(category="positional", subcategory=details["best_move_piece"], **details)
+            data["move_evaluation"]["mistake_classification"] = classification.model_dump()
+        return TeachingAnalysis.model_validate(data)
 
     def candidate_san(self, fen: str) -> dict[str, str]:
         board = chess.Board(fen)
@@ -155,7 +177,7 @@ class TeachingOutput(BaseModel):
 class SavedMoveEvaluation(MoveEvaluation):
     """Keep historical coaching readable without translating obsolete labels."""
 
-    mistake_classification: MistakeClassification | None = None
+    mistake_classification: TacticalMistake | PositionalMistake | LegacyPositionalMistake | None = None
 
     @field_validator("mistake_classification", mode="before")
     @classmethod

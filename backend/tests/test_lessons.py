@@ -133,6 +133,19 @@ def test_current_explicit_null_is_reviewed_but_remains_unclassified():
     assert result['outdated_reviews'] == result['pending_reviews'] == 0
 
 
+def test_version_two_and_enriched_positional_records_keep_existing_lesson_counts():
+    db = MemoryDatabase()
+    expected = lesson_analytics(db, 'alice')
+    for review in db.feedback.values():
+        review['classification_version'] = 2
+    assert lesson_analytics(db, 'alice') == expected
+    positional = next(iter(db.feedback.values()))
+    positional['classification_version'] = CLASSIFICATION_VERSION
+    positional['teaching']['move_evaluation']['mistake_classification'].update(
+        best_move_piece='knight', played_piece='pawn', same_piece=False)
+    assert lesson_analytics(db, 'alice') == expected
+
+
 def test_http_uses_latest_review_per_move_and_selected_profile_without_model_calls(test_db_url):
     db = Database(test_db_url)
     game = normalize_game(raw_game(), 'alice')

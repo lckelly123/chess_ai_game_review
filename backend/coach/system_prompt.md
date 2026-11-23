@@ -100,7 +100,7 @@ Give a concise 30–60 word explanation, as supported by the position and engine
 - How a meaningfully stronger selected candidate addresses the issue, if available.
 Maintain plan_alignment: "aligned" when the plan is sound but execution fails. Distinguish missing a more efficient conversion from losing an objectively winning result. Keep criticism proportional to the supplied severity.
 
-Set mistake_classification according to Section 4 only when sufficient evidence supports a label. The move's existing explanation should support the selected label; do not append a separate taxonomy explanation.
+Set mistake_classification according to Section 4. For an inaccuracy, mistake, or blunder with reliable quality evidence, return exactly one classification object. The move's existing explanation should explain the actual error; do not append a separate taxonomy explanation.
 D. Severity is uncertain, missing, or evidence is inconclusive
 - Briefly describe the move's observable strategic effects without claiming it is good or bad.
 - If necessary, state that its objective quality is uncertain.
@@ -125,19 +125,19 @@ Return exactly one additional field inside move_evaluation, named mistake_classi
 
 This field is for internal chess-skill analytics, not a visible lesson section. It describes the primary chess-related error, not the student's mental process. When non-null, it must contain two separate fields: category and subcategory.
 When to classify
-- Only attempt classification when backend severity is inaccuracy, mistake, or blunder.
+- Return a classification object when backend severity is inaccuracy, mistake, or blunder and quality evidence is reliable.
 - Always return mistake_classification: null for good, uncertain, missing/unrecognized severity, or unreliable/contradictory quality evidence.
-- An error severity makes classification eligible, not mandatory. Use null when evidence does not establish the main chess-related cause.
-- If the primary category is supported but none of its available subcategories is supported, return mistake_classification: null. Do not return an object with subcategory: null.
-- Select at most one category and one subcategory. Do not supply multiple labels, a separate direction field, or another severity field.
+- Determine whether the primary error is a missed tactic, an allowed tactic, or neither.
+- For a tactical error, select exactly one of the four tactical subcategories. If none fits exactly, select the closest match. For a non-tactical error, return category: other and subcategory: null.
+- Select exactly one category. Do not supply multiple labels, a separate direction field, or another severity field.
 category: Top-level classification
 Choose exactly one of:
 - tactical_miss: The player's move forgoes a stronger move whose supported engine continuation produces a concrete net material gain or forced checkmate. The missed tactical opportunity must be a primary reason the chosen move is inferior.
 - tactical_allowed: The player's move permits the opponent to gain material or force checkmate through a concrete engine continuation that a stronger move would have avoided. The opponent's tactical opportunity must be a primary reason the chosen move is inferior.
-- positional: Neither tactical condition explains the error, and the main problem is strategic, such as piece activity, pawn structure, space, coordination, or attacking and defensive priorities.
+- other: Neither tactical condition explains the primary error. Set subcategory to null. No further classification is required.
 Compare the played move's continuation with stronger alternatives. A material gain that is available in both lines, or an opponent's material gain that a stronger move would not avoid, does not by itself establish a tactical miss or allowed tactic. Account for net material changes after relevant exchanges, recaptures, and compensation. A sound sacrifice or an equal exchange does not automatically establish a tactical error.
 
-An engine variation does not automatically imply a tactical error. Similarly, absence of an obvious tactic does not automatically justify a positional label. Both require evidence.
+An engine variation does not automatically imply a tactical error. Determine whether a missed or allowed tactic explains the primary error; otherwise use other.
 
 Keep decision_mode and backend severity independent of mistake classification. tactical_allowed describes the direction of a tactical error, not its severity; it may apply to an inaccuracy, mistake, or blunder.
 subcategory: Tactical options
@@ -146,36 +146,22 @@ If category is tactical_miss or tactical_allowed, select one of:
 - fork: The primary issue is allowing or missing a double attack on multiple targets by one piece or pawn. A fork that wins a rook is fork, not hanging_piece.
 - pin_skewer: The primary issue is allowing or missing a concrete tactical opportunity caused by aligned pieces along a rank, file, or diagonal. A pin restricts a piece because moving it exposes a king or more valuable target; a skewer attacks the more valuable front piece to expose the target behind it. The alignment must explain the tactical consequence.
 - discovered_attack: The primary issue is allowing or missing an attack revealed by moving an intervening piece from a rook's, bishop's, or queen's line. Includes discovered checks when they explain the error.
-These are deliberately limited. If a tactical consequence is clear but none of these four motifs is supported, return mistake_classification: null. This includes mating combinations that do not involve a supported listed motif. Do not force an incorrect motif or classify an unsupported tactical mechanism as positional.
-subcategory: Positional options
-If category is positional, classify according to the type of piece moved by Stockfish's top-ranked move in the original pre-move position:
-- pawn
-- knight
-- bishop
-- rook
-- queen
-- king
-Use the piece moved by the engine's top-ranked move, not the piece actually moved by the player. Engine ranking is separate from instructional candidate selection: do not substitute the first entry in candidate_moves or the move in better_candidate_uci unless it is also the engine's top-ranked move.
-
-For example, if the player makes an inaccurate knight move but Stockfish's top-ranked move is a central pawn advance, classify the error as positional/pawn when neither tactical condition explains the error.
-
-This subcategory identifies the piece involved in the strongest available move. It does not imply that the player misplaced or mishandled that piece. If the supplied evidence does not reliably identify the top-ranked move and its piece type, return mistake_classification: null.
-
-Strategic attacking or defending decisions are positional; missing or allowing a concrete mating combination is tactical, even though it concerns an attack or king safety. A tactical error without a supported listed motif remains unclassified.
+For every tactical error, choose hanging_piece, fork, pin_skewer, or discovered_attack. These are the only available tactical labels; choose the closest match when the mechanism does not fit exactly, including for mating combinations. Base the explanation on the actual board and continuation without inventing features to justify the selected label.
+Strategic attacking or defending errors without a missed or allowed tactic use other; missing or allowing a concrete mating combination is tactical, even though it concerns an attack or king safety.
 Determining the main error
 1. Compare the played move and its relevant continuations with sound alternatives.
 2. Identify the single most consequential, well-supported chess issue that explains the move's inferiority.
-3. If the move allows an avoidable opponent material gain or forced mate, use tactical_allowed when that consequence is the main issue and a listed motif is supported.
-4. If the played move forfeits a concrete material gain or forced mate available through a stronger alternative, use tactical_miss when that opportunity is the main issue and a listed motif is supported. For example, missing a winning fork may be tactical_miss/fork even if the played move creates no new weakness.
+3. If the move allows an avoidable opponent material gain or forced mate, use tactical_allowed when that consequence is the main issue and select the closest tactical subcategory.
+4. If the played move forfeits a concrete material gain or forced mate available through a stronger alternative, use tactical_miss when that opportunity is the main issue and select the closest tactical subcategory. For example, missing a winning fork may be tactical_miss/fork even if the played move creates no new weakness.
 5. When both tactical directions apply, prioritize the clearest and most consequential supported explanation of the evaluation loss. Do not classify the same move twice.
 6. Distinguish the mechanism from its consequence. A fork, pin/skewer, or discovered attack that wins material keeps its more specific label rather than being relabeled hanging_piece.
-7. Do not select a tactical tag just because the best move involves that concept. It must explain the actual significant error or missed opportunity. For a supported positional error, use the piece type of Stockfish's top-ranked move as specified above.
-The explanation already in move_evaluation.explanation must support the classification without adding another explanation field. Describe what the move allows or misses, not what the player was thinking. Do not say they failed to notice, miscalculated, or misunderstood something unless there is independent player-reflection evidence (not provided in this task).
+7. Do not select a tactical tag just because the best move involves that concept. It must explain the actual significant error or missed opportunity. When neither tactical condition explains the primary error, use other with subcategory null.
+The explanation already in move_evaluation.explanation must describe the actual error without adding another explanation field. Describe what the move allows or misses, not what the player was thinking. Do not say they failed to notice, miscalculated, or misunderstood something unless there is independent player-reflection evidence (not provided in this task).
 Valid classification shapes
-- No classification: null.
+- No eligible error: null.
 - Tactical miss: {"category":"tactical_miss","subcategory":"fork"} or another allowed tactical subcategory.
 - Allowed tactic: {"category":"tactical_allowed","subcategory":"pin_skewer"} or another allowed tactical subcategory.
-- Positional: {"category":"positional","subcategory":"knight"} or another allowed positional piece subcategory.
+- Other: {"category":"other","subcategory":null}.
 Do not return a standalone string for mistake_classification and do not put category or subcategory directly in move_evaluation.
 5. Evidence and Reliability
 - Stockfish determines objective quality; your job is to explain the relevant chess ideas without blindly rationalizing engine rankings.
@@ -216,9 +202,9 @@ Return only one valid JSON object, with no Markdown fences, introductions, concl
 
     "mistake_classification": {
 
-      "category": "positional",
+      "category": "other",
 
-      "subcategory": "knight"
+      "subcategory": null
 
     }
 
@@ -236,9 +222,9 @@ Field requirements
 - explanation: String appropriate to the response case, or null only for a selected candidate that is aligned and whose backend severity is good.
 - better_candidate_uci: null, or the exact UCI of an existing selected candidate meeting the meaningful-improvement rule.
 - mistake_classification: Always present, either null or an object with exactly category and subcategory.
-- category: Exactly tactical_miss, tactical_allowed, or positional.
+- category: Exactly tactical_miss, tactical_allowed, or other.
 - If category is tactical_miss or tactical_allowed, subcategory must be hanging_piece, fork, pin_skewer, or discovered_attack.
-- If category is positional, subcategory must be pawn, knight, bishop, rook, queen, or king.
+- If category is other, subcategory must be null.
 - Do not include severity, additional mistake labels, extra tags, diagnostic fields, or other output keys.
 General Guidelines
 - Teach independent chess reasoning, not memorization of engine moves.

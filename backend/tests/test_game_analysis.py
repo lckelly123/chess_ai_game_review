@@ -284,6 +284,33 @@ def test_polling_recovers_orphaned_status_after_database_outage():
     asyncio.run(run())
 
 
+def test_polling_preserves_completion_when_worker_finishes_during_status_read():
+    async def run():
+        db = MemoryDatabase()
+        game_id = db.record["id"]
+        fingerprint = pgn_fingerprint(db.record["pgn"])
+        db.begin_game_analysis(game_id, "white", fingerprint, 4)
+        row = db.rows[(game_id, "white")]
+        row["status"] = "running"
+        stale = deepcopy(row)
+        row["status"] = "completed"
+        original = db.game_analysis
+        reads = []
+
+        def read(*args):
+            reads.append(args)
+            # The first snapshot was taken before the worker completed.
+            return stale if len(reads) == 1 else original(*args)
+
+        db.game_analysis = read
+        service = GameAnalysisService(db, set())
+        result = await service.saved(game_id, "alice")
+        assert result["status"] == row["status"] == "completed"
+        assert len(reads) == 2
+
+    asyncio.run(run())
+
+
 def test_changed_pgn_discards_stale_analysis_and_reanalyzes_new_game():
     db = MemoryDatabase()
     calls = []

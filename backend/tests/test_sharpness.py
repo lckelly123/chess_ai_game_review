@@ -10,6 +10,7 @@ from backend.coach.sharpness import (
     normalized_sharpness, sharpness_tag, with_position_sharpness,
 )
 from backend.coach.routes import AnalyzePositionResponse
+from backend.coach.classification import CLASSIFICATION_VERSION
 from backend.coach.responses import build_request
 from backend.tests.position_fixtures import position_evidence
 
@@ -135,7 +136,7 @@ def test_api_rescores_old_evidence_without_marking_old_coaching_current(saved_ve
     snapshot = deepcopy(old)
     response = AnalyzePositionResponse(fen=chess.STARTING_FEN, text='Saved explanation', model='model',
         response_id='saved', created_at=datetime.now(timezone.utc), position_evidence=old,
-        classification_version=2, sharpness_version=saved_version)
+        classification_version=CLASSIFICATION_VERSION, sharpness_version=saved_version)
     result = response.model_dump()
     assert result['position_evidence']['sharpness']['version'] == SHARPNESS_VERSION
     assert result['position_evidence']['sharpness']['cap_cp'] == 1000
