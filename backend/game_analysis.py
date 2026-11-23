@@ -124,9 +124,13 @@ class GameAnalysisService:
             # Recover that case when polling resumes, rather than showing Running forever.
             # The start lock prevents mistaking a just-created job for an orphan.
             if row and row["status"] in ACTIVE_STATUSES and (task is None or task.done()):
-                message = "Analysis paused. Resume to finish the remaining moves."
-                await run_in_threadpool(self.db.set_game_analysis_status, game_id, color, fingerprint, "interrupted", message)
-                row.update(status="interrupted", error=message)
+                # The worker may have finished after the first snapshot was read.
+                # Recheck its durable status before overwriting a completed job.
+                row = await run_in_threadpool(self.db.game_analysis, game_id, color, fingerprint)
+                if row and row["status"] in ACTIVE_STATUSES:
+                    message = "Analysis paused. Resume to finish the remaining moves."
+                    await run_in_threadpool(self.db.set_game_analysis_status, game_id, color, fingerprint, "interrupted", message)
+                    row.update(status="interrupted", error=message)
             return analysis_result(row)
 
     async def _coach_moves(self, game_id, color, fingerprint, targets, saved, model):

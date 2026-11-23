@@ -1,7 +1,7 @@
 """Read-only lesson analytics over a player's saved game decisions."""
 
 from .chess_games import replay
-from .coach.classification import current_classification
+from .coach.classification import lesson_classification
 from .coach.player_move_quality import with_player_move_quality
 from .game_analysis import pgn_fingerprint
 
@@ -94,12 +94,12 @@ def lesson_analytics(database, username: str) -> dict:
         evaluation = teaching.get("move_evaluation") or {}
         classification = evaluation.get("mistake_classification")
         bucket = (classification.get("category"), classification.get("subcategory")) if isinstance(classification, dict) else None
-        if current_classification(review) and bucket in buckets:
+        if lesson_classification(review) and bucket in buckets:
             increment(buckets[bucket], severity)
             increment(category_counts[bucket[0]], severity)
         else:
             increment(result["unclassified"], severity)
-        if review and not current_classification(review):
+        if review and not lesson_classification(review):
             result["outdated_reviews"] += 1
         elif not review:
             result["pending_reviews"] += 1

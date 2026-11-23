@@ -18,7 +18,7 @@ from .move_quality import analyze_played_move, prepare_position_evidence
 from .settings import CoachSettings, require_api_key
 from .stockfish import StockfishAnalysisError
 from .teaching import TeachingOutput
-from .classification import CLASSIFICATION_VERSION, best_move_piece
+from .classification import CLASSIFICATION_VERSION
 from .sharpness import SHARPNESS_VERSION
 
 SYSTEM_PROMPT_PATH = Path(__file__).with_name("system_prompt.md")
@@ -76,7 +76,6 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
         "unclassified_reason": evidence["unclassified_reason"],
         "position_outlook": evidence["position_outlook"],
         "engine_verified_moves": evidence["top_moves"],
-        "engine_best_move_piece": best_move_piece(position.fen, evidence),
         "permitted_candidate_uci": evidence["permitted_candidate_uci"],
         "delta_cp": evidence["delta_cp"], "delta_e_pp": evidence["delta_e_pp"],
         "move_quality_policy": evidence["move_quality_policy"],
@@ -102,8 +101,6 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
                 "\n\nPlayer-move information (use only for move_evaluation):\n" + json.dumps(move_evidence, ensure_ascii=False)
                 + "\n\nThe authoritative severity described in the system prompt is player-move information.move_quality.status. "
                 "Use that existing field; candidate quality uses the separate position-level policy."
-                " For positional mistake classifications, engine_best_move_piece identifies the piece moved by "
-                "Stockfish's rank-1 move from this original board. If it is null, leave mistake_classification null."
                 + "\n\nWhen player-move information is null, set move_evaluation to plan_alignment unclear, "
                 "explanation 'No recorded move is available to evaluate.', better_candidate_uci null, and mistake_classification null."
             )},
@@ -194,7 +191,9 @@ class ResponsesCoach:
                 teaching = TeachingOutput.model_validate_json(response.output_text).validate_position(
                     position.fen, permitted_moves=evidence["permitted_candidate_uci"])
                 teaching.validate_move_evaluation(played_move=move_evidence["played_move"]["uci"] if move_evidence else None,
-                                                  evidence=move_evidence, position_evidence=evidence)
+                                                  evidence=move_evidence)
+                teaching = teaching.as_analysis(position.fen,
+                    played_move=move_evidence["played_move"]["uci"] if move_evidence else None, evidence=evidence)
             except ValueError as exc:
                 raise CoachResponseError("The model returned invalid position teaching or candidate moves.", response.id) from exc
         return CoachAnalysis(

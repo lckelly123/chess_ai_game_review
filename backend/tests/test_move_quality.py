@@ -126,7 +126,7 @@ def test_feedback_reuses_reason_only_for_acceptable_selected_move():
 
 def test_better_move_reference_requires_selected_candidate_and_meaningful_improvement():
     data = teaching_output()
-    data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": "The idea is useful, but the execution loses material.", "better_candidate_uci": "g1h3", "mistake_classification": None}
+    data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": "The idea is useful, but the execution loses material.", "better_candidate_uci": "g1h3", "mistake_classification": {"category": "other", "subcategory": None}}
     teaching = TeachingOutput.model_validate(data)
     evidence = {"move_quality": {"status": "inaccuracy"}, "top_moves": [{"uci": "g1h3", **candidate()}],
                 "played_move": {"uci": "e2e4", **candidate(500, 100, 0)}}
