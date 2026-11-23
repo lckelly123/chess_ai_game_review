@@ -19,7 +19,8 @@ export default function App() {
   const [limit, setLimit] = useState(50);
   const [games, setGames] = useState<Game[]>([]);
   const [replayRoute, setReplayRoute] = useState(readReplayRoute);
-  const [lessonsOpen, setLessonsOpen] = useState(() => window.location.hash === '#lessons');
+  const [lessonsOpen, setLessonsOpen] = useState(() => ['#lessons', '#lessons/multi-game'].includes(window.location.hash));
+  const [multiGameOpen, setMultiGameOpen] = useState(() => window.location.hash === '#lessons/multi-game');
   const [detail, setDetail] = useState<GameDetail | null>(null);
   const [search, setSearch] = useState('');
   const [speed, setSpeed] = useState('all');
@@ -42,7 +43,10 @@ export default function App() {
   const busy = submitting || !!jobId;
 
   useEffect(() => {
-    const navigate = () => { setReplayRoute(readReplayRoute()); setLessonsOpen(window.location.hash === '#lessons'); };
+    const navigate = () => {
+      setReplayRoute(readReplayRoute()); setLessonsOpen(['#lessons', '#lessons/multi-game'].includes(window.location.hash));
+      setMultiGameOpen(window.location.hash === '#lessons/multi-game');
+    };
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
@@ -60,8 +64,8 @@ export default function App() {
       window.scrollTo(0, libraryPosition.current.page);
     }
     wasOutsideLibrary.current = !!replayRoute || lessonsOpen;
-    document.title = lessonsOpen ? 'Chess study — Lessons' : replayRoute ? 'Chess study — Game replay' : 'Chess study — Your game library';
-  }, [replayRoute, lessonsOpen]);
+    document.title = multiGameOpen ? 'Chess study — Multi-game analysis' : lessonsOpen ? 'Chess study — Lessons' : replayRoute ? 'Chess study — Game replay' : 'Chess study — Your game library';
+  }, [replayRoute, lessonsOpen, multiGameOpen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -150,7 +154,7 @@ export default function App() {
         }}><GraduationCap size={17}/> Lessons</a>
       </nav><span className="local-label"><span/> Saved on this device</span></header>
     <main className={`app-layout ${replayRoute ? 'replay-layout' : 'library-layout'}`}>
-      {lessonsOpen ? <Lessons key={username} profiles={profiles} username={username} profilesLoading={loading && !profiles.length}
+      {lessonsOpen ? <Lessons key={username} profiles={profiles} username={username} multiGameOpen={multiGameOpen} profilesLoading={loading && !profiles.length}
         profileError={!username ? libraryError : ''} onRetryProfiles={() => setBoot(value => value + 1)}
         onSelectPlayer={value => { setUsername(value); setInput(value); setSearch(''); setSpeed('all'); setResult('all'); }}/>
       : !replayRoute ? <div className="library">

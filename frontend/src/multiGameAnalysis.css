@@ -1,0 +1,49 @@
+.multi-game-back { margin-bottom: 24px; min-height: 44px; }
+.multi-game-heading { margin-bottom: 24px; }
+.multi-game-heading h1 { text-wrap: balance; }
+.multi-game-actions { flex-shrink: 0; padding-top: 3px; }
+.multi-game-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.multi-game-scope p { color: var(--muted); font-size: 13px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.multi-game-message { display: flex; align-items: flex-start; gap: 12px; padding: 18px 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.multi-game-message > svg { flex-shrink: 0; margin-top: 3px; }
+.multi-game-message p { max-width: 75ch; }
+.multi-game-message.error { color: var(--negative); }
+.multi-game-message .text-button { min-height: 44px; }
+.multi-game-no-data, .multi-game-loading { margin-top: 24px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.multi-game-no-data a { color: var(--accent); text-underline-offset: 3px; }
+.multi-game-empty { padding-top: 44px; }
+.multi-game-history { padding-top: 32px; }
+.multi-game-history-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 24px; }
+.multi-game-history h2 { font-size: 21px; font-weight: 600; letter-spacing: -.02em; line-height: 1.4; }
+.multi-game-history-heading > div { min-width: 0; max-width: 100%; }
+.multi-game-history-heading label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.multi-game-history-heading select { max-width: 100%; min-height: 44px; padding: 8px 12px; font-size: 13px; }
+.multi-game-response-meta { margin-top: 16px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.multi-game-report { max-width: 75ch; overflow-wrap: anywhere; }
+.multi-game-report p { font-size: 16px; line-height: 1.75; }
+.multi-game-assessment { margin-top: 24px; }
+.multi-game-report > section + section { margin-top: 36px; padding-top: 28px; border-top: 1px solid var(--line); }
+.multi-game-pattern { margin-top: 26px; }
+.multi-game-pattern + .multi-game-pattern { margin-top: 32px; padding-top: 26px; border-top: 1px solid var(--line); }
+.multi-game-pattern-heading { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; margin-bottom: 12px; }
+.multi-game-report h3 { font-size: 17px; font-weight: 600; line-height: 1.5; }
+.multi-game-pattern-heading > span { color: var(--muted); font-size: 12px; }
+.multi-game-pattern > p + p, .multi-game-priorities li > p { margin-top: 10px; }
+.multi-game-adjustment { margin-top: 18px; }
+.multi-game-report h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; line-height: 1.6; color: var(--accent-hover); }
+.multi-game-priorities { margin: 24px 0 0; padding-left: 22px; }
+.multi-game-priorities li { padding-left: 8px; }
+.multi-game-priorities li + li { margin-top: 28px; }
+.multi-game-priorities li::marker { color: var(--muted); }
+.multi-game-priorities h4 { margin-top: 18px; }
+.multi-game-priorities .multi-game-related { color: var(--muted); font-size: 12px; }
+@media (max-width: 700px) {
+  .multi-game-heading { gap: 20px; }
+  .multi-game-history-heading { align-items: flex-start; flex-direction: column; }
+  .multi-game-history-heading > div, .multi-game-history-heading select { width: 100%; }
+  .multi-game-report p { font-size: 15px; }
+}
+@media (max-width: 440px) {
+  .multi-game-heading h1 { font-size: 30px; }
+  .multi-game-actions, .multi-game-actions .primary-button { width: 100%; }
+}

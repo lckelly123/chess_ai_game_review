@@ -124,6 +124,9 @@ class MemoryDatabase:
             if row["status"] in {"queued", "running"}:
                 row.update(status="interrupted", error="Analysis paused. Resume to finish.")
 
+    def interrupt_multi_game_analyses(self):
+        pass  # This test double only exercises per-game analysis.
+
     def game_analyses(self, game_id, pgn):
         return {color: analysis_result(row) for (key, color), row in self.rows.items()
                 if key == game_id and row["pgn_hash"] == pgn_fingerprint(pgn)}
