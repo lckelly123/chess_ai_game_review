@@ -1,7 +1,8 @@
 {
   "dependencies": ["./backend"],
   "graphs": {
-    "chess_coach": "backend.coach.graph:graph"
+    "chess_coach": "backend.coach.graph:graph",
+    "multi_game_coach": "backend.multi_game.graph:graph"
   },
   "env": ".env"
 }

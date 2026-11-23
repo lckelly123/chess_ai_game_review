@@ -3,6 +3,7 @@
 from .chess_games import replay
 from .coach.classification import lesson_classification
 from .coach.player_move_quality import with_player_move_quality
+from .coach.position import CoachPosition
 from .game_analysis import pgn_fingerprint
 
 SEVERITIES = ("inaccuracy", "mistake", "blunder")
@@ -28,6 +29,18 @@ def increment(counts, severity):
 
 
 def lesson_analytics(database, username: str) -> dict:
+    return _lesson_snapshot(database, username)[0]
+
+
+def multi_game_input(database, username: str) -> dict:
+    summary, mistakes = _lesson_snapshot(database, username, include_mistakes=True)
+    return {"summary": summary, "mistakes_by_category": [
+        {"category": key, "mistakes": [move for move in mistakes if move["category"] == key]}
+        for key in ("tactical_miss", "tactical_allowed", "positional", "unclassified")
+    ]}
+
+
+def _lesson_snapshot(database, username: str, *, include_mistakes=False) -> tuple[dict, list]:
     """Count a game/ply once, using its saved grade and latest matching review.
 
     Feedback is shared by FEN and move, so counting feedback rows would inflate
@@ -62,7 +75,7 @@ def lesson_analytics(database, username: str) -> dict:
             detail = replay(record["pgn"])
         except ValueError:
             continue
-        for key, saved in record["moves"].items():
+        for key, saved in sorted(record["moves"].items(), key=lambda item: int(item[0]) if item[0].isdecimal() else -1):
             if not key.isdecimal():
                 continue
             ply = int(key)
@@ -84,17 +97,23 @@ def lesson_analytics(database, username: str) -> dict:
             result["analyzed_moves"] += 1
             severity = with_player_move_quality(evidence)["move_quality"]["status"]
             if severity in SEVERITIES:
-                errors.append((fen, move["uci"], severity))
+                errors.append({"fen": fen, "move": move["uci"], "severity": severity,
+                               "game": record["id"], "ply": ply, "number": move["number"],
+                               "color": color, "stockfish": evidence,
+                               "previous": detail["moves"][ply - 1] if ply else None})
 
-    reviews = database.coach_feedback_for_reviews(list(dict.fromkeys((fen, move) for fen, move, _ in errors)))
-    for fen, move, severity in errors:
+    reviews = database.coach_feedback_for_reviews(list(dict.fromkeys((item["fen"], item["move"]) for item in errors)))
+    mistakes = []
+    for item in errors:
+        fen, move, severity = item["fen"], item["move"], item["severity"]
         increment(result["errors"], severity)
         review = reviews.get((fen, move))
         teaching = (review or {}).get("teaching") or {}
         evaluation = teaching.get("move_evaluation") or {}
         classification = evaluation.get("mistake_classification")
         bucket = (classification.get("category"), classification.get("subcategory")) if isinstance(classification, dict) else None
-        if lesson_classification(review) and bucket in buckets:
+        classified = lesson_classification(review) and bucket in buckets
+        if classified:
             increment(buckets[bucket], severity)
             increment(category_counts[bucket[0]], severity)
         else:
@@ -103,5 +122,30 @@ def lesson_analytics(database, username: str) -> dict:
             result["outdated_reviews"] += 1
         elif not review:
             result["pending_reviews"] += 1
+        if include_mistakes:
+            engine = with_player_move_quality(item["stockfish"])
+            best = engine["top_moves"][0]
+            played = engine["played_move"]
+            best_cp, played_cp = best["score"].get("cp"), played["score"].get("cp")
+            previous = item["previous"]
+            mistakes.append({
+                "game": item["game"], "move_number": item["number"], "ply": item["ply"],
+                "player_color": item["color"], "fen": fen,
+                "ascii_board": CoachPosition.from_fen(fen).ascii_board,
+                "opponent_previous_move": {"san": previous["san"], "uci": previous["uci"]} if previous else None,
+                "played_move": played, "best_move_evaluation": best["score"],
+                "centipawn_loss": best_cp - played_cp if type(best_cp) is int and type(played_cp) is int else None,
+                "winning_chances_loss_pp": engine["move_quality"]["winning_chances_loss_pp"],
+                "severity": severity, "category": bucket[0] if classified else "unclassified",
+                "classification": classification if classified else None,
+                "evaluation_perspective": engine["perspective"], "top_engine_moves": engine["top_moves"],
+                "previous_analysis": {
+                    "position_explanation": teaching.get("positional_thesis"),
+                    "played_move_explanation": evaluation.get("explanation"),
+                    "recommended_moves": [{"uci": candidate["uci"], "explanation": candidate["reason"]}
+                                          for candidate in teaching.get("candidate_moves", [])],
+                    "legacy_text": review.get("text") if review and not teaching else None,
+                },
+            })
     result.update(imported_games=len(imported_games), analyzed_games=len(analyzed_games))
-    return result
+    return result, mistakes

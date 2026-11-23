@@ -5,6 +5,7 @@ import type { Profile } from './types';
 import { filteredLessonRows, lessonCoverage, lessonGroupCounts, lessonSeverities, severitySummary } from './lessonsData';
 import type { ErrorCounts, LessonAnalytics, LessonFilter, LessonGroup } from './lessonsData';
 import './lessons.css';
+import MultiGameAnalysis from './MultiGameAnalysis';
 
 const severityLabels = { all: 'All', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
 const groupLabels = { positional: 'Positional', tactical: 'Tactical', unclassified: 'Unclassified' };
@@ -103,9 +104,10 @@ function LessonExplorer({data}: {data: LessonAnalytics}) {
   </>;
 }
 
-export default function Lessons({profiles, username, onSelectPlayer, profilesLoading, profileError, onRetryProfiles}: {
+export default function Lessons({profiles, username, onSelectPlayer, profilesLoading, profileError, onRetryProfiles, multiGameOpen = false}: {
   profiles: Profile[]; username: string; onSelectPlayer: (username: string) => void;
   profilesLoading: boolean; profileError: string; onRetryProfiles: () => void;
+  multiGameOpen?: boolean;
 }) {
   const [data, setData] = useState<LessonAnalytics | null>(null);
   const [loading, setLoading] = useState(!!username);
@@ -123,17 +125,24 @@ export default function Lessons({profiles, username, onSelectPlayer, profilesLoa
   const busy = loading || profilesLoading;
   const failure = profileError || error;
 
+  if (multiGameOpen) return <MultiGameAnalysis username={username} profiles={profiles} onSelectPlayer={onSelectPlayer}
+    summary={data} summaryLoading={busy} summaryError={failure}
+    onRefreshSummary={() => profileError ? onRetryProfiles() : setRevision(value => value + 1)}/>;
+
   return <div className="lessons-page">
     <div className="lessons-heading">
       <div><h1>Lessons</h1><p>Missed tactics, allowed tactics, and positional choices.</p></div>
-      {profiles.length > 0 && <div className="profile-row lessons-controls">
+      <div className="profile-row lessons-controls">
+        <a className="secondary-button" href="#lessons/multi-game">Multi-game analysis <ArrowRight size={16}/></a>
+        {profiles.length > 0 && <>
         <label className="visually-hidden" htmlFor="lessons-player">Player for lesson analytics</label>
         <select id="lessons-player" value={username} onChange={event => onSelectPlayer(event.target.value)}>
           {profiles.map(profile => <option key={profile.username} value={profile.username}>{profile.username}</option>)}
         </select>
         <button className="icon-button" aria-label="Refresh lessons" title="Refresh lessons" disabled={busy}
           onClick={() => setRevision(value => value + 1)}><RefreshCw size={16}/></button>
-      </div>}
+        </>}
+      </div>
     </div>
     {failure ? <div className="lessons-empty" role="alert"><CircleAlert size={24}/><h2>Could not load lessons</h2><p>{failure}</p>
       <button className="secondary-button" onClick={() => profileError ? onRetryProfiles() : setRevision(value => value + 1)}>Try again</button></div>

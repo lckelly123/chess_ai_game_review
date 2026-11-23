@@ -21,6 +21,7 @@ from .importer import ChessComImporter
 from .game_analysis import GameAnalysisService, analyze_game_move, create_game_analysis_router
 from .lessons import lesson_analytics
 from .migrate_sqlite import migrate_sqlite
+from .multi_game.service import MultiGameService, create_multi_game_router
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -35,7 +36,8 @@ class ImportRequest(BaseModel):
         return value.strip().lower() if isinstance(value, str) else value
 
 
-def create_app(database_url: str | None = None, transport=None, *, coach_factory=open_coach, game_engine=analyze_game_move) -> FastAPI:
+def create_app(database_url: str | None = None, transport=None, *, coach_factory=open_coach, game_engine=analyze_game_move,
+               multi_game_analyzer=None) -> FastAPI:
     coach_lock = asyncio.Lock()
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -49,6 +51,8 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
         app.state.jobs = {}
         app.state.tasks = set()
         app.state.db.interrupt_game_analyses()
+        app.state.db.interrupt_multi_game_analyses()
+        app.state.multi_game = MultiGameService(app.state.db, app.state.tasks, multi_game_analyzer)
         app.state.game_analysis = GameAnalysisService(app.state.db, app.state.tasks, game_engine,
                                                      coach_factory=coach_factory, coach_lock=coach_lock)
         async with httpx.AsyncClient(timeout=20, transport=transport, headers={"User-Agent": os.getenv("CHESSCOM_USER_AGENT", "ChessStudy/0.1 (local game library)"), "Accept": "application/json"}) as client:
@@ -63,6 +67,7 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
     app.include_router(create_coach_router(coach_factory, request_lock=coach_lock))
     app.include_router(create_preparation_router())
     app.include_router(create_game_analysis_router())
+    app.include_router(create_multi_game_router())
 
     @app.exception_handler(psycopg.Error)
     async def database_error(request, exc):

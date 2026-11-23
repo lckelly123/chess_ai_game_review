@@ -10,6 +10,9 @@ from psycopg.types.json import Jsonb
 from .coach.classification import CLASSIFICATION_VERSION
 from .game_analysis import analysis_result, analysis_summary, coaching_total, pgn_fingerprint, quality_counts
 
+MULTI_GAME_COLUMNS = """id, username, status, input_snapshot -> 'summary' AS summary,
+                       report, model, reasoning_effort, response_id, error, created_at, updated_at"""
+
 
 class Database:
     def __init__(self, conninfo: str = ""):
@@ -68,6 +71,37 @@ class Database:
                    LEFT JOIN game_engine_analysis a ON a.game_id=g.id AND a.player_color=
                        CASE WHEN lower(g.metadata->>'white')=%s THEN 'white' ELSE 'black' END
                    WHERE pg.username=%s ORDER BY g.id""", (username, username)).fetchall()
+
+    def multi_game_analyses(self, username: str) -> list[dict]:
+        with self.connection() as db:
+            return db.execute(f"SELECT {MULTI_GAME_COLUMNS} FROM multi_game_analysis WHERE username=%s ORDER BY created_at DESC, id DESC",
+                              (username,)).fetchall()
+
+    def begin_multi_game_analysis(self, run_id: str, username: str, payload: dict, model: str, effort: str) -> dict:
+        with self.connection() as db:
+            return db.execute(f"""INSERT INTO multi_game_analysis
+                              (id, username, status, input_snapshot, model, reasoning_effort)
+                              VALUES (%s, %s, 'queued', %s, %s, %s) RETURNING {MULTI_GAME_COLUMNS}""",
+                              (run_id, username, Jsonb(payload), model, effort)).fetchone()
+
+    def set_multi_game_status(self, run_id: str, status: str, error: str | None = None):
+        with self.connection() as db:
+            db.execute("""UPDATE multi_game_analysis SET status=%s, error=%s, updated_at=clock_timestamp()
+                       WHERE id=%s AND status IN ('queued', 'running')""", (status, error, run_id))
+
+    def complete_multi_game_analysis(self, run_id: str, result: dict):
+        with self.connection() as db:
+            db.execute("""UPDATE multi_game_analysis SET status='completed', report=%s, model=%s,
+                       response_id=%s, usage=%s, error=NULL, updated_at=clock_timestamp()
+                       WHERE id=%s AND status IN ('queued', 'running')""",
+                       (Jsonb(result["report"]), result["model"], result["response_id"],
+                        Jsonb(result["usage"]) if result.get("usage") is not None else None, run_id))
+
+    def interrupt_multi_game_analyses(self):
+        with self.connection() as db:
+            db.execute("""UPDATE multi_game_analysis SET status='interrupted',
+                       error='Analysis stopped when the app restarted. Run a new analysis to try again.',
+                       updated_at=clock_timestamp() WHERE status IN ('queued', 'running')""")
 
     def game_analysis(self, game_id: str, color: str, fingerprint: str) -> dict | None:
         with self.connection() as db:

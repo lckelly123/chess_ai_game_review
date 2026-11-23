@@ -2,8 +2,9 @@
 .lessons-heading { display: flex; justify-content: space-between; align-items: start; gap: 24px; margin-bottom: 28px; }
 .lessons-heading h1 { font-size: 38px; font-weight: 550; letter-spacing: -.035em; line-height: 1.15; }
 .lessons-heading p { margin-top: 10px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.lessons-controls { padding-top: 4px; flex-shrink: 0; }
-.lessons-controls select { min-height: 44px; font-size: 14px; }
+.lessons-controls { padding-top: 4px; flex-shrink: 0; flex-wrap: wrap; }
+.lessons-controls.profile-row select { min-height: 44px; font-size: 14px; width: auto; }
+.lessons-controls .secondary-button { text-decoration: none; min-height: 44px; }
 .lessons-controls .icon-button { min-width: 44px; min-height: 44px; }
 .lessons-summary { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 18px; font-size: 14px; }
 .lessons-summary strong { font-weight: 650; }

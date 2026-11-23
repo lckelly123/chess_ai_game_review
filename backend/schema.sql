@@ -76,3 +76,22 @@ ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS coach_completed INTEGE
 
 -- Keep engine results when refreshing reviews for a new classification taxonomy.
 ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS coach_version INTEGER NOT NULL DEFAULT 0;
+
+-- Cross-game runs are append-only history, independent of position coaching.
+CREATE TABLE IF NOT EXISTS multi_game_analysis (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'interrupted')),
+    input_snapshot JSONB NOT NULL,
+    report JSONB,
+    model TEXT NOT NULL,
+    reasoning_effort TEXT NOT NULL,
+    response_id TEXT,
+    usage JSONB,
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS multi_game_analysis_history ON multi_game_analysis(username, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS multi_game_analysis_active ON multi_game_analysis(username)
+    WHERE status IN ('queued', 'running');
