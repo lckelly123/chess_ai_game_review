@@ -325,6 +325,11 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   .game-list-heading, .game-item { grid-template-columns: 48px minmax(0, 1fr) 100px 100px 140px; column-gap: 14px; padding-left: 16px; padding-right: 16px; }
   .replay-layout { --replay-gap: 24px; }
 }
+@media (min-width: 901px) and (max-height: 1000px) {
+  .replay-layout { --replay-board-size: 720px; padding-top: 16px; }
+  .replay-navigation { padding-bottom: 10px; margin-bottom: 14px; }
+  .game-heading { margin-bottom: 14px; }
+}
 @media (max-width: 900px) {
   .replay-layout { --replay-leading-space: 0px; }
   .replay-columns { grid-template-columns: 1fr; }
