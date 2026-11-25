@@ -48,7 +48,8 @@ def saved_evidence(db, game_id: str, pgn: str, ply: int, original: MoveReview):
 
 
 def grade_attempt(review: MoveReview, evidence: dict | None) -> dict:
-    return analyze_played_move(review, evidence or analyze_position(review.position.fen))
+    # Attempts need only severity. Motif inspection belongs to saved review ingestion.
+    return analyze_played_move(review, evidence or analyze_position(review.position.fen), include_tactics=False)
 
 
 def create_practice_router(analyzer=grade_attempt) -> APIRouter:

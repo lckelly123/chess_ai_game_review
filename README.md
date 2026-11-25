@@ -89,6 +89,8 @@ In Docker, use `docker compose exec app python -m backend.coach.stockfish` with 
 
 The backend's standalone `backend.coach.position_classification.classify_position(fen)` and coaching analysis share five-move centipawn sharpness. Each evaluation is capped at ±1000 cp (±10 pawns), including mates mapped by sign. Exponentially weighted adjacent gaps (λ=1) give raw D; `100 * min(1, log1p(D/10) / log1p(687.68/10))` gives a 0–100 score. Tags are Forgiving (≤20), Flexible (≤40), Selective (≤60), Demanding (≤80), and Critical (>80), without rounding before classification. Positions with fewer than five legal moves remain unclassified. Saved complete evidence is rescored locally on retrieval; old coaching prose is identified separately. See [usage, versioning, and edge cases](backend/coach/README.md#standalone-position-classification).
 
+Inaccuracies, mistakes, and blunders also receive independent **tactic classification** during engine analysis. A bounded subset of Lichess puzzle rules inspects the best continuation for missed motifs and the played continuation for allowed motifs. Both findings are saved and shown in a compact footer below the move review. Short lines can receive up to two additional Stockfish searches; opening saved results requires no engine work. Supported motifs are fork, hanging piece, skewer, discovered attack/check, pin, and double check. Unmatched or incomplete evidence is identified explicitly. Earlier records show “Not yet analysed” until a new review. See [detector scope and provenance](backend/tactics/README.md).
+
 ### Replay controls
 
 - Click **Analyze** beside a saved game to open its dedicated replay screen, then use the replay buttons and slider.

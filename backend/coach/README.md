@@ -222,6 +222,8 @@ It prints JSON and exits nonzero on invalid input, unavailable engine, timeout, 
 
 ## Run without the UI
 
+Recorded-move analysis also stores `stockfish.tactic_classification`, an independent comparison using six Lichess motif detectors. It shares the player-move severity gate, inspects both the player's best line and the opponent's reply to the played move, and may extend each short line with one bounded Stockfish search. The result is excluded from the model prompt. Retrieval only reads the saved classification; older records require a new review. See [scope, partial evidence, and upstream licence](../tactics/README.md).
+
 From the repository root, preview the first-pass request without credentials or network access:
 
 ```powershell

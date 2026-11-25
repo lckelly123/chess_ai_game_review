@@ -14,11 +14,20 @@ export type EngineMove = {
   uci: string; san: string; rank: number | null; depth: number;
   score: { cp: number | null; mate: number | null; bound: 'exact' | 'lower' | 'upper' };
 };
+export type TacticMotif = 'fork' | 'hanging_piece' | 'skewer' | 'discovered_attack' | 'pin' | 'double_check';
+export type TacticClassification = {
+  version: number; source: string; source_revision: string; fen: string; played_move: string | null;
+  status: 'classified' | 'unclassified' | 'insufficient_evidence' | 'not_applicable';
+  reason: string | null; max_plies: number;
+  lines: { direction: 'missed' | 'allowed'; motifs: TacticMotif[]; line_uci: string[];
+    coverage: 'terminal' | 'bounded' | 'insufficient'; extended: boolean; reason: string | null }[];
+};
 export type EngineAnalysis = {
   engine: string;
   perspective: 'White' | 'Black';
   played_move: EngineMove;
   top_moves?: EngineMove[];
+  tactic_classification?: TacticClassification;
   move_quality?: {
     status: 'good' | 'inaccuracy' | 'mistake' | 'blunder' | 'uncertain';
     winning_chances_loss_pp: number | null;
