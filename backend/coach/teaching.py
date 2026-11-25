@@ -1,5 +1,6 @@
 """Combined coaching output contract and evidence-dependent validation."""
 
+import re
 from typing import Annotated, Literal
 
 import chess
@@ -10,6 +11,13 @@ from .classification import positional_details
 Square = Annotated[str, Field(pattern=r"^[a-h][1-8]$")]
 Uci = Annotated[str, Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")]
 PieceType = Literal["pawn", "knight", "bishop", "rook", "queen", "king"]
+MOVE_REFERENCE = re.compile(r"\[\[([a-h][1-8][a-h][1-8][qrbn]?)\]\]")
+
+
+def no_move_references(value: str) -> str:
+    if "[[" in value or "]]" in value:
+        raise ValueError("Clickable move references belong only in position_explanation.")
+    return value
 
 
 class TacticalMistake(BaseModel):
@@ -58,6 +66,8 @@ class MoveEvaluation(BaseModel):
     def nonblank_explanation(cls, value):
         if value is not None and not value.strip():
             raise ValueError("Move feedback must not be blank.")
+        if value is not None:
+            no_move_references(value)
         return value
 
 
@@ -80,27 +90,46 @@ class CandidateMove(BaseModel):
     def nonblank_reason(cls, value):
         if not value.strip():
             raise ValueError("Candidate reasoning must not be blank.")
-        return value
+        return no_move_references(value)
 
 
 class TeachingOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    positional_thesis: str = Field(min_length=1)
-    # Zero is valid only in terminal positions; that depends on the input FEN.
+    position_overview: str = Field(min_length=1)
+    position_explanation: str = Field(min_length=1)
+    # Zero is valid in terminal positions or when no engine moves are approved.
     candidate_moves: list[CandidateMove] = Field(max_length=3)
     move_evaluation: MoveEvaluation
 
-    @field_validator("positional_thesis")
+    @field_validator("position_overview", "position_explanation")
     @classmethod
     def nonblank_paragraph(cls, value):
-        if not value.strip():
+        if value is not None and not value.strip():
             raise ValueError("Teaching paragraphs must not be blank.")
         return value
 
+    @field_validator("position_overview")
+    @classmethod
+    def overview_has_no_links(cls, value):
+        return no_move_references(value) if value is not None else None
+
+    def validate_references(self, *, played_move: str | None) -> "TeachingOutput":
+        candidates = {item.uci for item in self.candidate_moves}
+        references = set(MOVE_REFERENCE.findall(self.position_explanation))
+        remainder = MOVE_REFERENCE.sub("", self.position_explanation)
+        if "[[" in remainder or "]]" in remainder:
+            raise ValueError("Malformed inline move reference.")
+        allowed = candidates | ({played_move} if played_move else set())
+        if not references <= allowed:
+            raise ValueError("Inline move references must name a candidate or the original played move.")
+        if not candidates <= references:
+            raise ValueError("The position explanation must reference each selected candidate.")
+        return self
+
     def validate_position(self, fen: str, *, permitted_moves: list[str] | None = None) -> "TeachingOutput":
         board = chess.Board(fen)
-        if not self.candidate_moves and not board.is_game_over():
+        if not self.candidate_moves and not board.is_game_over() and permitted_moves != []:
             raise ValueError("A position with legal moves requires at least one candidate.")
         if self.candidate_moves and board.is_game_over():
             raise ValueError("A terminal position must not recommend candidate moves.")
@@ -163,10 +192,13 @@ class TeachingOutput(BaseModel):
         """Readable CLI/export fallback; the UI uses the structured fields."""
         names = self.candidate_san(fen)
         candidates = "\n".join(f"- **{names[item.uci]}**: {item.reason}" for item in self.candidate_moves)
+        board = chess.Board(fen)
+        explanation = MOVE_REFERENCE.sub(lambda match: board.san(chess.Move.from_uci(match[1])), self.position_explanation)
         text = (
             "### 1. Understand the Position\n\n"
-            f"**Positional Thesis**\n\n{self.positional_thesis}\n\n"
-            "### 2. Move Exploration\n\n" + (candidates or "No legal moves are available.")
+            + (f"**Position overview**\n\n{self.position_overview}\n\n" if self.position_overview else "")
+            + f"**Position explanation**\n\n{explanation}\n\n"
+            + "### 2. Move Exploration\n\n" + (candidates or "No approved candidate moves are available.")
         )
         if self.move_evaluation is not None:
             feedback = self.move_evaluation.explanation or "Your move follows the recommended idea."
@@ -195,11 +227,16 @@ class TeachingAnalysis(TeachingOutput):
     """Read saved teaching while omitting obsolete fields and labels."""
 
     position_character: Literal["quiet", "tense", "forcing"] | None = Field(default=None, exclude=True)
+    # A legacy thesis can reveal the answer, so it is never used as a hint.
+    position_overview: str | None = Field(default=None, min_length=1)
     move_evaluation: SavedMoveEvaluation | None = None
 
     @model_validator(mode="before")
     @classmethod
     def omit_legacy_needs(cls, value):
         if isinstance(value, dict):
-            return {key: item for key, item in value.items() if key != "needs_of_position"}
+            result = {key: item for key, item in value.items() if key not in ("needs_of_position", "positional_thesis")}
+            if "position_explanation" not in result and "positional_thesis" in value:
+                result["position_explanation"] = value["positional_thesis"]
+            return result
         return value

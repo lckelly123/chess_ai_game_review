@@ -41,7 +41,9 @@ export type MistakeClassification =
   | { category: 'tactical_miss' | 'tactical_allowed'; subcategory: 'hanging_piece' | 'fork' | 'pin_skewer' | 'discovered_attack' }
   | { category: 'positional'; subcategory: PieceType; best_move_piece?: PieceType; played_piece?: PieceType; same_piece?: boolean };
 export type PositionTeaching = {
-  positional_thesis: string;
+  position_overview?: string | null;
+  position_explanation?: string;
+  positional_thesis?: string;
   candidate_moves: CandidateMove[];
   move_evaluation?: {
     plan_alignment: 'aligned' | 'partially_aligned' | 'alternative_plan' | 'not_aligned' | 'unclear';
@@ -63,6 +65,7 @@ export type CoachResponse = {
   fen: string; played_move: string | null; text: string; model: string; response_id: string; created_at: string;
   stockfish?: EngineAnalysis | null;
   teaching?: PositionTeaching | null;
+  move_lines?: Record<string, {san: string[]; positions: Position[]}>;
   classification_current?: boolean;
   classification_version?: number | null;
   sharpness_current?: boolean;

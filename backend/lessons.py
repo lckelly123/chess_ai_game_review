@@ -140,7 +140,7 @@ def _lesson_snapshot(database, username: str, *, include_mistakes=False) -> tupl
                 "classification": classification if classified else None,
                 "evaluation_perspective": engine["perspective"], "top_engine_moves": engine["top_moves"],
                 "previous_analysis": {
-                    "position_explanation": teaching.get("positional_thesis"),
+                    "position_explanation": teaching.get("position_explanation") or teaching.get("positional_thesis"),
                     "played_move_explanation": evaluation.get("explanation"),
                     "recommended_moves": [{"uci": candidate["uci"], "explanation": candidate["reason"]}
                                           for candidate in teaching.get("candidate_moves", [])],

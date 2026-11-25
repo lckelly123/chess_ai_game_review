@@ -1,0 +1,70 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdir, unlink } from 'node:fs/promises';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+// Compile the real TSX components with the app's existing build tool.
+const directory = new URL('../node_modules/.cache/', import.meta.url);
+await mkdir(directory, {recursive: true});
+const output = new URL(`coach-cards-${process.pid}.mjs`, directory);
+await build({stdin: {contents: "export {default as CoachCards} from './CoachCards'; export {default as PracticeCard} from './PracticeCard';",
+  resolveDir: fileURLToPath(new URL('../src/', import.meta.url)), loader: 'tsx'},
+  bundle: true, platform: 'node', format: 'esm', packages: 'external', jsx: 'automatic', outfile: fileURLToPath(output)});
+const {CoachCards, PracticeCard} = await import(pathToFileURL(fileURLToPath(output)).href);
+await unlink(output);
+
+const response = {
+  fen: '8/8/8/8/8/8/8/8 w - - 0 1', played_move: 'd2d4', text: '',
+  teaching: {position_overview: 'The center needs attention.',
+    position_explanation: 'Control the center with [[e2e4]].',
+    candidate_moves: [{uci: 'e2e4', reason: 'Unique candidate detail.', highlight_squares: ['e4', 'd5']}],
+    move_evaluation: {explanation: 'Unique original move assessment.', mistake_classification: {category: 'tactical_miss', subcategory: 'fork'}}},
+  candidate_san: {e2e4: 'e4', d2d4: 'd4'},
+  move_lines: {e2e4: {san: ['e4', 'e5'], positions: []}},
+};
+const render = props => renderToStaticMarkup(React.createElement(CoachCards, {response, pending: false, transitioning: false, onSelectCandidate() {}, onSelectLinePly() {}, ...props}));
+
+test('the revealed review contains inline SAN buttons but no move-specific details until selected', () => {
+  const html = render();
+  assert.match(html, /class="inline-move"/);
+  assert.match(html, /Show explanation for e4/);
+  assert.doesNotMatch(html, /\[\[e2e4\]\]|Unique candidate detail|Unique original move assessment|Engine continuation|Missed tactic|Fork/);
+  assert.doesNotMatch(html, />Moves<|Positional thesis/);
+});
+
+test('selecting a candidate reveals only its detail and continuation; clearing it hides both', () => {
+  const html = render({selectedUci: 'e2e4'});
+  assert.match(html, /Unique candidate detail/);
+  assert.match(html, /Engine continuation/);
+  assert.doesNotMatch(html, /Unique original move assessment/);
+  assert.doesNotMatch(render({selectedUci: undefined}), /Unique candidate detail|Engine continuation/);
+});
+
+test('the original move opens its own assessment', () => {
+  const html = render({selectedUci: 'd2d4'});
+  assert.match(html, /Unique original move assessment/);
+  assert.doesNotMatch(html, /Unique candidate detail|Engine continuation/);
+});
+
+test('legacy thesis stays readable with collapsed move explanations', () => {
+  const html = render({response: {...response, teaching: {...response.teaching, position_overview: null,
+    position_explanation: undefined, positional_thesis: 'A saved thesis.'}}});
+  assert.match(html, /A saved thesis/);
+  assert.match(html, />Moves</);
+  assert.doesNotMatch(html, /Unique candidate detail|Unique original move assessment/);
+});
+
+test('the practice card shows only the overview both during and after the exercise', () => {
+  for (const complete of [false, true]) {
+    const html = renderToStaticMarkup(React.createElement(PracticeCard, {
+      overview: response.teaching.position_overview, original: {san: 'd4'},
+      practice: {complete, attempts: [], shownMove: complete ? {san: 'e4'} : undefined, showReview() {}},
+    }));
+    assert.match(html, /The center needs attention/);
+    assert.doesNotMatch(html, /Control the center with|Unique candidate detail|Unique original move assessment/);
+    assert.equal(html.includes('View review'), complete);
+  }
+});

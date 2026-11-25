@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from backend.coach import Coach, CoachResponseError
 from backend.coach.routes import create_coach_router
-from backend.coach.teaching import TeachingAnalysis
+from backend.coach.teaching import TeachingAnalysis, TeachingOutput
 from backend.coach.routes import AnalyzePositionResponse
 from backend.coach.stockfish import StockfishTimeoutError
 from datetime import datetime, timezone
@@ -37,6 +37,7 @@ def response_with(data):
 def test_legal_candidates_include_castling_promotion_and_en_passant(fen, uci, san):
     data = teaching_output(fen)
     data["candidate_moves"] = [{"uci": uci, "reason": "A concrete instructional reason.", "highlight_squares": ["e4", "d5"]}]
+    data["position_explanation"] = f"This position calls for [[{uci}]]."
     result = analyze_with_transport(lambda request: httpx2.Response(200, json=response_with(data)), fen,
                                     position_engine=lambda fen: position_evidence(fen, preferred=[uci]))
     assert result.position_analysis["structured"] == data
@@ -62,11 +63,14 @@ def invalid_outputs():
     baseline = teaching_output()
     yield "not JSON"
     yield "```json\n" + json.dumps(baseline) + "\n```"
-    for key, value in [("position_character", "winning"), ("positional_thesis", " "),
+    for key, value in [("position_character", "winning"), ("position_overview", " "), ("position_explanation", " "),
+                       ("positional_thesis", "Retired thesis."), ("position_overview", "Try [[g1h3]]."),
+                       ("position_explanation", "Try [[e2e4]]."), ("position_explanation", "Try [[Nh3]]."),
+                       ("position_explanation", "No candidate links."),
                        ("needs_of_position", "Retired plan."), ("candidate_moves", []), ("extra", "field")]:
         yield {**baseline, key: value}
     for key, value in [("uci", "e7e5"), ("uci", "e1g1"), ("uci", "e2e5"), ("uci", "0000"),
-                       ("uci", "g1h3q"), ("reason", " "), ("highlight_squares", ["a1"]),
+                       ("uci", "g1h3q"), ("reason", " "), ("reason", "Try [[g1h3]]."), ("highlight_squares", ["a1"]),
                        ("highlight_squares", ["a1", "a2", "a3"]), ("highlight_squares", ["a1", "a1"]),
                        ("highlight_squares", ["a1", "a9"]), ("arrow", ["a1", "a2"])]:
         data = deepcopy(baseline)
@@ -160,3 +164,52 @@ def test_stored_engine_classification_is_exposed_independently_of_teaching():
                                       response_id="new", created_at=datetime.now(timezone.utc),
                                       teaching=teaching_output(), position_evidence=evidence)
     assert response.model_dump()["position_evidence"] == evidence
+
+
+def test_legacy_thesis_is_migrated_only_to_revealed_explanation():
+    data = teaching_output()
+    del data["position_overview"]
+    data["positional_thesis"] = data.pop("position_explanation")
+    with pytest.raises(ValueError):
+        TeachingOutput.model_validate(data)
+    restored = TeachingAnalysis.model_validate(data)
+    assert restored.position_overview is None
+    assert restored.position_explanation == data["positional_thesis"]
+    assert "positional_thesis" not in restored.model_dump()
+
+
+def test_empty_approved_pool_accepts_no_candidates_but_not_an_invented_move():
+    data = {**teaching_output(), "candidate_moves": [], "position_explanation": "No approved moves are available."}
+    TeachingOutput.model_validate(data).validate_position(chess.STARTING_FEN, permitted_moves=[]).validate_references(played_move=None)
+    with pytest.raises(ValueError):
+        TeachingOutput.model_validate(teaching_output()).validate_position(chess.STARTING_FEN, permitted_moves=[])
+
+
+def test_original_move_link_is_allowed_without_changing_candidates_and_export_uses_san():
+    data = teaching_output()
+    data["position_explanation"] = "Compare [[g1h3]] with the original [[e2e4]]."
+    output = TeachingOutput.model_validate(data)
+    output.validate_references(played_move="e2e4")
+    with pytest.raises(ValueError):
+        output.validate_references(played_move=None)
+    assert output.candidate_moves[0].uci == "g1h3"
+    markdown = output.as_markdown(chess.STARTING_FEN)
+    assert "Compare Nh3 with the original e4." in markdown
+    assert "[[" not in markdown
+
+
+def test_all_candidates_must_be_linked_and_later_variation_moves_cannot_be_linked():
+    data = teaching_output()
+    data["candidate_moves"].append({"uci": "b1c3", "reason": "Develop toward the center.", "highlight_squares": ["c3", "d5"]})
+    with pytest.raises(ValueError, match="each selected candidate"):
+        TeachingOutput.model_validate(data).validate_references(played_move=None)
+    data["position_explanation"] = "Compare [[g1h3]] with [[b1c3]], then [[e7e5]]."
+    with pytest.raises(ValueError, match="original played move"):
+        TeachingOutput.model_validate(data).validate_references(played_move=None)
+
+
+def test_move_assessment_cannot_embed_clickable_tokens():
+    data = teaching_output()
+    data["move_evaluation"]["explanation"] = "Compare with [[g1h3]]."
+    with pytest.raises(ValueError):
+        TeachingOutput.model_validate(data)
