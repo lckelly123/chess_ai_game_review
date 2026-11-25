@@ -19,15 +19,16 @@ from backend.coach.teaching import TeachingAnalysis
 from backend.tests.position_fixtures import position_evidence
 
 
-def teaching_output(fen=chess.STARTING_FEN):
+def teaching_output(fen=chess.STARTING_FEN, *, candidate_ucis=None):
     board = chess.Board(fen)
-    move = next(iter(board.legal_moves), None) if not board.is_game_over() else None
+    ucis = position_evidence(fen)["permitted_candidate_uci"] if candidate_ucis is None else candidate_ucis
+    moves = [chess.Move.from_uci(uci) for uci in ucis]
     return {
         "position_overview": "Test position hint.",
-        "position_explanation": f"Test analysis with [[{move.uci()}]]." if move else "Play has ended.",
-        "move_evaluation": {"plan_alignment": "unclear", "explanation": "Test move feedback.", "better_candidate_uci": None, "mistake_classification": None},
+        "position_explanation": "Test analysis with " + ", ".join(f"[[{move.uci()}]]" for move in moves) + "." if moves else "Play has ended.",
+        "move_evaluation": {"explanation": "Test move feedback.", "mistake_classification": None},
         "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning.",
-                             "highlight_squares": [chess.square_name(move.from_square), chess.square_name(move.to_square)]}] if move else [],
+                             "highlight_squares": [chess.square_name(move.from_square), chess.square_name(move.to_square)]} for move in moves],
     }
 
 
@@ -36,10 +37,21 @@ def teaching_text(fen=chess.STARTING_FEN):
 
 
 def completed_response(*, request=None, fen=chess.STARTING_FEN, **overrides):
+    data = teaching_output(fen)
     if request is not None:
         content = json.loads(request.content)["input"][1]["content"]
-        if "FEN:\n" in content:
-            fen = content.split("FEN:\n", 1)[1].splitlines()[0]
+        fen = content.split("FEN: ", 1)[1].splitlines()[0]
+        rows = content.split("UCI | Evaluation | PV (SAN)\n", 1)[1].split("\n\n", 1)[0]
+        ucis = [row.split(" | ")[0] for row in rows.splitlines() if " | " in row]
+        data = teaching_output(fen, candidate_ucis=ucis)
+        if "PLAYER MOVE\n" in content:
+            player = content.split("PLAYER MOVE\n", 1)[1]
+            uci = player.split("UCI: ", 1)[1].splitlines()[0]
+            severity = player.split("Severity: ", 1)[1].splitlines()[0]
+            if uci in ucis and severity == "good":
+                data["move_evaluation"]["explanation"] = None
+            if severity in ("inaccuracy", "mistake", "blunder"):
+                data["move_evaluation"]["mistake_classification"] = {"category": "other", "subcategory": None}
     return {
         "id": "resp_test", "object": "response", "created_at": 1,
         "status": "completed", "model": "gpt-6-astra", "error": None,
@@ -47,7 +59,7 @@ def completed_response(*, request=None, fen=chess.STARTING_FEN, **overrides):
         "output": [
             {"type": "reasoning", "id": "rs_test", "summary": []},
             {"type": "message", "id": "msg_test", "role": "assistant", "status": "completed",
-             "content": [{"type": "output_text", "text": json.dumps(teaching_output(fen)), "annotations": []}]},
+             "content": [{"type": "output_text", "text": json.dumps(data), "annotations": []}]},
         ],
         "usage": {"input_tokens": 120, "output_tokens": 40, "total_tokens": 160,
                   "input_tokens_details": {"cached_tokens": 0},
@@ -91,17 +103,16 @@ def test_responses_request_and_output_through_real_sdk():
         message = body["input"][1]
         assert message["role"] == "user"
         assert fen in message["content"]  # Includes the e3 en-passant target.
-        assert "for Black, the side to move" in message["content"]
+        assert "Side to move: Black" in message["content"]
         assert "8  r n b q k b n r" in message["content"]
         assert "4  . . . . P . . ." in message["content"]
         assert "1  R N B Q K B N R" in message["content"]
         assert "a b c d e f g h" in message["content"]
-        payload = json.loads(message["content"].split("Stockfish position evidence:\n", 1)[1].split("\n\n", 1)[0])
-        assert payload["decision_mode"] == "forgiving"
-        assert payload["position_sharpness"]["a_cp"] == 10
-        assert len(payload["engine_verified_moves"]) == 5
-        assert payload["position_outlook"] == position_evidence(fen)["position_outlook"]
-        assert "played_move" not in payload and "previous_analysis" not in payload
+        assert "Decision mode: forgiving" in message["content"]
+        assert "UCI | Evaluation | PV (SAN)" in message["content"]
+        assert message["content"].count(" | ") == 8  # Header plus three rows.
+        assert "PLAYER MOVE: none" in message["content"]
+        assert "move_quality_policy" not in message["content"]
         return httpx2.Response(200, json=completed_response(request=request))
 
     result = analyze_with_transport(upstream, fen)

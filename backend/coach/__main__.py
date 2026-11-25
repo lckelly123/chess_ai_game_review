@@ -13,6 +13,7 @@ from .move_review import MoveReview
 from .stockfish import StockfishAnalysisError, StockfishUnavailableError
 from .service import CoachResponseError, build_request, open_coach
 from .settings import CoachConfigurationError, CoachSettings
+from .context import validate_previous_move
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -22,12 +23,17 @@ async def run(args: argparse.Namespace) -> None:
     CoachPosition.from_fen(args.fen, ascii_board=ascii_board)
     if args.move is not None:
         MoveReview.from_fen(args.fen, args.move)
+    if bool(args.previous_fen) != bool(args.previous_move):
+        raise InvalidPositionError("Supply --previous-fen and --previous-move together.")
+    previous = validate_previous_move(args.fen, {"fen": args.previous_fen, "uci": args.previous_move}
+                                      if args.previous_move else None)
     if args.dry_run:
-        request = await asyncio.to_thread(build_request, args.fen, ascii_board=ascii_board, settings=settings, played_move=args.move)
+        request = await asyncio.to_thread(build_request, args.fen, ascii_board=ascii_board, settings=settings,
+                                          played_move=args.move, previous_move=previous)
         print(json.dumps(request, indent=2, ensure_ascii=False))
         return
     async with open_coach(settings) as coach:
-        result = await coach.analyze(args.fen, ascii_board=ascii_board, played_move=args.move)
+        result = await coach.analyze(args.fen, ascii_board=ascii_board, played_move=args.move, previous_move=previous)
         print(result.text)
 
 
@@ -39,6 +45,8 @@ def main() -> int:
     parser.add_argument("--fen", required=True, help="Complete six-field FEN of the selected position.")
     parser.add_argument("--ascii-file", help="Optional matching ASCII board; otherwise generated from the FEN.")
     parser.add_argument("--move", help="Optional recorded move in UCI; evaluated in the same coaching response.")
+    parser.add_argument("--previous-fen", help="Position immediately before the opponent's previous move.")
+    parser.add_argument("--previous-move", help="Opponent's previous move in UCI; requires --previous-fen.")
     parser.add_argument("--dry-run", action="store_true", help="Run local Stockfish and print the first-pass request without calling OpenAI.")
     args = parser.parse_args()
     try:

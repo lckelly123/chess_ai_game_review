@@ -146,14 +146,14 @@ def test_api_rescores_old_evidence_without_marking_old_coaching_current(saved_ve
     assert result['text'] == 'Saved explanation' and old == snapshot
 
 
-def test_new_prompt_receives_recalculated_sharpness_and_separate_quality_policy():
+def test_compact_prompt_receives_recalculated_label_without_formula_metadata():
     evidence = scored([656, 461, 442, 437, 412])
     evidence['decision_classification'] = 'clear_preference'
     request = build_request(chess.STARTING_FEN, evidence=evidence)
     content = request['input'][1]['content']
-    assert '"decision_mode": "demanding"' in content
-    assert '"cap_cp": 1000' in content
-    assert '"a_cp": 10' in content and '"cutoff_cp": 687.68' in content
-    assert '"metric": "expected_score_loss_pp"' in content
+    assert "Decision mode: demanding" in content
+    assert "cap_cp" not in content
+    assert "a_cp" not in content and "cutoff_cp" not in content
+    assert "move_quality_policy" not in content
     assert 'clear_preference' not in content
     assert A_CP == 10

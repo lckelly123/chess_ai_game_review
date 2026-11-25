@@ -111,8 +111,8 @@ def test_null_classification_is_rejected_for_a_recorded_error(severity):
             played_move="e2e4", evidence={"move_quality": {"status": severity}})
 
 
-def test_approved_recommendation_can_still_receive_an_error_classification():
-    # Candidate approval and player severity use different metrics.
+def test_error_feedback_uses_authoritative_severity_even_for_inconsistent_saved_candidates():
+    # Legacy candidate lists may predate the unified severity policy.
     data = output_with({"category": "other", "subcategory": None})
     TeachingOutput.model_validate(data).validate_move_evaluation(
         played_move=data["candidate_moves"][0]["uci"], evidence={**position_evidence(chess.STARTING_FEN), "move_quality": {"status": "inaccuracy"}})
@@ -141,14 +141,14 @@ def test_request_schema_constrains_categories_and_preserves_existing_inputs():
         assert set(variant["required"]) == {"category", "subcategory"}
         assert variant["additionalProperties"] is False
     message = request["input"][1]["content"]
-    payload = json.loads(message.split("Stockfish position evidence:\n")[1].split("\n\n")[0])
-    assert payload["engine_verified_moves"] == evidence["top_moves"]
-    assert "mistake_classification" not in payload
-    assert "engine_best_move_piece" not in payload
+    for move in evidence["top_moves"][:3]:
+        assert f"{move['uci']} |" in message
+    assert "mistake_classification" not in message
+    assert "engine_best_move_piece" not in message
     assert "PositionalMistake" not in schema["$defs"]
     assert all(field not in json.dumps(schema) for field in ("best_move_piece", "played_piece", "same_piece"))
     assert schema["$defs"]["TacticalMistake"]["properties"]["category"]["enum"] == ["tactical_miss", "tactical_allowed"]
-    assert "move_quality.status" in message and "mistake_classification null" in message
+    assert "PLAYER MOVE: none" in message
 
 
 @pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-terra"])

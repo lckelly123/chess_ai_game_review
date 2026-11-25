@@ -26,10 +26,11 @@ class Coach:
 
     async def analyze(
         self, fen: str, *, ascii_board: str | None = None, played_move: str | None = None,
+        previous_move: dict | None = None,
         config: RunnableConfig | None = None,
     ) -> CoachAnalysis:
         position = CoachPosition.from_fen(fen, ascii_board=ascii_board)
-        state: CoachInput = {"fen": position.fen, "played_move": played_move}
+        state: CoachInput = {"fen": position.fen, "played_move": played_move, "previous_move": previous_move}
         result = await self.graph.ainvoke(state, config=config)
         return CoachAnalysis(
             text=result["text"], response_id=result["response_id"], model=result["model"],
@@ -37,6 +38,7 @@ class Coach:
             usage=result["usage"],
             played_move=result["move_uci"], position_analysis=result["position_analysis"],
             move_analysis=result["move_analysis"], stockfish=result["stockfish"],
+            previous_move=result["previous_move_context"],
         )
 
 

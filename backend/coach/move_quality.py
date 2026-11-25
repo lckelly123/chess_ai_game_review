@@ -13,8 +13,8 @@ from .sharpness import with_position_sharpness
 from .stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError, StockfishUnavailableError, _candidate
 from ..tactics import with_tactic_classification
 
-# This is the candidate-approval policy, separate from player-move severity. A large
-# CP gap alone must not turn two winning continuations into a serious mistake.
+# Legacy WDL comparison remains available for existing evidence consumers.
+# New teaching candidates use the shared player-severity classifier below.
 ACCEPTABLE_LOSS_PP = 5
 QUALITY_POLICY = {
     "metric": "expected_score_loss_pp",
@@ -42,7 +42,7 @@ def improvement_pp(better: dict, other: dict) -> Fraction | None:
 
 
 def assess_move(best: dict, move: dict) -> dict:
-    """Existing WDL candidate policy, not the player-move severity classifier."""
+    """Legacy WDL comparison; not used to select new teaching candidates."""
     loss = improvement_pp(best, move)
     # A separately searched root may contradict the initial MultiPV ranking.
     # Do not convert conflicting evidence into praise or a severity label.
@@ -64,9 +64,12 @@ def prepare_position_evidence(evidence: dict) -> dict:
     result = with_position_sharpness(deepcopy(evidence))
     candidates = result["top_moves"]
     for move in candidates:
-        move["quality"] = assess_move(candidates[0], move)
-    result["permitted_candidate_uci"] = [move["uci"] for move in candidates if move["quality"]["status"] == "acceptable"]
-    result["move_quality_policy"] = QUALITY_POLICY.copy()
+        move["quality"] = assess_player_move(candidates[0], move)
+    # Keep all raw lines and WDL metadata for consumers, but select the exact
+    # teaching list with the same severity rules used to grade practice moves.
+    result["permitted_candidate_uci"] = [move["uci"] for move in candidates
+                                         if assess_player_move(candidates[0], move)["status"] == "good"][:3]
+    result["move_quality_policy"] = PLAYER_QUALITY_POLICY.copy()
     return result
 
 

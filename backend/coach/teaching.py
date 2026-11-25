@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .classification import positional_details
 
 Square = Annotated[str, Field(pattern=r"^[a-h][1-8]$")]
-Uci = Annotated[str, Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")]
 PieceType = Literal["pawn", "knight", "bishop", "rook", "queen", "king"]
 MOVE_REFERENCE = re.compile(r"\[\[([a-h][1-8][a-h][1-8][qrbn]?)\]\]")
 
@@ -56,9 +55,7 @@ MistakeClassification = TacticalMistake | OtherMistake
 class MoveEvaluation(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    plan_alignment: Literal["aligned", "partially_aligned", "alternative_plan", "not_aligned", "unclear"]
     explanation: str | None = Field(min_length=1)
-    better_candidate_uci: Uci | None
     mistake_classification: MistakeClassification | None
 
     @field_validator("explanation")
@@ -143,10 +140,12 @@ class TeachingOutput(BaseModel):
             if permitted_moves is not None and candidate.uci not in permitted_moves:
                 raise ValueError("Candidate move is outside the supplied Stockfish pool.")
             seen.add(candidate.uci)
+        if permitted_moves is not None and [candidate.uci for candidate in self.candidate_moves] != permitted_moves:
+            raise ValueError("Candidates must match every supplied move in the supplied order.")
         return self
 
     def validate_move_evaluation(self, *, played_move: str | None, evidence: dict | None) -> "TeachingOutput":
-        from .player_move_quality import ERROR_STATUSES, assess_player_move
+        from .player_move_quality import ERROR_STATUSES
 
         evaluation = self.move_evaluation
         candidates = {candidate.uci for candidate in self.candidate_moves}
@@ -155,24 +154,12 @@ class TeachingOutput(BaseModel):
             raise ValueError("Mistake classification requires a recorded move with a reliable error severity.")
         if played_move is not None and quality in ERROR_STATUSES and evaluation.mistake_classification is None:
             raise ValueError("A recorded error requires a mistake classification.")
-        if played_move in candidates and quality == "good" and (
-            evaluation.plan_alignment != "aligned" or evaluation.explanation is not None
-            or evaluation.better_candidate_uci is not None
-        ):
+        if played_move in candidates and quality == "good" and evaluation.explanation is not None:
             raise ValueError("An acceptable selected move must reuse its candidate explanation without correction.")
         if evaluation.explanation is None and not (
-            played_move in candidates and quality == "good" and evaluation.plan_alignment == "aligned"
+            played_move in candidates and quality == "good"
         ):
-            raise ValueError("Only an aligned, acceptable recommended move may omit its explanation.")
-        if played_move is None and (evaluation.plan_alignment != "unclear" or evaluation.better_candidate_uci is not None):
-            raise ValueError("No played move is available to assess.")
-        if evaluation.better_candidate_uci is not None:
-            better = next((move for move in evidence.get("top_moves", [])
-                           if move["uci"] == evaluation.better_candidate_uci), None) if evidence else None
-            comparison = assess_player_move(better, evidence["played_move"]) if better else None
-            if (evaluation.better_candidate_uci not in candidates or quality not in ERROR_STATUSES
-                    or comparison is None or comparison["status"] not in ERROR_STATUSES):
-                raise ValueError("A better candidate must be selected and demonstrably stronger than the played move.")
+            raise ValueError("Only a good supplied candidate may omit its explanation.")
         return self
 
     def as_analysis(self, fen: str, *, played_move: str | None, evidence: dict | None) -> "TeachingAnalysis":
@@ -210,6 +197,13 @@ class SavedMoveEvaluation(MoveEvaluation):
     """Keep historical coaching readable without translating obsolete labels."""
 
     mistake_classification: TacticalMistake | PositionalMistake | LegacyPositionalMistake | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def omit_retired_fields(cls, value):
+        if isinstance(value, dict):
+            return {key: item for key, item in value.items() if key not in ("plan_alignment", "better_candidate_uci")}
+        return value
 
     @field_validator("mistake_classification", mode="before")
     @classmethod

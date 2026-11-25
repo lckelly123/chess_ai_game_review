@@ -1,6 +1,7 @@
 """Read-only lesson analytics over a player's saved game decisions."""
 
 from .chess_games import replay
+from .coach.context import context_key, previous_move_from_replay
 from .coach.classification import lesson_classification
 from .coach.player_move_quality import with_player_move_quality
 from .coach.position import CoachPosition
@@ -100,14 +101,15 @@ def _lesson_snapshot(database, username: str, *, include_mistakes=False) -> tupl
                 errors.append({"fen": fen, "move": move["uci"], "severity": severity,
                                "game": record["id"], "ply": ply, "number": move["number"],
                                "color": color, "stockfish": evidence,
-                               "previous": detail["moves"][ply - 1] if ply else None})
+                               "previous": detail["moves"][ply - 1] if ply else None,
+                               "context_key": context_key(previous_move_from_replay(detail, ply))})
 
-    reviews = database.coach_feedback_for_reviews(list(dict.fromkeys((item["fen"], item["move"]) for item in errors)))
+    reviews = database.coach_feedback_for_reviews(list(dict.fromkeys((item["fen"], item["move"], item["context_key"]) for item in errors)))
     mistakes = []
     for item in errors:
         fen, move, severity = item["fen"], item["move"], item["severity"]
         increment(result["errors"], severity)
-        review = reviews.get((fen, move))
+        review = reviews.get((fen, move, item["context_key"]))
         teaching = (review or {}).get("teaching") or {}
         evaluation = teaching.get("move_evaluation") or {}
         classification = evaluation.get("mistake_classification")

@@ -35,13 +35,12 @@ def response_with(data):
     ("7k/8/8/3pP3/8/8/8/K7 w - d6 0 2", "e5d6", "exd6"),
 ])
 def test_legal_candidates_include_castling_promotion_and_en_passant(fen, uci, san):
-    data = teaching_output(fen)
-    data["candidate_moves"] = [{"uci": uci, "reason": "A concrete instructional reason.", "highlight_squares": ["e4", "d5"]}]
-    data["position_explanation"] = f"This position calls for [[{uci}]]."
+    pool = position_evidence(fen, preferred=[uci])["permitted_candidate_uci"]
+    data = teaching_output(fen, candidate_ucis=pool)
     result = analyze_with_transport(lambda request: httpx2.Response(200, json=response_with(data)), fen,
                                     position_engine=lambda fen: position_evidence(fen, preferred=[uci]))
     assert result.position_analysis["structured"] == data
-    assert TeachingAnalysis.model_validate(data).candidate_san(fen) == {uci: san}
+    assert TeachingAnalysis.model_validate(data).candidate_san(fen)[uci] == san
 
 
 @pytest.mark.parametrize("fen", [
@@ -187,7 +186,7 @@ def test_empty_approved_pool_accepts_no_candidates_but_not_an_invented_move():
 
 def test_original_move_link_is_allowed_without_changing_candidates_and_export_uses_san():
     data = teaching_output()
-    data["position_explanation"] = "Compare [[g1h3]] with the original [[e2e4]]."
+    data["position_explanation"] += " Compare [[g1h3]] with the original [[e2e4]]."
     output = TeachingOutput.model_validate(data)
     output.validate_references(played_move="e2e4")
     with pytest.raises(ValueError):
@@ -200,7 +199,7 @@ def test_original_move_link_is_allowed_without_changing_candidates_and_export_us
 
 def test_all_candidates_must_be_linked_and_later_variation_moves_cannot_be_linked():
     data = teaching_output()
-    data["candidate_moves"].append({"uci": "b1c3", "reason": "Develop toward the center.", "highlight_squares": ["c3", "d5"]})
+    data["position_explanation"] = "Consider [[g1h3]]."
     with pytest.raises(ValueError, match="each selected candidate"):
         TeachingOutput.model_validate(data).validate_references(played_move=None)
     data["position_explanation"] = "Compare [[g1h3]] with [[b1c3]], then [[e7e5]]."

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend.chess_games import normalize_game, replay
 from backend.coach.classification import CLASSIFICATION_VERSION
+from backend.coach.context import COACH_CONTRACT_VERSION, context_key
 from backend.tests.test_coach import teaching_output
 from backend.coach.move_review import MoveReview
 from backend.coach.responses import CoachAnalysis, CoachResponseError
@@ -29,10 +30,12 @@ from backend.tests.test_app import raw_game
 
 
 class FakeCoach:
-    async def analyze(self, fen, *, played_move=None):
+    async def analyze(self, fen, *, played_move=None, previous_move=None):
         return CoachAnalysis(text="Review this decision.", response_id=str(uuid4()), model="gpt-6-astra",
                              position=CoachPosition.from_fen(fen), usage=None, played_move=played_move,
-                             position_analysis={"classification_version": CLASSIFICATION_VERSION, "structured": teaching_output(fen)})
+                             previous_move=previous_move,
+                             position_analysis={"classification_version": CLASSIFICATION_VERSION, "coach_contract_version": COACH_CONTRACT_VERSION,
+                                                "previous_move": previous_move, "structured": teaching_output(fen)})
 
 
 @asynccontextmanager
@@ -74,8 +77,9 @@ class MemoryDatabase:
                  "text": analysis.text, "model": analysis.model, "response_id": analysis.response_id,
                  "created_at": datetime.now(timezone.utc), "stockfish": analysis.stockfish,
                  "classification_version": (analysis.position_analysis or {}).get("classification_version"),
+                 "coach_contract_version": (analysis.position_analysis or {}).get("coach_contract_version"),
                  "teaching": (analysis.position_analysis or {}).get("structured")}
-        self.feedback[(analysis.position.fen, analysis.played_move)] = saved
+        self.feedback[(analysis.position.fen, analysis.played_move, context_key(analysis.previous_move))] = saved
         return saved
 
     def save_game_coach_progress(self, game_id, color, fingerprint, completed):
@@ -98,9 +102,9 @@ class MemoryDatabase:
         if row is None:
             row = {"game_id": game_id, "player_color": color, "pgn_hash": fingerprint, "status": "queued",
                    "total": total, "completed": 0, "counts": {}, "moves": {}, "error": None,
-                   "updated_at": datetime.now(timezone.utc), "coach_completed": 0, "coach_version": CLASSIFICATION_VERSION}
-        if row.get("coach_version") != CLASSIFICATION_VERSION:
-            row.update(coach_version=CLASSIFICATION_VERSION, coach_completed=0)
+                   "updated_at": datetime.now(timezone.utc), "coach_completed": 0, "coach_version": COACH_CONTRACT_VERSION}
+        if row.get("coach_version") != COACH_CONTRACT_VERSION:
+            row.update(coach_version=COACH_CONTRACT_VERSION, coach_completed=0)
         if row["status"] != "completed" or row.get('coach_completed', 0) < sum(row['counts'].get(q, 0) for q in ('inaccuracy', 'mistake', 'blunder')):
             row.update(status="queued", error=None)
         self.rows[key] = row
@@ -466,14 +470,14 @@ def test_automatic_coach_selects_only_three_error_grades_and_reuses_exact_eviden
     async def factory(settings, **options):
         assert len(engine_calls) == 5  # Classification finishes before coaching.
         class Coach(FakeCoach):
-            async def analyze(self, fen, *, played_move=None):
+            async def analyze(self, fen, *, played_move=None, previous_move=None):
                 coach_calls.append((played_move, settings.model))
                 position = options['position_engine'](fen)
                 move = options['engine'](None, position)
                 assert position['fen'] == move['fen'] == fen
                 assert move['played_move']['uci'] == played_move
                 assert move['move_quality']['status'] in {'inaccuracy', 'mistake', 'blunder'}
-                return await super().analyze(fen, played_move=played_move)
+                return await super().analyze(fen, played_move=played_move, previous_move=previous_move)
         yield Coach()
     async def run():
         service = GameAnalysisService(db, set(), engine, coach_factory=factory)
@@ -497,11 +501,11 @@ def test_coach_failure_keeps_all_engine_results_and_resume_skips_saved_reviews()
     @asynccontextmanager
     async def factory(settings, **options):
         class Coach(FakeCoach):
-            async def analyze(self, fen, *, played_move=None):
+            async def analyze(self, fen, *, played_move=None, previous_move=None):
                 coach_calls.append(played_move)
                 if len(coach_calls) == 2:
                     raise TimeoutError('private API diagnostics')
-                return await super().analyze(fen, played_move=played_move)
+                return await super().analyze(fen, played_move=played_move, previous_move=previous_move)
         yield Coach()
     async def run():
         service = GameAnalysisService(db, set(), engine, coach_factory=factory)
@@ -557,7 +561,7 @@ def test_background_coach_rejects_wrong_move_before_persistence():
     @asynccontextmanager
     async def factory(settings, **options):
         class Coach(FakeCoach):
-            async def analyze(self, fen, *, played_move=None):
+            async def analyze(self, fen, *, played_move=None, previous_move=None):
                 return await super().analyze(fen, played_move='a2a3')
         yield Coach()
     async def run():
@@ -577,10 +581,10 @@ def test_manual_and_background_coach_share_one_generation_lock(monkeypatch):
     @asynccontextmanager
     async def factory(settings, **options):
         class Coach(FakeCoach):
-            async def analyze(self, fen, *, played_move=None):
+            async def analyze(self, fen, *, played_move=None, previous_move=None):
                 entered.set()
                 assert await asyncio.to_thread(release.wait, 5)
-                return await super().analyze(fen, played_move=played_move)
+                return await super().analyze(fen, played_move=played_move, previous_move=previous_move)
         yield Coach()
     try:
         with TestClient(create_app('unused', game_engine=evidence, coach_factory=factory)) as client:
@@ -611,9 +615,9 @@ def test_completed_old_taxonomy_job_refreshes_only_stale_reviews_without_engine_
     @asynccontextmanager
     async def factory(settings, **options):
         class Coach(FakeCoach):
-            async def analyze(self, fen, *, played_move=None):
+            async def analyze(self, fen, *, played_move=None, previous_move=None):
                 calls.append(played_move)
-                return await super().analyze(fen, played_move=played_move)
+                return await super().analyze(fen, played_move=played_move, previous_move=previous_move)
         yield Coach()
     with TestClient(create_app(test_db_url, game_engine=lambda _: pytest.fail('Must reuse engine results'), coach_factory=factory)) as client:
         summary = client.get('/api/games?username=alice').json()[0]['analysis']

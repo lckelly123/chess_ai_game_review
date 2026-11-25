@@ -57,9 +57,9 @@ def test_position_pool_excludes_inferior_moves_without_changing_top_five_or_clas
     original["top_moves"][-1].update(candidate(100, 100, -150))
     prepared = prepare_position_evidence(original)
     assert len(prepared["top_moves"]) == 5
-    assert len(prepared["permitted_candidate_uci"]) == 4
+    assert len(prepared["permitted_candidate_uci"]) == 3
     assert prepared["sharpness"] == with_position_sharpness(original)["sharpness"]
-    assert original["top_moves"][-1]["quality"]["status"] == "acceptable"  # no mutation
+    assert original["top_moves"][-1]["quality"]["status"] == "good"  # no mutation
 
 
 def test_in_pool_played_moves_reuse_search_without_engine_process(monkeypatch):
@@ -78,7 +78,7 @@ def test_changing_played_move_keeps_position_request_evidence_identical():
     evidence = position_evidence(chess.STARTING_FEN)
     messages = [build_request(chess.STARTING_FEN, evidence=evidence, played_move=move["uci"])["input"][1]["content"]
                 for move in evidence["top_moves"][:2]]
-    position_parts = [message.split("Player-move information", 1)[0] for message in messages]
+    position_parts = [message.split("PLAYER MOVE", 1)[0] for message in messages]
     assert position_parts[0] == position_parts[1]
     assert messages[0] != messages[1]
 
@@ -111,7 +111,7 @@ def test_outside_pool_search_stays_on_original_board_and_perspective(monkeypatch
 
 def test_feedback_reuses_reason_only_for_acceptable_selected_move():
     data = teaching_output()
-    data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": None, "better_candidate_uci": None, "mistake_classification": None}
+    data["move_evaluation"] = {"explanation": None, "mistake_classification": None}
     teaching = TeachingOutput.model_validate(data)
     evidence = {"move_quality": {"status": "good"}}
     teaching.validate_move_evaluation(played_move="g1h3", evidence=evidence)
@@ -124,20 +124,13 @@ def test_feedback_reuses_reason_only_for_acceptable_selected_move():
             teaching.validate_move_evaluation(played_move=move, evidence={"move_quality": {"status": quality}})
 
 
-def test_better_move_reference_requires_selected_candidate_and_meaningful_improvement():
+def test_retired_fields_rejected_in_new_output_but_readable_in_saved_reviews():
     data = teaching_output()
-    data["move_evaluation"] = {"plan_alignment": "aligned", "explanation": "The idea is useful, but the execution loses material.", "better_candidate_uci": "g1h3", "mistake_classification": {"category": "other", "subcategory": None}}
-    teaching = TeachingOutput.model_validate(data)
-    evidence = {"move_quality": {"status": "inaccuracy"}, "top_moves": [{"uci": "g1h3", **candidate()}],
-                "played_move": {"uci": "e2e4", **candidate(500, 100, 0)}}
-    teaching.validate_move_evaluation(played_move="e2e4", evidence=evidence)
-    evidence["played_move"].update(candidate(550, 100, 50))
+    data["move_evaluation"].update(plan_alignment="aligned", better_candidate_uci="g1h3")
     with pytest.raises(ValueError):
-        teaching.validate_move_evaluation(played_move="e2e4", evidence=evidence)
-    evidence["played_move"].update(candidate(500, 100, 0))
-    teaching.move_evaluation.better_candidate_uci = "d2d4"
-    with pytest.raises(ValueError):
-        teaching.validate_move_evaluation(played_move="e2e4", evidence=evidence)
+        TeachingOutput.model_validate(data)
+    saved = TeachingAnalysis.model_validate(data).model_dump()
+    assert set(saved["move_evaluation"]) == {"explanation", "mistake_classification"}
 
 
 def test_old_saved_three_field_output_still_loads_but_new_outputs_require_four():

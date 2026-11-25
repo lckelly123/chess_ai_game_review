@@ -41,7 +41,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   const qualityDescription = qualityLoss != null
     ? `Winning chances lost: ${qualityLoss.toFixed(2)} percentage points from your perspective. Less than 5: Good; 5 to less than 10: Inaccuracy; 10 to less than 15: Mistake; 15 or more: Blunder.`
     : mateQualityDescriptions[engine?.move_quality?.reason ?? ''] ?? 'The available engine scores do not support a reliable comparison.';
-  const betterUci = ['inaccuracy', 'mistake', 'blunder'].includes(quality) ? moveFeedback?.better_candidate_uci : undefined;
+  const betterUci = ['inaccuracy', 'mistake', 'blunder'].includes(quality) ? response?.better_candidate_uci : undefined;
   const waiting = pending ? 'Your coach is thinking…' : 'Run coach to explore this position.';
   const explanation = teaching?.position_explanation ?? teaching?.positional_thesis;
   const inlineMoves = !!teaching?.position_overview && !!teaching.position_explanation;
@@ -53,8 +53,8 @@ export default function CoachCards({ response, engineReview, engineMode = false,
 
   return <div className="coach-cards">
     <div className="coach-card-body" aria-busy={pending}>
-      {response?.classification_current === false && <p className="coach-placeholder">This saved review uses an earlier coach. Run coach to update its analysis and lesson labels.</p>}
-      {response?.classification_current !== false && response?.sharpness_current === false && <p className="coach-placeholder">This saved coaching used earlier position labels. Run coach to refresh its explanation.</p>}
+      {(response?.coach_current === false || response?.classification_current === false) && <p className="coach-placeholder">This saved review uses an earlier coach. Run coach to update its analysis and lesson labels.</p>}
+      {response?.coach_current !== false && response?.classification_current !== false && response?.sharpness_current === false && <p className="coach-placeholder">This saved coaching used earlier position labels. Run coach to refresh its explanation.</p>}
       {teaching && !teaching.position_overview && <p className="coach-placeholder">This saved review has no practice hint. Run coach to update it.</p>}
       {!engineOnly && <>
       <section className="coach-section" aria-labelledby={`${id}-understand-title`}>

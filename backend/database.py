@@ -7,7 +7,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .coach.classification import CLASSIFICATION_VERSION
+from .coach.context import COACH_CONTRACT_VERSION, context_key
 from .game_analysis import analysis_result, analysis_summary, coaching_total, pgn_fingerprint, quality_counts
 
 MULTI_GAME_COLUMNS = """id, username, status, input_snapshot -> 'summary' AS summary,
@@ -127,19 +127,19 @@ class Database:
                              (game_id, color)).fetchone()
             if row and row["pgn_hash"] == fingerprint:
                 if (row["status"] == "completed" and row["coach_completed"] >= coaching_total(row)
-                        and row["coach_version"] == CLASSIFICATION_VERSION):
+                        and row["coach_version"] == COACH_CONTRACT_VERSION):
                     return row
                 return db.execute("""UPDATE game_engine_analysis SET status='queued', error=NULL,
                                   coach_completed=CASE WHEN coach_version=%s THEN coach_completed ELSE 0 END,
                                   coach_version=%s, updated_at=clock_timestamp()
                                   WHERE game_id=%s AND player_color=%s RETURNING *""",
-                                  (CLASSIFICATION_VERSION, CLASSIFICATION_VERSION, game_id, color)).fetchone()
+                                  (COACH_CONTRACT_VERSION, COACH_CONTRACT_VERSION, game_id, color)).fetchone()
             return db.execute("""INSERT INTO game_engine_analysis (game_id, player_color, pgn_hash, status, total, coach_version)
                               VALUES (%s, %s, %s, 'queued', %s, %s)
                               ON CONFLICT (game_id, player_color) DO UPDATE SET pgn_hash=excluded.pgn_hash,
                                   status='queued', total=excluded.total, completed=0, counts='{}', moves='{}', coach_completed=0, coach_version=excluded.coach_version,
                                   error=NULL, updated_at=clock_timestamp() RETURNING *""",
-                              (game_id, color, fingerprint, total, CLASSIFICATION_VERSION)).fetchone()
+                              (game_id, color, fingerprint, total, COACH_CONTRACT_VERSION)).fetchone()
 
     def save_game_analysis_move(self, game_id: str, color: str, fingerprint: str, ply: int, result: dict) -> bool:
         with self.connection() as db:
@@ -178,38 +178,63 @@ class Database:
         with self.connection() as db:
             return db.execute(
                 """INSERT INTO coach_feedback
-                   (fen, text, model, response_id, usage, played_move, position_analysis, move_analysis, stockfish)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   (fen, text, model, response_id, usage, played_move, position_analysis, move_analysis, stockfish, context_key)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING fen, NULLIF(played_move, '') AS played_move, text, model, response_id, created_at, stockfish,
                              position_analysis -> 'classification_version' AS classification_version,
                              position_analysis -> 'sharpness_version' AS sharpness_version,
+                             position_analysis -> 'coach_contract_version' AS coach_contract_version,
+                             position_analysis -> 'previous_move' AS previous_move,
                              position_analysis -> 'structured' AS teaching,
                              position_analysis -> 'engine_evidence' AS position_evidence""",
                 (analysis.position.fen, analysis.text, analysis.model, analysis.response_id,
                  Jsonb(analysis.usage) if analysis.usage is not None else None, analysis.played_move or '',
                  Jsonb(analysis.position_analysis) if analysis.position_analysis is not None else None,
                  Jsonb(analysis.move_analysis) if analysis.move_analysis is not None else None,
-                 Jsonb(analysis.stockfish) if analysis.stockfish is not None else None),
+                 Jsonb(analysis.stockfish) if analysis.stockfish is not None else None, context_key(analysis.previous_move)),
             ).fetchone()
 
     def coach_feedback_for_positions(self, fens: list[str]) -> dict[str, dict]:
         rows = self.coach_feedback_for_reviews([(fen, None) for fen in fens])
         return {fen: row for (fen, _), row in rows.items()}
 
-    def coach_feedback_for_reviews(self, reviews: list[tuple[str, str | None]]) -> dict[tuple[str, str | None], dict]:
+    def coach_feedback_for_reviews(self, reviews: list[tuple]) -> dict[tuple, dict]:
+        """Match history-aware requests; legacy context-free reviews remain readable.
+
+        Two-element keys explicitly request unknown history. They never match a
+        new review generated with a known previous move. Three-element keys add
+        the validated history hash. Only pre-contract records may be fallbacks.
+        """
         if not reviews:
             return {}
+        normalized = {key: (key[0], key[1], key[2] if len(key) == 3 else "") for key in reviews}
         with self.connection() as db:
             rows = db.execute(
-                """SELECT DISTINCT ON (cf.fen, cf.played_move) cf.fen, NULLIF(cf.played_move, '') AS played_move,
-                          text, model, response_id, created_at, stockfish, position_analysis -> 'classification_version' AS classification_version,
-                             position_analysis -> 'sharpness_version' AS sharpness_version,
-                             position_analysis -> 'structured' AS teaching,
+                """SELECT DISTINCT ON (cf.fen, cf.played_move, cf.context_key,
+                                          (position_analysis ->> 'coach_contract_version' IS NULL))
+                          cf.id, cf.context_key, cf.fen, NULLIF(cf.played_move, '') AS played_move,
+                          text, model, response_id, created_at, stockfish,
+                          position_analysis -> 'classification_version' AS classification_version,
+                          position_analysis -> 'sharpness_version' AS sharpness_version,
+                          position_analysis -> 'coach_contract_version' AS coach_contract_version,
+                          position_analysis -> 'previous_move' AS previous_move,
+                          position_analysis -> 'structured' AS teaching,
                           position_analysis -> 'engine_evidence' AS position_evidence
-                   FROM coach_feedback cf WHERE cf.fen = ANY(%s) AND cf.played_move = ANY(%s)
-                   ORDER BY cf.fen, cf.played_move, created_at DESC, id DESC""",
-                (list({fen for fen, _ in reviews}), list({move or '' for _, move in reviews})),
+                   FROM coach_feedback cf
+                   WHERE cf.fen = ANY(%s) AND cf.played_move = ANY(%s) AND cf.context_key = ANY(%s)
+                   ORDER BY cf.fen, cf.played_move, cf.context_key,
+                            (position_analysis ->> 'coach_contract_version' IS NULL), created_at DESC, id DESC""",
+                (list({key[0] for key in normalized.values()}),
+                 list({key[1] or '' for key in normalized.values()}),
+                 list({"", *(key[2] for key in normalized.values())})),
             ).fetchall()
-            requested = set(reviews)
-            return {(row["fen"], row["played_move"]): row for row in rows
-                    if (row["fen"], row["played_move"]) in requested}
+        exact, legacy = {}, {}
+        for row in sorted(rows, key=lambda item: (item["created_at"], item["id"]), reverse=True):
+            row.pop("id")
+            history = row.pop("context_key")
+            key = (row["fen"], row["played_move"], history)
+            exact.setdefault(key, row)
+            if not history and row["coach_contract_version"] is None:
+                legacy.setdefault(key[:2], row)
+        return {original: answer for original, key in normalized.items()
+                if (answer := exact.get(key) or legacy.get(key[:2])) is not None}

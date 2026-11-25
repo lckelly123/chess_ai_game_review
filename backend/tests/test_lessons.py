@@ -43,7 +43,7 @@ class MemoryDatabase:
         return self.records
 
     def coach_feedback_for_reviews(self, reviews):
-        return {key: value for key, value in self.feedback.items() if key in reviews}
+        return {key: self.feedback[key[:2]] for key in reviews if key[:2] in self.feedback}
 
 
 def category(result, key):

@@ -6,7 +6,7 @@ CLASSIFICATION_VERSION = 3
 
 
 def current_classification(review: dict | None) -> bool:
-    """Only reuse coaching generated under the current output contract."""
+    """Check the current mistake taxonomy; context.current_coaching also checks the coach contract."""
     if not review or review.get("classification_version") != CLASSIFICATION_VERSION:
         return False
     return lesson_classification(review)

@@ -20,6 +20,7 @@ from .stockfish import StockfishAnalysisError
 from .teaching import TeachingOutput
 from .classification import CLASSIFICATION_VERSION
 from .sharpness import SHARPNESS_VERSION
+from .context import COACH_CONTRACT_VERSION, validate_previous_move
 
 SYSTEM_PROMPT_PATH = Path(__file__).with_name("system_prompt.md")
 MOVE_PROMPT_PATH = Path(__file__).with_name("move_prompt.md")
@@ -46,10 +47,13 @@ class CoachAnalysis:
     stockfish: dict[str, Any] | None = None
     structured: dict[str, Any] | None = None
     engine_evidence: dict[str, Any] | None = None
+    previous_move: dict[str, str] | None = None
 
     def as_pass(self) -> dict[str, Any]:
         result = {"text": self.text, "response_id": self.response_id, "model": self.model, "usage": self.usage}
         if self.structured is not None:
+            result["coach_contract_version"] = COACH_CONTRACT_VERSION
+            result["previous_move"] = self.previous_move
             result["structured"] = self.structured
             result["classification_version"] = CLASSIFICATION_VERSION
             result["sharpness_version"] = SHARPNESS_VERSION
@@ -67,19 +71,37 @@ def _base_request(settings: CoachSettings) -> dict[str, Any]:
     }
 
 
-def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dict, move_evidence: dict | None = None) -> dict[str, Any]:
+def _evaluation(move: dict) -> str:
+    score = move.get("score") or {}
+    mate, cp = score.get("mate"), score.get("cp")
+    if mate is not None:
+        value = f"mate in {mate}" if mate > 0 else f"mated in {abs(mate)}"
+    else:
+        value = f"{cp} cp" if cp is not None else "unavailable"
+    bound = score.get("bound")
+    return f"{value} ({bound} bound)" if bound in ("lower", "upper") else value
+
+
+def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dict,
+                 move_evidence: dict | None = None, previous_move: dict | None = None) -> dict[str, Any]:
     if evidence.get("fen") != position.fen or evidence.get("perspective") != position.side_to_move:
         raise StockfishAnalysisError("Stockfish evidence did not match the selected position.")
-    payload = {
-        "decision_mode": evidence["decision_classification"],
-        "position_sharpness": evidence["sharpness"],
-        "unclassified_reason": evidence["unclassified_reason"],
-        "position_outlook": evidence["position_outlook"],
-        "engine_verified_moves": evidence["top_moves"],
-        "permitted_candidate_uci": evidence["permitted_candidate_uci"],
-        "delta_cp": evidence["delta_cp"], "delta_e_pp": evidence["delta_e_pp"],
-        "move_quality_policy": evidence["move_quality_policy"],
-    }
+    previous_move = validate_previous_move(position.fen, previous_move)
+    previous = f"{previous_move['san']} ({previous_move['uci']})" if previous_move else "unavailable"
+    mode = evidence["decision_classification"] or f"unclassified ({evidence['unclassified_reason']})"
+    permitted = set(evidence["permitted_candidate_uci"])
+    lines = [f"{move['uci']} | {_evaluation(move)} | {' '.join(move.get('pv_san') or []) or 'unavailable'}"
+             for move in evidence["top_moves"] if move["uci"] in permitted]
+    candidates = "\n".join(lines) if lines else "none"
+    player = "PLAYER MOVE: none"
+    if move_evidence is not None:
+        move = move_evidence["played_move"]
+        player = (f"PLAYER MOVE\nUCI: {move['uci']}\nSAN: {move['san']}\n"
+                  f"Evaluation: {_evaluation(move)}\nSeverity: {move_evidence['move_quality']['status']}\n"
+                  f"PV: {' '.join(move.get('pv_san') or []) or 'unavailable'}")
+    message = (f"Side to move: {position.side_to_move}\n\nOpponent's previous move: {previous}\n\n"
+               f"FEN: {position.fen}\n\n{position.ascii_board}\n\nDecision mode: {mode}\n\n"
+               f"APPROVED ENGINE MOVES (ranked best to worst)\nUCI | Evaluation | PV (SAN)\n{candidates}\n\n{player}")
     return {
         **_base_request(settings),
         "text": {"format": {
@@ -88,25 +110,7 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
         }},
         "input": [
             {"role": "system", "content": SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")},
-            {"role": "user", "content": position.as_user_message() + (
-                "\n\nStockfish position evidence:\n" + json.dumps(payload, ensure_ascii=False)
-                + "\n\nScores and WDL are from the side to move. Relative losses are compared with the best move; "
-                "expected-score gaps are percentage points. Only moves in permitted_candidate_uci are approved for recommendation. "
-                "The top-five lines may also include unacceptable moves for comparison. Do not invent a decision mode "
-                "when it is null: use the stated reason. For terminal_position, return an empty candidate_moves array "
-                "and explain that play has ended. For single_legal_move, recommend the sole verified move."
-                " For fewer_than_five_legal_moves or insufficient_engine_evidence, explain the position using the verified moves "
-                "without assigning a sharpness tag or inventing missing candidates. Position sharpness uses capped centipawn gaps, "
-                "not WDL expected-score gaps; a high score can occur when multiple moves still win."
-                "\n\nPlayer-move information (use for move_evaluation and an optional contrast in position_explanation; "
-                "never change position_overview or candidate_moves):\n" + json.dumps(
-                    {key: value for key, value in move_evidence.items() if key != "tactic_classification"}
-                    if move_evidence is not None else None, ensure_ascii=False)
-                + "\n\nThe authoritative severity described in the system prompt is player-move information.move_quality.status. "
-                "Use that existing field; candidate quality uses the separate position-level policy."
-                + "\n\nWhen player-move information is null, set move_evaluation to plan_alignment unclear, "
-                "explanation 'No recorded move is available to evaluate.', better_candidate_uci null, and mistake_classification null."
-            )},
+            {"role": "user", "content": message},
         ],
     }
 
@@ -114,14 +118,15 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
 def build_request(
     fen: str, *, ascii_board: str | None = None, settings: CoachSettings | None = None,
     evidence: dict | None = None,
-    played_move: str | None = None,
+    played_move: str | None = None, previous_move: dict | None = None,
 ) -> dict[str, Any]:
     """Preview the exact request using local Stockfish, without any model call."""
     position = CoachPosition.from_fen(fen, ascii_board=ascii_board)
+    previous_move = validate_previous_move(position.fen, previous_move)
     review = MoveReview.from_fen(position.fen, played_move) if played_move is not None else None
     evidence = prepare_position_evidence(evidence if evidence is not None else analyze_position(position.fen))
     move_evidence = analyze_played_move(review, evidence) if review else None
-    return _request_for(position, settings or CoachSettings(), evidence, move_evidence)
+    return _request_for(position, settings or CoachSettings(), evidence, move_evidence, previous_move)
 
 
 def build_move_request(review: MoveReview, previous_analysis: dict | str, evidence: dict, settings: CoachSettings) -> dict:
@@ -156,8 +161,10 @@ class ResponsesCoach:
         self.position_engine = position_engine or analyze_position
         self.move_engine = engine or analyze_played_move
 
-    async def analyze(self, fen: str, *, ascii_board: str | None = None, played_move: str | None = None) -> CoachAnalysis:
+    async def analyze(self, fen: str, *, ascii_board: str | None = None, played_move: str | None = None,
+                      previous_move: dict | None = None) -> CoachAnalysis:
         position = CoachPosition.from_fen(fen, ascii_board=ascii_board)
+        previous_move = validate_previous_move(position.fen, previous_move)
         review = MoveReview.from_fen(position.fen, played_move) if played_move is not None else None
         evidence = prepare_position_evidence(await asyncio.to_thread(self.position_engine, position.fen))
         if evidence.get("fen") != position.fen or evidence.get("perspective") != position.side_to_move:
@@ -167,15 +174,15 @@ class ResponsesCoach:
                        or move_evidence.get("played_move", {}).get("uci") != review.played_move_uci):
             raise StockfishAnalysisError("Engine evidence did not match the reviewed move.")
         # Prompt reads must not block Agent Server's event loop in Studio.
-        request = await asyncio.to_thread(_request_for, position, self.settings, evidence, move_evidence)
-        return await self._complete(request, position, evidence=evidence, move_evidence=move_evidence)
+        request = await asyncio.to_thread(_request_for, position, self.settings, evidence, move_evidence, previous_move)
+        return await self._complete(request, position, evidence=evidence, move_evidence=move_evidence, previous_move=previous_move)
 
     async def evaluate_move(self, review: MoveReview, previous_analysis: dict | str, evidence: dict) -> CoachAnalysis:
         request = await asyncio.to_thread(build_move_request, review, previous_analysis, evidence, self.settings)
         return await self._complete(request, review.position)
 
     async def _complete(self, request: dict, position: CoachPosition, *, evidence: dict | None = None,
-                        move_evidence: dict | None = None) -> CoachAnalysis:
+                        move_evidence: dict | None = None, previous_move: dict | None = None) -> CoachAnalysis:
         response = await self.client.responses.create(**request)
         if response.status != "completed":
             reason = response.incomplete_details.reason if response.incomplete_details else response.status
@@ -208,6 +215,7 @@ class ResponsesCoach:
             usage=response.usage.model_dump() if response.usage else None,
             structured=teaching.model_dump() if teaching is not None else None,
             engine_evidence=evidence,
+            previous_move=previous_move,
             stockfish=move_evidence,
             played_move=move_evidence["played_move"]["uci"] if move_evidence else None,
         )

@@ -21,8 +21,9 @@ from .stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishU
 from .teaching import TeachingAnalysis
 from .lines import move_lines
 from .classification import CLASSIFICATION_VERSION
-from .player_move_quality import with_player_move_quality
+from .player_move_quality import with_player_move_quality, assess_player_move, ERROR_STATUSES
 from .sharpness import SHARPNESS_VERSION, with_position_sharpness
+from .context import COACH_CONTRACT_VERSION, context_key, previous_move_from_replay
 
 
 class AnalyzePositionRequest(BaseModel):
@@ -52,6 +53,28 @@ class AnalyzePositionResponse(BaseModel):
     teaching: TeachingAnalysis | None = None
     classification_version: int | None = None
     sharpness_version: int | None = None
+    coach_contract_version: int | None = None
+    previous_move: dict | None = None
+
+    @computed_field
+    @property
+    def coach_current(self) -> bool:
+        return self.coach_contract_version == COACH_CONTRACT_VERSION
+
+    @computed_field
+    @property
+    def better_candidate_uci(self) -> str | None:
+        """UI comparison is an engine decision, outside the LLM output."""
+        if self.teaching is None or self.stockfish is None:
+            return None
+        played = self.stockfish.get("played_move") or {}
+        if self.stockfish.get("move_quality", {}).get("status") not in ERROR_STATUSES:
+            return None
+        candidates = {move["uci"]: move for move in (self.position_evidence or {}).get("top_moves", [])}
+        for candidate in self.teaching.candidate_moves:
+            if assess_player_move(candidates.get(candidate.uci, {}), played)["status"] in ERROR_STATUSES:
+                return candidate.uci
+        return None
 
     @computed_field
     @property
@@ -104,20 +127,34 @@ def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRo
 
     @router.get("/feedback", response_model=AnalyzePositionResponse | None)
     async def saved_feedback(http_request: Request, fen: str = Query(min_length=1, max_length=256),
-                             played_move: str | None = Query(default=None, min_length=4, max_length=5)):
+                             played_move: str | None = Query(default=None, min_length=4, max_length=5),
+                             game_id: str | None = None, ply: int | None = Query(default=None, ge=0)):
         try:
             position = CoachPosition.from_fen(fen)
             if played_move is not None:
                 played_move = MoveReview.from_fen(position.fen, played_move).played_move_uci
+            previous_move = None
+            if (game_id is None) != (ply is None):
+                raise InvalidPositionError("Supply game_id and ply together for game context.")
+            if game_id is not None:
+                record = await run_in_threadpool(http_request.app.state.db.game, game_id)
+                if record is None:
+                    raise HTTPException(404, "Game not found.")
+                detail = await run_in_threadpool(replay, record["pgn"])
+                if ply >= len(detail["positions"]) or detail["positions"][ply]["fen"] != position.fen:
+                    raise InvalidPositionError("Game context does not match the selected position.")
+                previous_move = previous_move_from_replay(detail, ply)
         except InvalidPositionError as exc:
             raise HTTPException(422, str(exc)) from exc
-        saved = await run_in_threadpool(http_request.app.state.db.coach_feedback_for_reviews, [(position.fen, played_move)])
-        return saved.get((position.fen, played_move))
+        key = (position.fen, played_move, context_key(previous_move))
+        saved = await run_in_threadpool(http_request.app.state.db.coach_feedback_for_reviews, [key])
+        return saved.get(key)
 
     @router.post("/analyze", response_model=AnalyzePositionResponse)
     async def analyze_position(request: AnalyzePositionRequest, http_request: Request):
         database = http_request.app.state.db
         played_move = None
+        previous_move = None
         try:
             if request.game_id is not None:
                 record = await run_in_threadpool(database.game, request.game_id)
@@ -127,6 +164,7 @@ def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRo
                 if request.ply >= len(detail["positions"]):
                     raise InvalidPositionError("The selected replay position is outside this game.")
                 position = CoachPosition.from_fen(detail["positions"][request.ply]["fen"])
+                previous_move = previous_move_from_replay(detail, request.ply)
                 if request.ply < len(detail["moves"]):
                     played_move = MoveReview.from_fen(position.fen, detail["moves"][request.ply]["uci"]).played_move_uci
             else:
@@ -140,7 +178,9 @@ def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRo
             await run_in_threadpool(database.health)
             try:
                 async with coach_factory(CoachSettings.from_env(model=request.model)) as coach:
-                    result = await coach.analyze(position.fen, played_move=played_move) if played_move is not None else await coach.analyze(position.fen)
+                    result = await coach.analyze(position.fen,
+                                                 **({"played_move": played_move} if played_move is not None else {}),
+                                                 **({"previous_move": previous_move} if previous_move else {}))
                 if result.position.fen != position.fen or result.played_move != played_move:
                     raise CoachResponseError("The coach returned a different position.", result.response_id)
                 try:

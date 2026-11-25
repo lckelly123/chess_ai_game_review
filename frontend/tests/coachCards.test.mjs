@@ -49,6 +49,20 @@ test('the original move opens its own assessment', () => {
   assert.doesNotMatch(html, /Unique candidate detail|Engine continuation/);
 });
 
+test('comparison uses the backend-derived target without a model comparison field', () => {
+  const current = {...response, better_candidate_uci: 'e2e4', stockfish: {
+    perspective: 'White', move_quality: {status: 'blunder'},
+    played_move: {uci: 'd2d4', san: 'd4', depth: 12, score: {cp: -200, mate: null, bound: 'exact'}},
+  }};
+  assert.match(render({response: current, selectedUci: 'd2d4'}), /Compare with e4/);
+  assert.doesNotMatch(render({response: {...current, better_candidate_uci: null}, selectedUci: 'd2d4'}), /Compare with/);
+});
+
+test('an outdated coach contract is identified even when its taxonomy is current', () => {
+  assert.match(render({response: {...response, coach_current: false, classification_current: true}}), /uses an earlier coach/);
+  assert.doesNotMatch(render({response: {...response, coach_current: true, classification_current: true}}), /uses an earlier coach/);
+});
+
 test('saved tactic findings coexist with staged move details and continuation playback', () => {
   const tactic_classification = {version: 1, fen: response.fen, played_move: response.played_move,
     status: 'classified', lines: [{direction: 'missed', motifs: ['fork'], coverage: 'bounded'},

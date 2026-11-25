@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from .chess_games import replay
+from .coach.context import context_key, previous_move_from_replay
 from .coach.routes import AnalyzePositionResponse, create_coach_router
 from .coach.preparation_routes import create_preparation_router
 from .coach.service import open_coach
@@ -99,14 +100,15 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
         if not record:
             raise HTTPException(404, "Game not found.")
         detail = replay(record["pgn"])
-        reviews = [(position["fen"], detail["moves"][ply]["uci"] if ply < len(detail["moves"]) else None)
+        reviews = [(position["fen"], detail["moves"][ply]["uci"] if ply < len(detail["moves"]) else None,
+                    context_key(previous_move_from_replay(detail, ply)))
                    for ply, position in enumerate(detail["positions"])]
-        feedback = app.state.db.coach_feedback_for_reviews(reviews + [(fen, None) for fen, _ in reviews])
+        feedback = app.state.db.coach_feedback_for_reviews(reviews + [(fen, None, history) for fen, _, history in reviews])
         # Legacy position-only answers remain visible until a move review exists.
         return {**record, **detail, "engine_analyses": app.state.db.game_analyses(game_id, record["pgn"]), "coach_responses": {
             str(ply): AnalyzePositionResponse(**answer).model_dump(mode="json")
-            for ply, (fen, move) in enumerate(reviews)
-            if (answer := feedback.get((fen, move)) or feedback.get((fen, None))) is not None
+            for ply, (fen, move, history) in enumerate(reviews)
+            if (answer := feedback.get((fen, move, history)) or feedback.get((fen, None, history))) is not None
         }}
 
     @app.get("/api/games/{game_id}/pgn")

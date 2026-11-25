@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from .chess_games import replay
-from .coach.classification import CLASSIFICATION_VERSION, current_classification
+from .coach.context import COACH_CONTRACT_VERSION, current_coaching, context_key, previous_move_from_replay
 from .coach.move_review import MoveReview
 from .coach.move_quality import analyze_played_move
 from .coach.player_move_quality import with_player_move_quality
@@ -45,7 +45,7 @@ def analysis_summary(row: dict | None) -> dict | None:
         return None
     return {**{key: row[key] for key in ("game_id", "player_color", "status", "total", "completed", "counts", "error", "updated_at")},
             "coach_total": coaching_total(row),
-            "coach_completed": row.get("coach_completed", 0) if row.get("coach_version") == CLASSIFICATION_VERSION else 0}
+            "coach_completed": row.get("coach_completed", 0) if row.get("coach_version") == COACH_CONTRACT_VERSION else 0}
 
 
 def analysis_result(row: dict | None) -> dict | None:
@@ -106,7 +106,7 @@ class GameAnalysisService:
                        for ply, move in enumerate(detail["moves"]) if move["color"] == color]
             row = await run_in_threadpool(self.db.begin_game_analysis, game_id, color, fingerprint, len(targets))
             if (row["status"] == "completed" and row.get("coach_completed", 0) >= coaching_total(row)
-                    and row.get("coach_version") == CLASSIFICATION_VERSION):
+                    and row.get("coach_version") == COACH_CONTRACT_VERSION):
                 return analysis_result(row)
             task = asyncio.create_task(self._run(game_id, color, fingerprint, targets, row["moves"], model))
             self.active[key] = task
@@ -145,8 +145,11 @@ class GameAnalysisService:
                 current = await run_in_threadpool(self.db.game, game_id)
                 if current is None or pgn_fingerprint(current["pgn"]) != fingerprint:
                     return False
-                previous = await run_in_threadpool(self.db.coach_feedback_for_reviews, [(fen, uci)])
-                if not current_classification(previous.get((fen, uci))):
+                detail = await run_in_threadpool(replay, current["pgn"])
+                previous_move = previous_move_from_replay(detail, ply)
+                key = (fen, uci, context_key(previous_move))
+                previous = await run_in_threadpool(self.db.coach_feedback_for_reviews, [key])
+                if not current_coaching(previous.get(key)):
                     await run_in_threadpool(self.db.health)
                     options = {}
                     if (evidence.get("position_evidence") and with_position_sharpness(
@@ -156,7 +159,8 @@ class GameAnalysisService:
                         options = {"position_engine": lambda _: evidence["position_evidence"],
                                    "engine": lambda *_: evidence["stockfish"]}
                     async with self.coach_factory(CoachSettings.from_env(model=model), **options) as coach:
-                        result = await coach.analyze(fen, played_move=uci)
+                        result = await coach.analyze(fen, played_move=uci,
+                                                     **({"previous_move": previous_move} if previous_move else {}))
                     if result.position.fen != fen or result.played_move != uci:
                         raise CoachResponseError("The coach returned a different position or move.", result.response_id)
                     await run_in_threadpool(self.db.save_coach_feedback, result)

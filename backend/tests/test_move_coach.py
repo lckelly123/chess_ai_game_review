@@ -77,12 +77,10 @@ def test_one_request_contains_position_and_played_move_and_never_runs_second_ada
     assert body["input"][0]["content"] == SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
     assert "previous_analysis" not in json.dumps(body)
     message = body["input"][1]["content"]
-    position_payload = json.loads(message.split("Stockfish position evidence:\n", 1)[1].split("\n\n", 1)[0])
-    assert len(position_payload["engine_verified_moves"]) == 5
-    assert "played_move" not in position_payload
-    move_payload = json.loads(message.split("Player-move information", 1)[1].split(":\n", 1)[1].split("\n\n", 1)[0])
-    assert move_payload["played_move"]["uci"] == "e7e5"
-    assert move_payload == result.stockfish
+    candidates, player = message.split("PLAYER MOVE\n", 1)
+    assert candidates.count(" | ") == 8
+    assert "UCI: e7e5" in player and "Severity: good" in player
+    assert "top_moves" not in message
     assert body["model"] == model and body["reasoning"] == {"effort": "medium"}
     assert body["store"] is False and "previous_response_id" not in body
     assert result.text == teaching_text(fen)
@@ -196,7 +194,7 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
         assert saved["model"] == model
         assert saved["position_evidence"] == position_evidence(chess.STARTING_FEN)
         assert saved["teaching"] == teaching_output()
-        assert saved["candidate_san"] == {"g1h3": "Nh3"}
+        assert saved["candidate_san"] == {move["uci"]: chess.Board().san(chess.Move.from_uci(move["uci"])) for move in teaching_output()["candidate_moves"]}
         assert saved["stockfish"]["perspective"] == "White"
         assert saved["stockfish"]["played_move"]["score"] == {"cp": 100, "mate": None, "bound": "exact"}
         assert saved["stockfish"]["played_move"]["depth"] == 12

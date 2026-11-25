@@ -55,9 +55,7 @@ export type PositionTeaching = {
   positional_thesis?: string;
   candidate_moves: CandidateMove[];
   move_evaluation?: {
-    plan_alignment: 'aligned' | 'partially_aligned' | 'alternative_plan' | 'not_aligned' | 'unclear';
     explanation: string | null;
-    better_candidate_uci: string | null;
     mistake_classification?: MistakeClassification | null;
   } | null;
 };
@@ -75,6 +73,10 @@ export type CoachResponse = {
   stockfish?: EngineAnalysis | null;
   teaching?: PositionTeaching | null;
   move_lines?: Record<string, {san: string[]; positions: Position[]}>;
+  coach_current?: boolean;
+  coach_contract_version?: number | null;
+  previous_move?: { fen: string; san: string; uci: string } | null;
+  better_candidate_uci?: string | null;
   classification_current?: boolean;
   classification_version?: number | null;
   sharpness_current?: boolean;

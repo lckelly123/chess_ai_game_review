@@ -43,8 +43,8 @@ def test_coach_endpoint_calls_responses_with_only_selected_position(test_db_url,
         assert body["model"] == (model or "gpt-6-astra")
         assert body["reasoning"] == {"effort": "medium"}
         assert fen in body["input"][1]["content"]
-        assert "for Black" in body["input"][1]["content"]
-        assert "ASCII board" in body["input"][1]["content"]
+        assert "Side to move: Black" in body["input"][1]["content"]
+        assert "8  r n b q k b n r" in body["input"][1]["content"]
         return httpx2.Response(200, json=completed_response(request=request, model=body["model"]))
     app = create_app(test_db_url, coach_factory=mock_coach_factory(upstream))
     with TestClient(app) as client:
@@ -54,11 +54,11 @@ def test_coach_endpoint_calls_responses_with_only_selected_position(test_db_url,
         assert result["fen"] == fen
         assert result["model"] == (model or "gpt-6-astra")
         assert result["text"].startswith("### 1. Understand the Position")
-        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at", "stockfish", "teaching", "candidate_san", "position_evidence", "classification_version", "classification_current", "sharpness_version", "sharpness_current", "move_lines"}
+        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at", "stockfish", "teaching", "candidate_san", "position_evidence", "classification_version", "classification_current", "sharpness_version", "sharpness_current", "move_lines", "previous_move", "coach_contract_version", "coach_current", "better_candidate_uci"}
         assert result["sharpness_current"] is True
         assert result["position_evidence"] == position_evidence(fen)
         assert result["teaching"]["candidate_moves"][0]["uci"] == "g8h6"
-        assert result["candidate_san"] == {"g8h6": "Nh6"}
+        assert list(result["candidate_san"]) == position_evidence(fen)["permitted_candidate_uci"]
         assert result["stockfish"] is None
         assert len(requests) == 1
         # Question content cannot silently become part of a paid request.
@@ -96,8 +96,8 @@ def test_model_selection_does_not_leak_into_later_requests(mode, passes):
 
     def engine(review, position):
         assert mode == "move"
-        return {"fen": review.position.fen, "perspective": review.position.side_to_move,
-                "played_move": {"uci": review.played_move_uci}}
+        from backend.tests.test_move_coach import evidence
+        return evidence(review, position)
 
     app.include_router(create_coach_router(mock_coach_factory(upstream, engine=engine)))
     payload = {"fen": chess.STARTING_FEN} if mode == "position" else {"game_id": "test-game", "ply": 0 if mode == "move" else 2}

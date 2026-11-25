@@ -92,7 +92,7 @@ def test_mate_advice_is_separate_from_cp_formula(best, played, status, reason):
 def test_player_severity_cannot_change_position_classification_or_candidate_approval():
     position = position_evidence(chess.STARTING_FEN)
     snapshot = deepcopy(position)
-    # Sharpness and WDL candidate approval remain independent of player severity.
+    # Sharpness and candidate selection remain independent of the played move.
     prepared = prepare_position_evidence(position)
     assert prepared == snapshot
     for move in prepared["top_moves"]:
@@ -121,7 +121,7 @@ def test_saved_labels_are_recomputed_from_scores_without_mutating_stored_evidenc
 
     app = FastAPI()
     app.state.db = Mock()
-    app.state.db.coach_feedback_for_reviews.return_value = {(chess.STARTING_FEN,"e2e4"):saved}
+    app.state.db.coach_feedback_for_reviews.return_value = {(chess.STARTING_FEN,"e2e4", ""):saved}
     app.include_router(create_coach_router())
     with TestClient(app) as client:
         data = client.get('/api/coach/feedback', params={"fen":chess.STARTING_FEN,"played_move":"e2e4"}).json()

@@ -11,12 +11,14 @@ from .move_review import MoveReview
 from .position import CoachPosition
 from .responses import CoachAnalysis, ResponsesCoach, open_response_client
 from .settings import CoachSettings
+from .context import validate_previous_move
 
 
 class CoachInput(TypedDict):
     fen: str
     # Only this invocation's move, never a previous Studio run's input.
     played_move: NotRequired[Annotated[str | None, EphemeralValue(str | None)]]
+    previous_move: NotRequired[Annotated[dict | None, EphemeralValue(dict | None)]]
 
 
 class CoachState(CoachInput):
@@ -26,6 +28,7 @@ class CoachState(CoachInput):
     ascii_board: str
     side_to_move: str
     move_uci: str | None
+    previous_move_context: dict | None
     text: str
     response_id: str
     model: str
@@ -35,13 +38,14 @@ class CoachState(CoachInput):
     stockfish: dict[str, Any] | None
 
 
-async def _analyze_from_environment(fen: str, *, played_move: str | None = None) -> CoachAnalysis:
+async def _analyze_from_environment(fen: str, *, played_move: str | None = None,
+                                    previous_move: dict | None = None) -> CoachAnalysis:
     # Studio can load and inspect the graph without credentials. Validate before
     # creating a client, just as the web endpoint and CLI do.
     position = CoachPosition.from_fen(fen)
     settings = CoachSettings.from_env()
     async with open_response_client(settings) as client:
-        return await ResponsesCoach(client, settings).analyze(position.fen, played_move=played_move)
+        return await ResponsesCoach(client, settings).analyze(position.fen, played_move=played_move, previous_move=previous_move)
 
 
 def build_coach_graph(
@@ -55,7 +59,8 @@ def build_coach_graph(
         move = state.get("played_move")
         if move is not None:
             move = MoveReview.from_fen(position.fen, move).played_move_uci
-        result = await analyze(position.fen, played_move=move)
+        previous = validate_previous_move(position.fen, state.get("previous_move"))
+        result = await analyze(position.fen, played_move=move, **({"previous_move": previous} if previous else {}))
         return {
             "fen": result.position.fen,
             "ascii_board": result.position.ascii_board,
@@ -65,6 +70,7 @@ def build_coach_graph(
             "model": result.model,
             "usage": result.usage,
             "move_uci": move,
+            "previous_move_context": previous,
             "position_analysis": result.as_pass(), "move_analysis": None, "stockfish": result.stockfish,
         }
 

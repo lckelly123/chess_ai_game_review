@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from .coach.move_review import MoveReview
+from .chess_games import replay
+from .coach.context import context_key, previous_move_from_replay
 from .coach.move_quality import analyze_played_move
 from .coach.position_classification import analyze_position
 from .coach.stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
@@ -39,7 +41,7 @@ def saved_evidence(db, game_id: str, pgn: str, ply: int, original: MoveReview):
         evidence = saved.get("position_evidence")
         if evidence and evidence.get("fen") == original.position.fen and evidence.get("top_moves"):
             return evidence
-    key = (original.position.fen, original.played_move_uci)
+    key = (original.position.fen, original.played_move_uci, context_key(previous_move_from_replay(replay(pgn), ply)))
     saved = db.coach_feedback_for_reviews([key]).get(key) or {}
     evidence = saved.get("position_evidence")
     if evidence and evidence.get("fen") == original.position.fen and evidence.get("top_moves"):
