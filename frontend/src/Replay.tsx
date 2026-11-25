@@ -2,6 +2,9 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Info, LoaderCircle, Pause, Play } from 'lucide-react';
 import Board from './Board';
 import CoachCards from './CoachCards';
+import PracticeCard from './PracticeCard';
+import { needsPractice } from './reviewPractice';
+import { useReviewPractice } from './useReviewPractice';
 import type { CoachResponse, GameAnalysis, GameDetail } from './types';
 import { api, perspective, readStored, store } from './types';
 import { AUTOPLAY_TURN_MS, BETWEEN_TURNS_MS, playerTurnStops, replayNavigation, restoreReplay } from './replayNavigation';
@@ -37,15 +40,18 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const coachResponse = coachResponses[String(ply)];
   const prepared = analysis?.moves[String(ply)];
   const engineReview = prepared?.fen === position.fen && prepared.played_move === game.moves[ply]?.uci ? prepared : undefined;
+  const nextMove = game.moves[ply];
+  const practiceEligible = needsPractice(nextMove, color, position.fen, engineReview, coachResponse);
+  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, transition !== null);
+  const hideReview = practice.active || !!practice.shownMove;
   const markers = errorMarkers(game.moves, game.positions, stops, analysis?.moves ?? {}, color);
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null);
   const boardColumn = useRef<HTMLDivElement>(null);
-  const candidate = coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, transition !== null)
+  const candidate = hideReview ? undefined : coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, transition !== null)
     : visibleEngineCandidate(candidateSelection, engineReview, position.fen, transition !== null);
   const candidateName = candidate ? coachResponse?.candidate_san?.[candidate.uci]
     ?? (coachResponse?.stockfish?.played_move.uci === candidate.uci ? coachResponse.stockfish.played_move.san
       : engineMoves(engineReview).find(move => move.uci === candidate.uci)?.san ?? candidate.uci) : undefined;
-  const nextMove = game.moves[ply];
   const currentCoachError = coachError?.ply === ply ? coachError.message : null;
   const savedAt = coachResponse ? new Date(coachResponse.created_at).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -59,13 +65,18 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       : '';
   const positionLabel = ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].number}${game.moves[ply - 1].color === 'white' ? '.' : '…'} ${game.moves[ply - 1].san}`;
   const coachDetails = coachResponse ? `${positionLabel} · ${coachModelLabel(coachResponse.model)} · Saved ${savedAt}` : positionLabel;
-  const turn = position.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
+  const shownPosition = !transition && practice.shownMove ? practice.shownMove.position : boardPosition;
+  const turn = shownPosition.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
   const seek = (value: number) => dispatch({ type: 'seek', ply: value });
   const step = (direction: 1 | -1) => dispatch({ type: 'step', direction, animate: !reducedMotion });
 
   useEffect(() => { setCandidateSelection(null); }, [ply, transition, coachResponse?.response_id]);
+  useEffect(() => { if (practice.active) dispatch({type: 'pause'}); }, [practice.active, ply]);
+  const originalAnnotation = practice.active && !transition && !practice.shownMove ? {
+    uci: nextMove.uci, reason: '', highlight_squares: [nextMove.uci.slice(0, 2), nextMove.uci.slice(2, 4)] as [string, string],
+  } : undefined;
 
   function selectCandidate(uci: string) {
     if ((!coachResponse && !engineReview) || transition) return;
@@ -122,7 +133,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
 
   async function runCoach() {
     // Guard synchronously against double-clicks before React updates the button.
-    if (coachRequest.current || transition) return;
+    if (coachRequest.current || transition || hideReview) return;
     const fen = position.fen;
     const requestedPly = ply;
     const playedMove = nextMove?.uci ?? null;
@@ -147,27 +158,27 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     }
   }
   useEffect(() => {
-    if (!playing || transition) return;
+    if (!playing || transition || practice.active) return;
     if (ply >= game.moves.length) { dispatch({ type: 'pause' }); return; }
     const timer = window.setTimeout(() => dispatch({ type: 'step', direction: 1, animate: !reducedMotion, automatic: true }), AUTOPLAY_TURN_MS);
     return () => window.clearTimeout(timer);
-  }, [playing, ply, transition, reducedMotion, game.moves.length]);
+  }, [playing, ply, transition, reducedMotion, game.moves.length, practice.active]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
-      if (target.closest('input, textarea, select, .coach-cards, [contenteditable="true"]') || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (target.closest('input, textarea, select, .coach-cards, .board, .promotion-choice, [contenteditable="true"]') || event.ctrlKey || event.altKey || event.metaKey) return;
       // Space keeps its native action on focused controls. Navigation keys still
       // work after using a replay button, without interrupting form controls.
       if (event.key === ' ' && target.closest('button, a')) return;
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', ' '].includes(event.key)) return;
       event.preventDefault();
-      if (event.key === ' ') dispatch({ type: 'toggle-play' });
+      if (event.key === ' ') { if (!practice.active) dispatch({ type: 'toggle-play' }); }
       else if (event.key === 'Home' || event.key === 'End') dispatch({ type: 'seek', ply: event.key === 'Home' ? 0 : game.moves.length });
       else dispatch({ type: 'step', direction: event.key === 'ArrowRight' ? 1 : -1, animate: !reducedMotion });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [reducedMotion, game.moves.length]);
+  }, [reducedMotion, game.moves.length, practice.active]);
 
   const playerBar = (color: 'white' | 'black') => <div className="player-bar">
     <span className={`color-token ${color}`} aria-label={`${color} pieces`}/>
@@ -182,14 +193,18 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     <div className="replay-columns">
       <div className="board-column" ref={boardColumn}>
         {playerBar(top)}
-        <Board position={boardPosition} flipped={flipped} candidate={candidate} candidateName={candidateName}/>
+        <Board position={shownPosition} flipped={flipped}
+          candidate={originalAnnotation ?? candidate} candidateName={originalAnnotation ? nextMove.san : candidateName}
+          annotationLabel={originalAnnotation ? 'Your recorded move' : 'Candidate'}
+          legalMoves={practice.legalMoves.map(move => move.uci)} onMove={practice.active ? uci => { dispatch({type: 'pause'}); void practice.attemptMove(uci); } : undefined}
+          inputDisabled={practice.inputDisabled}/>
         {playerBar(bottom)}
         <div className="board-controls">
           <button className="icon-button" onClick={() => setFlipped(f => !f)} title="Flip board" aria-label="Flip board"><ArrowDownUp size={19}/></button>
           <div className="transport">
             <button className="icon-button" disabled={controlPly === 0} onClick={() => seek(0)} title="First position (Home)" aria-label="First position"><ChevronsLeft size={21}/></button>
             <button className="icon-button" disabled={controlPly === 0} onClick={() => step(-1)} title="Previous turn (left arrow)" aria-label="Previous turn"><ChevronLeft size={22}/></button>
-            <button className="play-button" onClick={() => dispatch({ type: 'toggle-play' })} title="Autoplay your turns (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
+            <button className="play-button" disabled={practice.active} onClick={() => dispatch({ type: 'toggle-play' })} title="Autoplay your turns (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
             <button className="icon-button" disabled={controlPly === game.moves.length} onClick={() => step(1)} title="Next turn (right arrow)" aria-label="Next turn"><ChevronRight size={22}/></button>
             <button className="icon-button" disabled={controlPly === game.moves.length} onClick={() => seek(game.moves.length)} title="Final position (End)" aria-label="Final position"><ChevronsRight size={21}/></button>
           </div>
@@ -206,7 +221,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
             </button>)}
           </div>}
         </div>
-        <div className="visually-hidden" aria-live="polite">{ply === game.moves.length ? `Final position · ${game.result}` : `${turn} to move${position.check_square ? ' · Check' : ''}`}</div>
+        <div className="visually-hidden" aria-live="polite">{ply === game.moves.length ? `Final position · ${game.result}` : `${practice.shownMove ? `Your attempt ${practice.shownMove.san} · ` : ''}${turn} to move${shownPosition.check_square ? ' · Check' : ''}`}</div>
       </div>
       <aside className="coach-panel" aria-labelledby="coach-title">
         <div className="coach-heading">
@@ -215,19 +230,20 @@ export default function Replay({ game, username }: { game: GameDetail; username:
               <Info size={14} aria-hidden="true"/><span className="coach-tooltip" aria-hidden="true">{coachDetails}</span>
             </span>
           </div>
-          <div className="coach-actions">
+          {!hideReview && <div className="coach-actions">
             <select className="coach-model" aria-label="OpenAI model" value={coachModel} onChange={event => setCoachModel(event.target.value as CoachModel)} disabled={pendingPly !== null}>
               {COACH_MODELS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
             <button className="primary-button coach-run" onClick={runCoach} disabled={pendingPly !== null || transition !== null}>{pendingPly !== null ? <><LoaderCircle size={15} className="spin"/> Thinking…</> : <><Play size={14}/> Run coach</>}</button>
-          </div>
+          </div>}
         </div>
         <p className="coach-status" id="coach-status" role="status">{coachStatus}</p>
         {analysis && analyzing && <p className="engine-analysis-progress" role="status">{analysisProgress(analysis)}</p>}
         {(analysisError || analysis?.error) && <p className="coach-error" role="alert">{analysisError || analysis?.error} Return to the library to resume.</p>}
         {currentCoachError && <p className="coach-error" role="alert">{currentCoachError}</p>}
         <div className="coach-result" aria-busy={pendingPly === ply}>
-          <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}/>
+          {practiceEligible && <PracticeCard practice={practice} original={nextMove} previous={game.moves[ply - 1]}/>}
+          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}/>}
         </div>
       </aside>
     </div>
