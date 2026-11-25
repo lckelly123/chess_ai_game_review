@@ -49,6 +49,21 @@ test('the original move opens its own assessment', () => {
   assert.doesNotMatch(html, /Unique candidate detail|Engine continuation/);
 });
 
+test('saved tactic findings coexist with staged move details and continuation playback', () => {
+  const tactic_classification = {version: 1, fen: response.fen, played_move: response.played_move,
+    status: 'classified', lines: [{direction: 'missed', motifs: ['fork'], coverage: 'bounded'},
+      {direction: 'allowed', motifs: ['hanging_piece'], coverage: 'bounded'}]};
+  const engineReview = {fen: response.fen, played_move: response.played_move, stockfish: {tactic_classification}};
+  for (const selectedUci of [undefined, 'e2e4']) {
+    const html = render({engineReview, selectedUci});
+    assert.match(html, /Tactic classification:/);
+    assert.match(html, /Missed: fork · Allowed: hanging piece/);
+    assert.equal(html.includes('Unique candidate detail'), !!selectedUci);
+    assert.equal(html.includes('Engine continuation'), !!selectedUci);
+    assert.doesNotMatch(html, /Unique original move assessment/);
+  }
+});
+
 test('legacy thesis stays readable with collapsed move explanations', () => {
   const html = render({response: {...response, teaching: {...response.teaching, position_overview: null,
     position_explanation: undefined, positional_thesis: 'A saved thesis.'}}});

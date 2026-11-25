@@ -11,6 +11,7 @@ from .move_review import MoveReview
 from .player_move_quality import PLAYER_QUALITY_POLICY, assess_player_move
 from .sharpness import with_position_sharpness
 from .stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError, StockfishUnavailableError, _candidate
+from ..tactics import with_tactic_classification
 
 # This is the candidate-approval policy, separate from player-move severity. A large
 # CP gap alone must not turn two winning continuations into a serious mistake.
@@ -84,8 +85,9 @@ def _played_candidate(board: chess.Board, info: dict) -> dict:
     return played
 
 
-def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishSettings | None = None) -> dict:
-    """Reuse the position search, or evaluate just the missing root with WDL."""
+def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishSettings | None = None, *,
+                        include_tactics: bool = True) -> dict:
+    """Grade the move; saved reviews also classify tactics, live practice opts out."""
     review = MoveReview.from_fen(review.position.fen, review.played_move_uci)
     if evidence.get("fen") != review.position.fen or evidence.get("perspective") != review.position.side_to_move:
         raise StockfishAnalysisError("Stockfish evidence did not match the selected position.")
@@ -119,6 +121,7 @@ def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishS
     if played["uci"] != review.played_move_uci:
         raise StockfishAnalysisError("Stockfish evaluated a different played move.")
     played = {**played, "quality": assess_player_move(candidates[0], played)}
-    return {"fen": review.position.fen, "engine": engine_name, "perspective": review.position.side_to_move,
+    result = {"fen": review.position.fen, "engine": engine_name, "perspective": review.position.side_to_move,
             "top_moves": candidates, "played_move": played, "played_move_in_top": in_top,
             "move_quality": played["quality"], "move_quality_policy": PLAYER_QUALITY_POLICY.copy()}
+    return with_tactic_classification(review.position.fen, review.played_move_uci, result, settings=settings) if include_tactics else result
