@@ -20,6 +20,7 @@ from .database import Database
 from .importer import ChessComImporter
 from .game_analysis import GameAnalysisService, analyze_game_move, create_game_analysis_router
 from .lessons import lesson_analytics
+from .practice import create_practice_router
 from .migrate_sqlite import migrate_sqlite
 from .multi_game.service import MultiGameService, create_multi_game_router
 
@@ -67,6 +68,7 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
     app.include_router(create_coach_router(coach_factory, request_lock=coach_lock))
     app.include_router(create_preparation_router())
     app.include_router(create_game_analysis_router())
+    app.include_router(create_practice_router())
     app.include_router(create_multi_game_router())
 
     @app.exception_handler(psycopg.Error)
