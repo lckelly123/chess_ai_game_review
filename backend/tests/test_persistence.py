@@ -104,7 +104,7 @@ def test_feedback_restores_after_restart_and_is_position_specific(test_db_url):
         assert client.get('/api/coach/feedback', params={"fen": fen}).json() is None
         saved = client.post('/api/coach/analyze', json={"fen": fen}).json()
         assert saved["created_at"] and saved["text"]
-        assert set(saved["teaching"]) == {"positional_thesis", "candidate_moves", "move_evaluation"}
+        assert set(saved["teaching"]) == {"position_overview", "position_explanation", "candidate_moves", "move_evaluation"}
         assert "Needs of the Position" not in saved["text"]
         with db.connection() as conn:
             structured = conn.execute("SELECT position_analysis -> 'structured' AS teaching FROM coach_feedback").fetchone()["teaching"]

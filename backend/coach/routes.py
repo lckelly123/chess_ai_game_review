@@ -19,6 +19,7 @@ from .service import CoachResponseError, open_coach
 from .settings import CoachConfigurationError, CoachModel, CoachSettings, DEFAULT_COACH_MODEL
 from .stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
 from .teaching import TeachingAnalysis
+from .lines import move_lines
 from .classification import CLASSIFICATION_VERSION
 from .player_move_quality import with_player_move_quality
 from .sharpness import SHARPNESS_VERSION, with_position_sharpness
@@ -78,6 +79,21 @@ class AnalyzePositionResponse(BaseModel):
     @property
     def candidate_san(self) -> dict[str, str]:
         return self.teaching.candidate_san(self.fen) if self.teaching is not None else {}
+
+    @computed_field
+    @property
+    def move_lines(self) -> dict:
+        allowed = set(self.candidate_san)
+        if self.played_move:
+            allowed.add(self.played_move)
+        stockfish = self.stockfish or {}
+        moves = {move["uci"]: move for move in stockfish.get("top_moves", []) if move.get("uci") in allowed}
+        moves.update({move["uci"]: move for move in (self.position_evidence or {}).get("top_moves", [])
+                      if move.get("uci") in allowed})
+        played = stockfish.get("played_move") or {}
+        if played.get("uci") == self.played_move and self.played_move:
+            moves[self.played_move] = played
+        return move_lines(self.fen, moves)
 
 
 def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRouter:

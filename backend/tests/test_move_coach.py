@@ -80,7 +80,7 @@ def test_one_request_contains_position_and_played_move_and_never_runs_second_ada
     position_payload = json.loads(message.split("Stockfish position evidence:\n", 1)[1].split("\n\n", 1)[0])
     assert len(position_payload["engine_verified_moves"]) == 5
     assert "played_move" not in position_payload
-    move_payload = json.loads(message.split("Player-move information (use only for move_evaluation):\n", 1)[1].split("\n\n", 1)[0])
+    move_payload = json.loads(message.split("Player-move information", 1)[1].split(":\n", 1)[1].split("\n\n", 1)[0])
     assert move_payload["played_move"]["uci"] == "e7e5"
     assert move_payload == result.stockfish
     assert body["model"] == model and body["reasoning"] == {"effort": "medium"}

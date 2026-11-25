@@ -2,8 +2,8 @@ import type { Move } from './types';
 import { qualityLabels } from './engineReview';
 import type { useReviewPractice } from './useReviewPractice';
 
-export default function PracticeCard({ practice, original, previous }: {
-  practice: ReturnType<typeof useReviewPractice>; original: Move; previous?: Move;
+export default function PracticeCard({ practice, original, previous, overview }: {
+  practice: ReturnType<typeof useReviewPractice>; original: Move; previous?: Move; overview?: string | null;
 }) {
   const last = practice.attempts.at(-1);
   const message = practice.checking ? 'Checking your move…'
@@ -15,6 +15,7 @@ export default function PracticeCard({ practice, original, previous }: {
   return <section className="practice-card" aria-label="Find a good move">
     <h3>{practice.complete ? 'Exercise complete' : 'Find a good move'}</h3>
     <p>{previous ? <>Opponent played <strong>{previous.san}</strong>. </> : 'Starting position. '}You played <strong>{original.san}</strong>.</p>
+    {overview && <p className="practice-overview">{overview}</p>}
     {!practice.complete && <p>Find any move better than an inaccuracy. It doesn’t have to be the best move.</p>}
     <p className="practice-feedback" role="status">{practice.loading && !practice.error ? 'Loading legal moves…' : message}</p>
     {practice.error && <p className="coach-error" role="alert">{practice.error} {practice.loading && <button type="button" className="text-button" onClick={practice.retry}>Retry</button>}</p>}

@@ -98,7 +98,8 @@ def _request_for(position: CoachPosition, settings: CoachSettings, evidence: dic
                 " For fewer_than_five_legal_moves or insufficient_engine_evidence, explain the position using the verified moves "
                 "without assigning a sharpness tag or inventing missing candidates. Position sharpness uses capped centipawn gaps, "
                 "not WDL expected-score gaps; a high score can occur when multiple moves still win."
-                "\n\nPlayer-move information (use only for move_evaluation):\n" + json.dumps(move_evidence, ensure_ascii=False)
+                "\n\nPlayer-move information (use for move_evaluation and an optional contrast in position_explanation; "
+                "never change position_overview or candidate_moves):\n" + json.dumps(move_evidence, ensure_ascii=False)
                 + "\n\nThe authoritative severity described in the system prompt is player-move information.move_quality.status. "
                 "Use that existing field; candidate quality uses the separate position-level policy."
                 + "\n\nWhen player-move information is null, set move_evaluation to plan_alignment unclear, "
@@ -190,6 +191,7 @@ class ResponsesCoach:
             try:
                 teaching = TeachingOutput.model_validate_json(response.output_text).validate_position(
                     position.fen, permitted_moves=evidence["permitted_candidate_uci"])
+                teaching.validate_references(played_move=move_evidence["played_move"]["uci"] if move_evidence else None)
                 teaching.validate_move_evaluation(played_move=move_evidence["played_move"]["uci"] if move_evidence else None,
                                                   evidence=move_evidence)
                 teaching = teaching.as_analysis(position.fen,

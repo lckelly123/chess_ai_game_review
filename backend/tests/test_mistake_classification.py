@@ -247,7 +247,7 @@ def test_legacy_labels_remain_readable_but_are_not_reinterpreted(category, subca
         TeachingOutput.model_validate(data)
     restored = TeachingAnalysis.model_validate(data)
     assert restored.move_evaluation.mistake_classification is None
-    assert restored.positional_thesis == data["positional_thesis"]
+    assert restored.position_explanation == data["position_explanation"]
     assert restored.move_evaluation.explanation == data["move_evaluation"]["explanation"]
 
 

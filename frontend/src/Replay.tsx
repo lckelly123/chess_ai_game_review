@@ -46,6 +46,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const hideReview = practice.active || !!practice.shownMove;
   const markers = errorMarkers(game.moves, game.positions, stops, analysis?.moves ?? {}, color);
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null);
+  const [lineStep, setLineStep] = useState<{uci: string; ply: number} | null>(null);
   const boardColumn = useRef<HTMLDivElement>(null);
   const candidate = hideReview ? undefined : coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, transition !== null)
     : visibleEngineCandidate(candidateSelection, engineReview, position.fen, transition !== null);
@@ -65,26 +66,26 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       : '';
   const positionLabel = ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].number}${game.moves[ply - 1].color === 'white' ? '.' : '…'} ${game.moves[ply - 1].san}`;
   const coachDetails = coachResponse ? `${positionLabel} · ${coachModelLabel(coachResponse.model)} · Saved ${savedAt}` : positionLabel;
-  const shownPosition = !transition && practice.shownMove ? practice.shownMove.position : boardPosition;
+  const line = candidate ? coachResponse?.move_lines?.[candidate.uci] : undefined;
+  const linePly = candidate && lineStep?.uci === candidate.uci && line?.positions[lineStep.ply] ? lineStep.ply : 0;
+  const shownPosition = !transition && practice.shownMove ? practice.shownMove.position : line?.positions[linePly] && linePly > 0 ? line.positions[linePly] : boardPosition;
   const turn = shownPosition.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
   const seek = (value: number) => dispatch({ type: 'seek', ply: value });
   const step = (direction: 1 | -1) => dispatch({ type: 'step', direction, animate: !reducedMotion });
 
-  useEffect(() => { setCandidateSelection(null); }, [ply, transition, coachResponse?.response_id]);
+  useEffect(() => { setCandidateSelection(null); setLineStep(null); }, [ply, transition, coachResponse?.response_id]);
   useEffect(() => { if (practice.active) dispatch({type: 'pause'}); }, [practice.active, ply]);
   const originalAnnotation = practice.active && !transition && !practice.shownMove ? {
     uci: nextMove.uci, reason: '', highlight_squares: [nextMove.uci.slice(0, 2), nextMove.uci.slice(2, 4)] as [string, string],
   } : undefined;
 
   function selectCandidate(uci: string) {
-    if ((!coachResponse && !engineReview) || transition) return;
+    if ((!coachResponse && !engineReview) || transition || hideReview) return;
+    setLineStep(null);
     dispatch({ type: 'pause' });
     setCandidateSelection(candidate?.uci === uci ? null : { fen: position.fen, responseId: coachResponse?.response_id ?? engineSelectionId(engineReview!), uci });
-    if (candidate?.uci !== uci && boardColumn.current && boardColumn.current.getBoundingClientRect().bottom < 0) {
-      boardColumn.current.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'start' });
-    }
   }
 
   const analyzing = analysisActive(analysis);
@@ -194,7 +195,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       <div className="board-column" ref={boardColumn}>
         {playerBar(top)}
         <Board position={shownPosition} flipped={flipped}
-          candidate={originalAnnotation ?? candidate} candidateName={originalAnnotation ? nextMove.san : candidateName}
+          candidate={originalAnnotation ?? (linePly === 0 ? candidate : undefined)} candidateName={originalAnnotation ? nextMove.san : candidateName}
           annotationLabel={originalAnnotation ? 'Your recorded move' : 'Candidate'}
           legalMoves={practice.legalMoves.map(move => move.uci)} onMove={practice.active ? uci => { dispatch({type: 'pause'}); void practice.attemptMove(uci); } : undefined}
           inputDisabled={practice.inputDisabled}/>
@@ -242,8 +243,13 @@ export default function Replay({ game, username }: { game: GameDetail; username:
         {(analysisError || analysis?.error) && <p className="coach-error" role="alert">{analysisError || analysis?.error} Return to the library to resume.</p>}
         {currentCoachError && <p className="coach-error" role="alert">{currentCoachError}</p>}
         <div className="coach-result" aria-busy={pendingPly === ply}>
-          {practiceEligible && <PracticeCard practice={practice} original={nextMove} previous={game.moves[ply - 1]}/>}
-          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}/>}
+          {practiceEligible && <PracticeCard practice={practice} original={nextMove} previous={game.moves[ply - 1]} overview={coachResponse?.teaching?.position_overview}/>}
+          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}
+            linePly={linePly} onSelectLinePly={step => {
+              if (!candidate || !line?.positions[step]) return;
+              dispatch({type: 'pause'}); setLineStep({uci: candidate.uci, ply: step});
+              if (boardColumn.current && boardColumn.current.getBoundingClientRect().bottom < 0) boardColumn.current.scrollIntoView({behavior: reducedMotion ? 'instant' : 'smooth', block: 'start'});
+            }}/>}
         </div>
       </aside>
     </div>

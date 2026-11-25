@@ -220,6 +220,19 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .decision-tag.critical { background: var(--negative-surface); color: var(--negative); }
 .decision-tag .coach-tooltip { left: 0; right: auto; }
 .teaching-paragraph { margin: 0; }
+.inline-move { display: inline; padding: 1px 3px; border-radius: 4px; background: transparent; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.inline-move:hover:not(:disabled), .inline-move[aria-expanded="true"] { background: var(--selected); color: var(--accent-hover); }
+.inline-move:disabled { opacity: .55; cursor: wait; }
+.move-detail { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 20px; }
+.move-detail h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 17px; }
+.move-detail p { margin: 10px 0 0; }
+.engine-line { margin-top: 16px; }
+.engine-line > p { color: var(--muted); font-size: 12px; }
+.line-moves { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.line-moves button { min-width: 36px; min-height: 36px; padding: 6px 8px; background: transparent; border-radius: 4px; color: var(--accent); font-size: 14px; }
+.line-moves button:hover:not(:disabled), .line-moves button[aria-pressed="true"] { background: var(--selected); color: var(--ink); }
+.line-moves button:disabled { opacity: .55; cursor: wait; }
+.practice-overview { max-width: 72ch; color: var(--ink); }
 .candidate-moves { margin-top: 12px; }
 .candidate-row { border-bottom: 1px solid var(--line); }
 .candidate-row:last-child { border-bottom: 0; }
