@@ -61,6 +61,11 @@ typography:
     fontSize: "16px"
     fontWeight: 400
     lineHeight: 1.65
+  coach-body:
+    fontFamily: "'DM Sans Variable', sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.6
   working:
     fontFamily: "'DM Sans Variable', sans-serif"
     fontSize: "13px"
@@ -138,14 +143,14 @@ components:
   coach-card:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.body}"
-    typography: "{typography.body}"
+    typography: "{typography.coach-body}"
     rounded: "{rounded.panel}"
-    padding: "24px"
+    padding: "16px"
   candidate-selected:
     backgroundColor: "{colors.selected-row}"
     textColor: "{colors.ink}"
     rounded: "{rounded.control}"
-    padding: "14px 12px"
+    padding: "12px 8px"
   result-win:
     backgroundColor: "{colors.win-surface}"
     textColor: "{colors.win-ink}"
@@ -194,7 +199,7 @@ This records the implemented import and replay UI and the user's approved replac
 - Dark, flat surfaces separated by fine rules and tonal changes.
 - An Icy Sea textured board with Classic black-and-white pieces, matching the supplied reference.
 - Compact game rows and precise move selection.
-- DM Sans throughout, with spacious coaching prose and compact working controls.
+- DM Sans throughout, with compact coaching prose and working controls.
 
 ## Colors
 
@@ -220,7 +225,7 @@ Lessons segmented bars and severity dots use warning amber for Inaccuracy, warm 
 
 Locally bundled DM Sans Variable supplies all headings, controls, names, metadata, and notation. The game-title separator uses the same family at regular weight. Newsreader is no longer imported.
 
-The library title is (38px), saved-games heading (19px), opponent names (14px), and working controls (12-14px). At narrow widths the library title becomes (32px) and game titles (23px). Below (370px), the library title becomes (29px). Coach prose uses (16px) text at (1.65) line height with a maximum line length of (72ch); section headings use (17px). Candidate explanations use (14px), SAN (16px), and score chips (13px). Counts, dates, and evaluations use tabular numerals where applicable.
+The library title is (38px), saved-games heading (19px), opponent names (14px), and working controls (12-14px). At narrow widths the library title becomes (32px) and game titles (23px). Below (370px), the library title becomes (29px). Coach prose uses (14px) text at (1.6) line height with a maximum line length of (72ch); section headings use (15px) and the Coach title (16px). Candidate explanations use (13px), SAN (14px), and score chips (12px). Counts, dates, and evaluations use tabular numerals where applicable.
 
 Lessons reuses the display title, with its own heading and total roles from the frontmatter. Topic labels use (16px) at (550) weight, while supporting descriptions and matching counts use (13px). Overview totals and all breakdown counts use tabular numerals. Mobile size changes are recorded in Layout.
 
@@ -234,15 +239,14 @@ Lessons shares the library container. Its title and player/refresh controls sit 
 
 The Lessons heading includes a secondary Multi-game analysis link to `#lessons/multi-game`. This screen shares the library container and places Back to lessons above the title and primary Run analysis action. An inline player/refresh group and wrapping saved-sample counts sit above a fine rule. Coach responses begins after (32px), with a labeled saved-response selector opposite its heading. The report follows as unboxed prose; major sections have (36px) separation, (28px) top padding, and a fine divider.
 
-Analyze opens a hash route containing the game ID and player. The dedicated replay screen has a maximum outer width of (1680px), a Back to games link, game heading, board, and Coach panel. The board caps at (620px). Board and Coach share the width in a 1:1.45 ratio with a (32px) gap. Inside Coach, one outlined response panel spans the available width. Position teaching, the original move control, and selected move detail share one card; the existing exercise card precedes it when practice is available. The panel grows with its content and the page scrolls naturally. Browser navigation and direct replay links work. Returning within the session restores filters, list/page scrolling, and focus to the originating Analyze link. Replay position remains saved per game.
+Analyze opens a hash route containing the game ID and player. The dedicated replay screen has a maximum outer width of (2000px), a Back to games link, game heading, board, and Coach panel. The board caps at (840px), with a (400px) Coach sidebar and a (32px) gap. A flexible empty leading track balances the sidebar track on wide displays, centering the board itself in the viewport. As space narrows, that leading track yields first, then the board scales to the remaining width. The game heading and Back to games link follow the board's left edge. Inside Coach, one outlined response panel spans the available width. Position teaching, the original move control, and selected move detail share one card; the existing exercise card precedes it when practice is available. The panel grows with its content and the page scrolls naturally. Browser navigation and direct replay links work. Returning within the session restores filters, list/page scrolling, and focus to the originating Analyze link. Replay position remains saved per game.
 
-- At (1200px) and below, the board remains beside the single Coach response panel in a 1:1.35 ratio.
 - At (960px) and below, page side padding becomes (24px), game columns tighten, and the replay gap becomes (24px).
-- At (900px) and below, Coach moves below the centered board; the combined response remains one panel.
+- At (900px) and below, Coach moves below the centered board; both columns share an (840px) maximum width and the combined response remains one panel.
 - At (700px) and below, the header wraps into two rows with a minimum height of (108px) and padding of (12px 18px 0). The full-width second row keeps both navigation links visible with targets at least (44px) tall. Library side padding becomes (18px), and import controls wrap under the username. Filters sit below search. Game rows place their Analyze link on the right with date beneath it. The list caps at (520px).
 - At (700px) and below, Lessons stacks its heading and controls with a (16px) gap, uses a (32px) title, and stacks the coverage summary. Overview buttons retain two columns with a (12px) gap and (18px 16px) padding; their headings become (18px) and totals (32px). Topic summaries use (16px 8px) padding and filters use (13px) text. At (440px) and below, overview buttons and loading placeholders stack into one column, card padding becomes (18px), and the explorer heading may wrap. Filter text becomes (12px) with (4px) grid gaps, preserving two tactical choices and four full severity labels; controls retain a minimum (44px) height. Severity breakdowns and legends wrap naturally.
 - At (700px) and below, Multi-game analysis stacks its heading and action, makes the saved-response selector full width beneath Coach responses, and reduces report prose to (15px). At (440px) and below, its title becomes (30px) and Run analysis fills the available width. Player selection and refresh remain an inline group while sample counts wrap; report text and metadata wrap without horizontal overflow.
-- At (700px) and below, replay uses one column. Replay side padding is (16px); the response body uses (18px) padding. Candidate rows and stronger-move links retain touch targets at least (44px) tall.
+- At (700px) and below, replay uses one column. Replay side padding and response body padding are (16px). Candidate rows and stronger-move links retain touch targets at least (44px) tall.
 - At (370px) and below, spacing and replay controls tighten and response padding becomes (14px). The body has no fixed minimum width, so (320px) viewports accommodate the scrollbar without horizontal overflow.
 
 ## Elevation & Depth
@@ -297,7 +301,7 @@ Flip, first, previous turn, play/pause, next turn, and final controls sit below 
 
 The slider selects these same decision points while the counter retains the actual PGN half-move and a visually hidden live region announces the side to move or final position. Older bookmarks on an opponent's turn restore to the preceding player decision. Coach content and the announced position remain at the previous settled position during the brief board preview, and Run coach is disabled until it finishes. Rapid clicks advance from the pending destination; obsolete transition timers cannot overwrite newer input. Autoplay rests for (850ms) at each decision, then follows the same step sequence. Manual navigation pauses it. Pausing during a preview completes that pair before resting. Reduced-motion preference skips the intermediate board. The replay omits the keyboard hint, last-move caption, date/time-control subtitle, result badge, and Replay & explore label.
 
-The Coach response is one spacious outlined card without tabs. The toolbar sits directly above it with Coach, an info icon for saved response details, the model selector, and Run coach. Idle saved-status text and the redundant Coach response label are omitted; active requests and failures still show status messages. The card starts near the top of the board.
+The Coach response is one compact outlined card without tabs. The toolbar sits directly above it with Coach, an info icon for saved response details, the model selector, and Run coach; its groups wrap when space is limited. Idle saved-status text and the redundant Coach response label are omitted; active requests and failures still show status messages. The card starts near the top of the board.
 
 An engine-only result renders just the Moves section in the existing coaching card. It contains the first three Stockfish choices plus a separate player row only when necessary, with scores and the player's severity but no generated explanations. Board selection derives arrows and highlights from UCI. Coach feedback adds the position explanation without a separate needs or plan section. Partial analysis updates do not reset the replay position or board selection.
 
@@ -315,7 +319,7 @@ Move rows place SAN and optional Player move and quality indicators on the left,
 
 The selected row adds a blue (1px) outline and dark blue fill; keyboard focus remains a distinct (2px) outline. Selecting an inline move or row pauses autoplay, opens its detail, and shows two highlighted squares and an arrow on the root position without playing the move. Selecting a saved engine step changes the board to that continuation position; Position restores the root and its annotations. Selecting the same move again collapses its detail and clears its annotations; navigation, new responses, and transient replay states reset selection. The separate explanation and Clear strip below the board is omitted. The board layout and controls retain their established styling. Missing practice hints or older feedback invite a rerun. No second-node essay is displayed.
 
-The card uses (24px) padding, (16px) body text, 1.65 line height, and (17px) headings. Consecutive sections have (24px) top margin, (20px) top padding, and a fine divider. Move rows use (14px 12px) padding and (14px) explanations, with fine horizontal rules. At mobile widths the card padding becomes (18px), then (14px) below (370px); heading tags and move labels wrap naturally, and coarse-pointer comparison links remain at least (44px) tall. Repeated engine-source text and Show on board labels are replaced by row icons. Raw HTML and embedded Markdown images remain excluded.
+The card uses (16px) padding, (14px) body text, 1.6 line height, and (15px) headings. The practice card uses the same padding, body type, and heading scale; selected move details also use (15px) headings. Consecutive sections and selected move details have (20px) top margin, (16px) top padding, and a fine divider. Move rows use (12px 8px) padding and (13px) explanations, with fine horizontal rules. Below (370px), both cards use (14px) padding; heading tags and move labels wrap naturally, and coarse-pointer comparison links remain at least (44px) tall. Repeated engine-source text and Show on board labels are replaced by row icons. Raw HTML and embedded Markdown images remain excluded.
 
 The dropdown offers GPT-6 Astra and GPT-6.1 Terra, defaults to Astra, remembers the selection, and is disabled during a run. Both models use the same single-node, single-call flow. The info icon reveals the saved model, position, and timestamp on hover or focus. Changing model applies to the next run. Reruns retain the prior answer until success; failures appear inline. The question field and its draft persistence have been removed.
 
