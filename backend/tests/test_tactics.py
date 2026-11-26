@@ -135,15 +135,18 @@ def test_extension_failure_retains_observed_findings_as_partial():
                for line in result["lines"])
 
 
-def test_played_move_analysis_attaches_classification_before_persistence(monkeypatch):
+def test_played_move_analysis_grades_without_motif_classification_or_extra_searches(monkeypatch):
     from backend.coach.move_quality import analyze_played_move
     source = evidence()
     position = {**source, "engine": "Fixture", "top_moves": [*source["top_moves"], source["played_move"]]}
-    monkeypatch.setattr("backend.coach.move_quality.with_tactic_classification",
-                        lambda fen, played, result, **kwargs: with_tactic_classification(fen, played, result, allow_engine=False))
+    forbidden = Mock(side_effect=AssertionError("Move grading must not classify motifs or extend lines"))
+    monkeypatch.setattr("backend.tactics.classification.classify_review", forbidden)
+    monkeypatch.setattr("chess.engine.SimpleEngine.popen_uci", forbidden)
     result = analyze_played_move(MoveReview.from_fen(FORK, "g1h1"), position)
-    assert result["tactic_classification"]["status"] == "classified"
+    assert "tactic_classification" not in result
+    assert result["move_quality"]["status"] == "blunder"
     assert result["played_move"]["score"] == source["played_move"]["score"]
+    forbidden.assert_not_called()
 
 
 def test_response_serialization_never_runs_tactic_searches():
