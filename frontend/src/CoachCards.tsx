@@ -5,7 +5,6 @@ import type { CoachResponse, EngineReview, MistakeClassification, Move } from '.
 import { engineEvaluation, parseCoachContent } from './coachContent';
 import { coachMoves } from './coachMoves';
 import { engineMoves, qualityLabels } from './engineReview';
-import { positionDecision } from './positionDecision';
 import { moveReferences } from './moveReferences';
 
 function Prose({ children }: { children: string }) {
@@ -39,7 +38,6 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   const engine = response ? response.stockfish : engineReview?.stockfish;
   const teaching = response?.teaching;
   const positionEvidence = response?.position_evidence;
-  const decision = positionDecision(positionEvidence);
   const rows = engineOnly ? engineMoves(engineReview) : coachMoves(response);
   const scoreContext = engine ?? (response ? { perspective: response.fen.split(' ')[1] === 'w' ? 'White' as const : 'Black' as const } : undefined);
   const moveFeedback = teaching?.move_evaluation;
@@ -74,9 +72,6 @@ export default function CoachCards({ response, engineReview, engineMode = false,
       <section className="coach-section" aria-labelledby={`${id}-understand-title`}>
         <div className="coach-section-heading">
           <h3 id={`${id}-understand-title`}>Understand the position</h3>
-          {decision && <span className={`decision-tag ${decision.className}`} tabIndex={0} aria-label={`${decision.label}: ${decision.tooltip}`}>
-            {decision.label}<span className="coach-tooltip" aria-hidden="true">{decision.tooltip}</span>
-          </span>}
         </div>
         {teaching ? <>
           {paragraphs.map((paragraph, paragraphIndex) => <p key={paragraphIndex} className="teaching-paragraph">{moveReferences(paragraph, rows).map((part, index) => part.move

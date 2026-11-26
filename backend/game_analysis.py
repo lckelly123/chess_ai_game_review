@@ -9,7 +9,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
-from .chess_games import replay
+from .chess_games import parse_game, replay
+from .game_statistics import STATISTICS_VERSION, build_statistics, position_evaluation, terminal_evaluation
 from .coach.context import COACH_CONTRACT_VERSION, current_coaching, context_key, previous_move_from_replay
 from .coach.move_review import MoveReview
 from .coach.move_quality import analyze_played_move
@@ -53,9 +54,12 @@ def analysis_summary(row: dict | None) -> dict | None:
 def analysis_result(row: dict | None) -> dict | None:
     if row is None:
         return None
-    moves = {ply: {**move, **({"position_evidence": with_position_sharpness(move["position_evidence"], expected_fen=move["fen"])}
-                            if move.get("position_evidence") else {})} for ply, move in row["moves"].items()}
-    return {**analysis_summary(row), "moves": moves, "opponent_moves": row.get("opponent_moves", {})}
+    def rescored(moves):
+        return {ply: {**move, "position_evidence": with_position_sharpness(
+            move.get("position_evidence") or {**move["stockfish"], "fen": move["fen"]}, expected_fen=move["fen"])}
+                for ply, move in moves.items()}
+    return {**analysis_summary(row), "moves": rescored(row["moves"]),
+            "opponent_moves": rescored(row.get("opponent_moves", {})), "statistics": row.get("statistics")}
 
 
 def quality_counts(moves: dict) -> dict:
@@ -70,11 +74,26 @@ def analyze_game_move(review: MoveReview) -> dict:
     return {**analyze_played_move(review, position), "position_evidence": position}
 
 
+def analyze_final_position(pgn: str) -> dict:
+    game = parse_game(pgn)
+    board = game.end().board()  # Preserve history for repetition/automatic draw rules.
+    ply = sum(1 for _ in game.mainline_moves())
+    terminal = terminal_evaluation(board, ply, claim_draw=game.headers.get("Result") == "1/2-1/2")
+    if terminal is not None:
+        return terminal
+    evidence = analyze_position(board.fen())
+    point = position_evaluation(evidence, ply, board.fen())
+    if point is None:
+        raise StockfishAnalysisError("The final position has no reliable evaluation.")
+    return {**point, "position_evidence": evidence}
+
+
 class GameAnalysisService:
-    def __init__(self, database, tasks: set, analyzer=analyze_game_move, *, coach_factory=None, coach_lock=None):
+    def __init__(self, database, tasks: set, analyzer=analyze_game_move, *, coach_factory=None, coach_lock=None, final_analyzer=None):
         self.db = database
         self.tasks = tasks
         self.analyzer = analyzer
+        self.final_analyzer = final_analyzer or analyze_final_position
         self.active = {}
         self.start_lock = asyncio.Lock()
         self.engine_lock = asyncio.Lock()
@@ -110,10 +129,12 @@ class GameAnalysisService:
                          for ply, move in enumerate(detail["moves"]) if move["color"] != color]
             row = await run_in_threadpool(self.db.begin_game_analysis, game_id, color, fingerprint, len(targets), len(opponents))
             if (row["status"] == "completed" and row.get("coach_completed", 0) >= coaching_total(row)
-                    and row.get("coach_version") == COACH_CONTRACT_VERSION):
+                    and row.get("coach_version") == COACH_CONTRACT_VERSION
+                    and (row.get("statistics") or {}).get("complete")
+                    and (row.get("statistics") or {}).get("version") == STATISTICS_VERSION):
                 return analysis_result(row)
             task = asyncio.create_task(self._run(game_id, color, fingerprint, targets, row["moves"], model,
-                                                 opponents, row.get("opponent_moves", {})))
+                                                 opponents, row.get("opponent_moves", {}), detail, record["pgn"], row.get("statistics")))
             self.active[key] = task
             self.tasks.add(task)
             task.add_done_callback(self.tasks.discard)
@@ -174,7 +195,7 @@ class GameAnalysisService:
                     return False
         return True
 
-    async def _run(self, game_id, color, fingerprint, targets, saved, model, opponents, saved_opponents):
+    async def _run(self, game_id, color, fingerprint, targets, saved, model, opponents, saved_opponents, detail, pgn, statistics):
         async def status(value, error=None):
             await run_in_threadpool(self.db.set_game_analysis_status, game_id, color, fingerprint, value, error)
         phase = "engine"
@@ -191,10 +212,12 @@ class GameAnalysisService:
                     destination = saved if ply in player_plies else saved_opponents
                     save = self.db.save_game_analysis_move if ply in player_plies else self.db.save_game_opponent_move
                     existing = destination.get(str(ply))
-                    if existing and existing["fen"] == fen and existing["played_move"] == uci:
+                    if (existing and existing["fen"] == fen and existing["played_move"] == uci
+                            and position_evaluation(existing["stockfish"], ply, fen)):
                         continue
                     cached = reusable.get(str(ply))
-                    if cached and cached["fen"] == fen and cached["played_move"] == uci:
+                    if (cached and cached["fen"] == fen and cached["played_move"] == uci
+                            and position_evaluation(cached["stockfish"], ply, fen)):
                         if not await run_in_threadpool(save, game_id, color, fingerprint, ply, cached):
                             return
                         destination[str(ply)] = cached
@@ -215,6 +238,18 @@ class GameAnalysisService:
                     if not persisted:
                         return  # The PGN was replaced; never write stale results.
                     destination[str(ply)] = result
+                cached_stats = statistics or (other or {}).get("statistics") or {}
+                timeline = cached_stats.get("timeline") or []
+                final = timeline[-1] if timeline and timeline[-1].get("fen") == detail["positions"][-1]["fen"] else None
+                if not final or final.get("status") not in ("evaluated", "terminal"):
+                    final = await run_in_threadpool(self.final_analyzer, pgn)
+                if final.get("fen") != detail["positions"][-1]["fen"] or final.get("ply") != len(detail["moves"]):
+                    raise StockfishAnalysisError("The final evaluation does not match this game.")
+                statistics = build_statistics(detail, {**saved, **saved_opponents}, final)
+                if not statistics["complete"]:
+                    raise StockfishAnalysisError("The evaluation timeline is incomplete.")
+                if not await run_in_threadpool(self.db.save_game_statistics, game_id, color, fingerprint, statistics):
+                    return
             phase = "coach"
             if await self._coach_moves(game_id, color, fingerprint, targets, saved, model):
                 await status("completed")

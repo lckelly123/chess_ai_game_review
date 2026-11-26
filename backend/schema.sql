@@ -84,6 +84,8 @@ ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS coach_version INTEGER 
 -- NULL total identifies older runs that have not checked opponent coverage yet.
 ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS opponent_total INTEGER CHECK (opponent_total >= 0);
 ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS opponent_moves JSONB NOT NULL DEFAULT '{}';
+-- Versioned, White-oriented position timeline and both players' Lichess accuracy.
+ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS statistics JSONB;
 
 -- Cross-game runs are append-only history, independent of position coaching.
 CREATE TABLE IF NOT EXISTS multi_game_analysis (

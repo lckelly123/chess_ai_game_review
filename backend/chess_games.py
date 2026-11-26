@@ -1,10 +1,13 @@
 import hashlib
 import io
 import logging
+import re
 from urllib.parse import urlparse
 
 import chess
 import chess.pgn
+
+from .game_phase import next_phase
 
 # python-chess logs parsing errors itself; the importer reports skipped games.
 logging.getLogger("chess.pgn").setLevel(logging.CRITICAL)
@@ -53,10 +56,22 @@ def normalize_game(raw: dict, username: str) -> dict:
 def replay(pgn: str) -> dict:
     game = parse_game(pgn)
     board = game.board()
-    positions = [{"fen": board.fen(), "last_move": None, "check_square": chess.square_name(board.king(board.turn)) if board.is_check() else None}]
+    phase = next_phase(board)
+    positions = [{"fen": board.fen(), "last_move": None, "check_square": chess.square_name(board.king(board.turn)) if board.is_check() else None, "phase": phase}]
     moves = []
-    for index, move in enumerate(game.mainline_moves(), start=1):
-        moves.append({"ply": index, "san": board.san(move), "uci": move.uci(), "color": "white" if board.turn else "black", "number": board.fullmove_number})
+    control = re.fullmatch(r"(\d+)(?:\+(\d+))?", game.headers.get("TimeControl", ""))
+    base = float(control[1]) if control and board.ply() == 0 else None
+    increment = float(control[2] or 0) if control else None
+    clocks = {chess.WHITE: base, chess.BLACK: base}
+    for index, node in enumerate(game.mainline(), start=1):
+        move = node.move
+        clock, elapsed = node.clock(), node.emt()
+        if elapsed is None and clock is not None and clocks[board.turn] is not None and increment is not None:
+            elapsed = clocks[board.turn] + increment - clock
+        clocks[board.turn] = clock
+        moves.append({"ply": index, "san": board.san(move), "uci": move.uci(), "color": "white" if board.turn else "black", "number": board.fullmove_number,
+                      "clock_seconds": clock, "elapsed_seconds": elapsed if elapsed is not None and elapsed >= 0 else None})
         board.push(move)
-        positions.append({"fen": board.fen(), "last_move": [chess.square_name(move.from_square), chess.square_name(move.to_square)], "check_square": chess.square_name(board.king(board.turn)) if board.is_check() else None})
+        phase = next_phase(board, phase)
+        positions.append({"fen": board.fen(), "last_move": [chess.square_name(move.from_square), chess.square_name(move.to_square)], "check_square": chess.square_name(board.king(board.turn)) if board.is_check() else None, "phase": phase})
     return {"positions": positions, "moves": moves}

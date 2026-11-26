@@ -4,6 +4,8 @@ The replay board uses Chess.com's Classic piece set and Icy Sea board texture to
 
 Dependencies retain their upstream licenses, available in their installed packages and source repositories:
 
+- Lichess calculation references (verified November 26, 2026): [game accuracy](https://github.com/lichess-org/lila/blob/master/modules/analyse/src/main/AccuracyPercent.scala), [evaluation conversion](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/eval.scala), [aggregation helpers](https://github.com/lichess-org/scalalib/blob/master/lila/src/main/scala/Maths.scala), and [game phases](https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/Divider.scala). The Python adaptations live in `backend/game_statistics.py` and `backend/game_phase.py`; upstream licensing remains applicable.
+
 - python-chess (`chess`): GPL-3.0-or-later, https://github.com/niklasf/python-chess. Its copyleft obligations need to be respected when distributing the application/container; no proprietary-license claim is made for this project.
 - Lichess puzzler tagger: AGPL-3.0, https://github.com/ornicar/lichess-puzzler/tree/8e24b6d5e2b9618e41581a327926e4ac67c610a2/tagger. Source and licence are bundled in `backend/tactics/lichess`; adaptations are documented in `backend/tactics/README.md`.
 - Stockfish 19: GPL-3.0, https://github.com/official-stockfish/Stockfish/tree/sf_19. The installer verifies the official release archive's SHA-256 and retains its license and source files alongside the executable (`/opt/stockfish` in Docker, `.tools/stockfish` locally). Corresponding release source: https://github.com/official-stockfish/Stockfish/releases/tag/sf_19.

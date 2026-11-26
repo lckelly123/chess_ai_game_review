@@ -24,6 +24,7 @@ from backend.game_analysis import (
     GameAnalysisService, analysis_result, analysis_summary, analyze_game_move,
     pgn_fingerprint, quality_counts,
 )
+from backend.game_statistics import STATISTICS_VERSION, position_evaluation, terminal_evaluation
 from backend.main import create_app as real_create_app
 from backend.tests.position_fixtures import position_evidence
 from backend.tests.test_app import raw_game
@@ -46,6 +47,12 @@ async def fake_coach(settings, **kwargs):
 @pytest.fixture(autouse=True)
 def mock_background_coach(monkeypatch):
     monkeypatch.setattr('backend.game_analysis.open_coach', fake_coach)
+    def final(pgn):
+        from backend.chess_games import parse_game
+        board = parse_game(pgn).end().board()
+        ply = len(replay(pgn)['moves'])
+        return terminal_evaluation(board, ply) or position_evaluation(position_evidence(board.fen()), ply, board.fen())
+    monkeypatch.setattr('backend.game_analysis.analyze_final_position', final)
 
 
 def create_app(*args, **kwargs):
@@ -103,16 +110,24 @@ class MemoryDatabase:
             row = {"game_id": game_id, "player_color": color, "pgn_hash": fingerprint, "status": "queued",
                    "total": total, "completed": 0, "counts": {}, "moves": {}, "error": None,
                    "updated_at": datetime.now(timezone.utc), "coach_completed": 0, "coach_version": COACH_CONTRACT_VERSION,
-                   "opponent_total": None, "opponent_moves": {}}
+                   "opponent_total": None, "opponent_moves": {}, "statistics": None}
         if row.get("coach_version") != COACH_CONTRACT_VERSION:
             row.update(coach_version=COACH_CONTRACT_VERSION, coach_completed=0)
         if (row["status"] != "completed" or row.get('coach_completed', 0) < sum(row['counts'].get(q, 0) for q in ('inaccuracy', 'mistake', 'blunder'))
+                or (row.get('statistics') or {}).get('version') != STATISTICS_VERSION
                 or (opponent_total is not None and (row.get('opponent_total') != opponent_total or len(row['opponent_moves']) != opponent_total))):
             row.update(status="queued", error=None)
         if opponent_total is not None:
             row['opponent_total'] = opponent_total
         self.rows[key] = row
         return deepcopy(row)
+
+    def save_game_statistics(self, game_id, color, fingerprint, statistics):
+        row = self.rows[(game_id, color)]
+        if row['pgn_hash'] != fingerprint:
+            return False
+        row['statistics'] = deepcopy(statistics)
+        return True
 
     def save_game_analysis_move(self, game_id, color, fingerprint, ply, result):
         row = self.rows[(game_id, color)]
@@ -467,7 +482,10 @@ def test_postgres_resume_keeps_saved_moves_and_separates_colors(test_db_url):
         partial = client.get(f'/api/games/{game["id"]}/analysis?username=alice').json()
         assert partial["status"] == "interrupted" and partial["completed"] == 1
         client.post(f'/api/games/{game["id"]}/analysis', json={"username": "alice"})
-        assert wait_completed(client, game["id"])["moves"]["0"] == first
+        restored = wait_completed(client, game["id"])["moves"]["0"]
+        assert all(restored[key] == value for key, value in first.items())
+        assert restored['position_evidence']['sharpness']['score'] is not None
+        assert db.game_analysis(game['id'], 'white', fingerprint)['moves']['0'] == first
         assert client.get(f'/api/games/{game["id"]}/analysis?username=bob').json() is None
 
 
@@ -491,7 +509,7 @@ def test_completed_legacy_run_adds_opponents_without_repeating_player_engine_or_
         await finish(service)
         saved = await service.saved(db.record['id'], 'alice')
         assert saved['status'] == 'completed' and saved['opponent_completed'] == 3
-        assert saved['moves'] == player_evidence and db.feedback == coaching
+        assert db.rows[(db.record['id'], 'white')]['moves'] == player_evidence and db.feedback == coaching
         assert calls == ['e7e5', 'b8c6', 'g8f6']
     asyncio.run(run())
 
@@ -620,7 +638,7 @@ def test_legacy_completed_engine_job_can_add_coaching_and_reuse_manual_feedback(
         await finish(service)
         saved = await service.start(game_id, 'alice')
         assert saved['status'] == 'completed' and saved['coach_completed'] == 4
-        assert saved['moves'] == original and len(calls) == 3 and not service.tasks
+        assert db.rows[(game_id, 'white')]['moves'] == original and len(calls) == 3 and not service.tasks
     asyncio.run(run())
 
 
@@ -692,7 +710,8 @@ def test_completed_old_taxonomy_job_refreshes_only_stale_reviews_without_engine_
         assert summary['coach_completed'] == 0 and summary['coach_total'] == 4
         client.post(f'/api/games/{game["id"]}/analysis', json={'username': 'alice'})
         result = wait_completed(client, game['id'])
-        assert result['coach_completed'] == 4 and result['moves'] == before
+        assert result['coach_completed'] == 4
+        assert db.game_analysis(game['id'], 'white', pgn_fingerprint(game['pgn']))['moves'] == before
         assert calls == ['g1f3', 'f1c4', 'e1g1']
         client.post(f'/api/games/{game["id"]}/analysis', json={'username': 'alice'})
         assert len(calls) == 3  # Completed current reviews are reused.

@@ -129,6 +129,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .last-sync { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); padding-top: 16px; }
 .library-footer { margin-top: 30px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .replay-layout {
+  --accent: #b69af5; --accent-hover: #d7c8fa; --selected: #271e3b; --selection-badge: #392b54;
   --replay-board-size: 840px;
   --replay-coach-size: 400px;
   --replay-moves-size: 280px;
@@ -150,7 +151,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   gap: 24px var(--replay-gap); align-items: start;
 }
 .board-column { grid-column: 1 / span 2; display: grid; grid-template-columns: subgrid; min-width: 0; }
-.board-column > :not(.move-list) { grid-column: 2; }
+.board-column > :not(.game-overview) { grid-column: 2; }
 .board-column > .board { grid-row: 2; }
 .move-list { grid-column: 1; grid-row: 2; min-height: 0; height: 100%; contain: size; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; }
 .move-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px 12px 10px; }
@@ -177,14 +178,13 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .board-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; color: #994619; }
 .candidate-square { stroke: #994619; stroke-width: .055; fill: #f4c36a; fill-opacity: .24; }
 .candidate-arrow { stroke: currentColor; stroke-width: .12; stroke-linecap: round; }
-.board-annotations.original-move-annotations { color: #c43c46; opacity: .85; }
+.board-annotations.original-move-annotations { color: #9565df; opacity: .95; }
 .original-move-arrow { stroke: currentColor; stroke-width: .055; stroke-linecap: round; }
 .square { position: relative; display: grid; place-items: center; aspect-ratio: 1; background-image: url('/assets/chess/icy-sea.png'); background-size: 800% 800%; }
 .square.light { background-color: #d6e4e9; color: #7399ad; }
 .square.dark { background-color: #7399ad; color: #d6e4e9; }
-.square.last-move::before, .square.original-move::before, .square.in-check::before { content: ''; position: absolute; inset: 0; pointer-events: none; }
+.square.last-move::before, .square.in-check::before { content: ''; position: absolute; inset: 0; pointer-events: none; }
 .square.last-move::before { background: #d4d57088; }
-.square.original-move::before { background: #d85c5c66; }
 .square.in-check::before { background: #d3978cb0; }
 .board button.square { padding: 0; border-radius: 0; }
 .board button.square:disabled { opacity: 1; }
@@ -369,7 +369,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   .replay-layout { --replay-leading-space: 0px; }
   .replay-columns { grid-template-columns: 1fr; }
   .board-column { grid-column: 1; grid-template-columns: minmax(0, 1fr); width: 100%; max-width: var(--replay-board-size); justify-self: center; }
-  .board-column > :not(.move-list) { grid-column: 1; }
+  .board-column > :not(.game-overview) { grid-column: 1; }
   .board-column > .move-list { grid-column: 1; grid-row: 6; contain: none; height: 280px; margin-top: 16px; }
   .coach-panel { grid-column: 1; width: 100%; max-width: var(--replay-board-size); margin-left: 0; justify-self: center; }
 }
