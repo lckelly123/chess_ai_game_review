@@ -55,7 +55,7 @@ export default function Board({ position, flipped, candidate, candidateName, ori
   const files = (flipped ? 'hgfedcba' : 'abcdefgh').split('');
   const ranks = flipped ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
   const summary = Object.entries(squares).map(([square, p]) => `${p === p.toUpperCase() ? 'White' : 'Black'} ${names[p.toLowerCase()]} ${square}`).join(', ');
-  return <><div className="board" role={onMove ? 'group' : 'img'} aria-label={`Chessboard. ${flipped ? 'Black' : 'White'} at bottom. ${originalMove ? `Your recorded move ${originalMove.san}: red arrow from ${originalFrom} to ${originalTo}, with both squares highlighted. ` : ''}${candidate ? `Candidate ${candidateName ?? candidate.uci}: arrow from ${candidate.uci.slice(0, 2)} to ${candidate.uci.slice(2, 4)}; highlights ${candidate.highlight_squares.join(' and ')}. ${candidate.reason} ` : ''}${onMove ? 'Select a piece, then its destination.' : summary}`}>
+  return <><div className="board" role={onMove ? 'group' : 'img'} aria-label={`Chessboard. ${flipped ? 'Black' : 'White'} at bottom. ${originalMove ? `Recorded move played next, ${originalMove.san}: purple arrow from ${originalFrom} to ${originalTo}. ` : ''}${candidate ? `Candidate ${candidateName ?? candidate.uci}: arrow from ${candidate.uci.slice(0, 2)} to ${candidate.uci.slice(2, 4)}; highlights ${candidate.highlight_squares.join(' and ')}. ${candidate.reason} ` : ''}${onMove ? 'Select a piece, then its destination.' : summary}`}>
     {ranks.flatMap((rank, y) => files.map((file, x) => {
       const square = `${file}${rank}`;
       const Square = onMove ? 'button' : 'div';
@@ -64,7 +64,7 @@ export default function Board({ position, flipped, candidate, candidateName, ori
       return <Square key={square} type={onMove ? 'button' : undefined} disabled={onMove ? inputDisabled : undefined}
         aria-label={onMove ? `${square}${piece ? `, ${piece === piece.toUpperCase() ? 'White' : 'Black'} ${names[piece.toLowerCase()]}` : ', empty'}${square === originalFrom ? ', recorded move origin' : square === originalTo ? ', recorded move destination' : ''}${target ? ', legal destination' : ''}` : undefined}
         aria-pressed={onMove ? selected === square : undefined} onClick={onMove ? () => chooseSquare(square) : undefined}
-        style={{ backgroundPosition: `${x * 100 / 7}% ${y * 100 / 7}%` }} className={`square ${(x + y) % 2 ? 'dark' : 'light'} ${position.last_move?.includes(square) ? 'last-move' : ''} ${square === originalFrom || square === originalTo ? 'original-move' : ''} ${position.check_square === square ? 'in-check' : ''} ${selected === square ? 'selected-square' : ''} ${target ? 'legal-target' : ''}`}>
+        style={{ backgroundPosition: `${x * 100 / 7}% ${y * 100 / 7}%` }} className={`square ${(x + y) % 2 ? 'dark' : 'light'} ${position.last_move?.includes(square) ? 'last-move' : ''} ${position.check_square === square ? 'in-check' : ''} ${selected === square ? 'selected-square' : ''} ${target ? 'legal-target' : ''}`}>
         {x === 0 && <span className="rank-label">{rank}</span>}
         {y === 7 && <span className="file-label">{file}</span>}
         {squares[square] && <Piece piece={squares[square]}/>}
@@ -80,7 +80,7 @@ export default function Board({ position, flipped, candidate, candidateName, ori
         const [x, y] = squareCenter(square, flipped);
         return <rect key={square} data-square={square} x={x - .45} y={y - .45} width=".9" height=".9" rx=".03" className="candidate-square"/>;
       })}
-      <line x1={origin[0]} y1={origin[1]} x2={destination[0]} y2={destination[1]} className="candidate-arrow" markerEnd={`url(#${arrowId})`}/>
+      {candidate.uci !== originalMove?.uci && <line x1={origin[0]} y1={origin[1]} x2={destination[0]} y2={destination[1]} className="candidate-arrow" markerEnd={`url(#${arrowId})`}/>}
     </svg>}
   </div>{promotion.length > 0 && <div className="promotion-choice" role="group" aria-label="Choose promotion piece">
     <span>Promote to</span>{promotion.map(move => <button key={move} type="button" className="secondary-button" onClick={() => { setPromotion([]); setSelected(null); onMove?.(move); }}>{names[move[4]]}</button>)}

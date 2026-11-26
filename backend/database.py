@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 from .chess_games import replay
 from .coach.context import COACH_CONTRACT_VERSION, context_key
 from .game_analysis import analysis_result, analysis_summary, coaching_total, pgn_fingerprint, quality_counts
+from .game_statistics import STATISTICS_VERSION
 
 MULTI_GAME_COLUMNS = """id, username, status, input_snapshot -> 'summary' AS summary,
                        report, model, reasoning_effort, response_id, error, created_at, updated_at"""
@@ -186,6 +187,8 @@ class Database:
             if row and row["pgn_hash"] == fingerprint:
                 if (row["status"] == "completed" and row["coach_completed"] >= coaching_total(row)
                         and row["coach_version"] == COACH_CONTRACT_VERSION
+                        and (row.get("statistics") or {}).get("complete")
+                        and (row.get("statistics") or {}).get("version") == STATISTICS_VERSION
                         and (opponent_total is None or (row["opponent_total"] == opponent_total
                              and len(row["opponent_moves"]) == opponent_total))):
                     return row
@@ -199,8 +202,15 @@ class Database:
                               ON CONFLICT (game_id, player_color) DO UPDATE SET pgn_hash=excluded.pgn_hash,
                                   status='queued', total=excluded.total, completed=0, counts='{}', moves='{}', coach_completed=0, coach_version=excluded.coach_version,
                                   opponent_total=excluded.opponent_total, opponent_moves='{}',
+                                  statistics=NULL,
                                   error=NULL, updated_at=clock_timestamp() RETURNING *""",
                               (game_id, color, fingerprint, total, COACH_CONTRACT_VERSION, opponent_total)).fetchone()
+
+    def save_game_statistics(self, game_id: str, color: str, fingerprint: str, statistics: dict) -> bool:
+        with self.connection() as db:
+            return db.execute("""UPDATE game_engine_analysis SET statistics=%s, updated_at=clock_timestamp()
+                                 WHERE game_id=%s AND player_color=%s AND pgn_hash=%s""",
+                              (Jsonb(statistics), game_id, color, fingerprint)).rowcount > 0
 
     def save_game_opponent_move(self, game_id: str, color: str, fingerprint: str, ply: int, result: dict) -> bool:
         with self.connection() as db:

@@ -6,8 +6,8 @@ export type Game = {
   analysis?: GameAnalysisSummary | null;
   analysis_revision?: number;
 };
-export type Position = { fen: string; last_move: string[] | null; check_square: string | null };
-export type Move = { ply: number; san: string; uci: string; color: string; number: number };
+export type Position = { fen: string; last_move: string[] | null; check_square: string | null; phase?: 'opening' | 'middlegame' | 'endgame' };
+export type Move = { ply: number; san: string; uci: string; color: string; number: number; clock_seconds?: number | null; elapsed_seconds?: number | null };
 export type GameDetail = Game & { pgn: string; positions: Position[]; moves: Move[]; coach_responses: Record<string, CoachResponse>; engine_analyses?: Partial<Record<'white' | 'black', GameAnalysis>> };
 export type Profile = { username: string; last_synced: number; game_count: number };
 export type ImportJob = { id: string; username: string; status: 'queued' | 'running' | 'completed' | 'failed'; found: number; added: number; skipped: number; message: string };
@@ -37,7 +37,7 @@ export type EngineAnalysis = {
 };
 export type CandidateMove = { uci: string; reason: string; highlight_squares: [string, string] };
 export type MoveQuality = NonNullable<EngineAnalysis['move_quality']>['status'];
-export type EngineReview = { fen: string; played_move: string; stockfish: EngineAnalysis };
+export type EngineReview = { fen: string; played_move: string; stockfish: EngineAnalysis; position_evidence?: PositionEvidence | null };
 export type GameAnalysisSummary = {
   game_id: string; player_color: 'white' | 'black';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted';
@@ -46,7 +46,17 @@ export type GameAnalysisSummary = {
   coach_total: number; coach_completed: number;
   error: string | null; updated_at: string;
 };
-export type GameAnalysis = GameAnalysisSummary & { moves: Record<string, EngineReview>; opponent_moves?: Record<string, EngineReview> };
+export type PositionEvaluation = {
+  ply: number; fen: string; status: 'evaluated' | 'terminal' | 'missing';
+  cp?: number | null; mate?: number | null; mate_winner?: 'white' | 'black' | null;
+  depth?: number | null; engine?: string | null; source?: string;
+  position_evidence?: PositionEvidence | null;
+};
+export type GameStatistics = {
+  version: number; perspective: 'White'; complete: boolean; timeline: PositionEvaluation[];
+  accuracy: Record<'white' | 'black', number | null>;
+};
+export type GameAnalysis = GameAnalysisSummary & { moves: Record<string, EngineReview>; opponent_moves?: Record<string, EngineReview>; statistics?: GameStatistics | null };
 export type PieceType = 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king';
 export type MistakeClassification =
   | { category: 'tactical_miss' | 'tactical_allowed'; subcategory: 'hanging_piece' | 'fork' | 'pin_skewer' | 'discovered_attack' }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Info, Pause, Play, RotateCcw } from 'lucide-react';
 import Board from './Board';
-import MoveList from './MoveList';
+import GameOverview from './GameOverview';
 import CoachCards from './CoachCards';
 import PracticeCard from './PracticeCard';
 import { needsPractice } from './reviewPractice';
@@ -46,7 +46,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     for (const saved of Object.values(game.engine_analyses ?? {})) Object.assign(result, saved?.opponent_moves, saved?.moves);
     Object.assign(result, analysis?.opponent_moves, analysis?.moves);
     for (const [key, response] of Object.entries(coachResponses)) {
-      if (!result[key] && response.stockfish && response.played_move) result[key] = {fen: response.fen, played_move: response.played_move, stockfish: response.stockfish};
+      if (!result[key] && response.stockfish && response.played_move) result[key] = {fen: response.fen, played_move: response.played_move, stockfish: response.stockfish, position_evidence: response.position_evidence};
     }
     return result;
   }, [game.engine_analyses, analysis, coachResponses]);
@@ -75,6 +75,8 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const playback = !hideReview && variation?.gamePly === ply && variation.responseId === coachResponse?.response_id
     && variation.ownerUci === candidate?.uci ? variation : null;
   const shownPosition = practice.shownMove?.position ?? (playback ? playback.sequence.positions[playback.step] : boardPosition);
+  const onMainLine = !practice.shownMove && !playback;
+  const statistics = analysis?.statistics ?? Object.values(game.engine_analyses ?? {}).find(saved => saved?.statistics?.complete)?.statistics;
   const turn = shownPosition.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
@@ -89,7 +91,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     setVariation(null);
   }, [ply, revealedPly, coachResponse?.response_id, practice.complete]);
   useEffect(() => { if (practice.active) dispatch({type: 'pause'}); }, [practice.active, ply]);
-  const originalMove = practice.active && !practice.shownMove ? nextMove : undefined;
+  const originalMove = onMainLine ? nextMove : undefined;
 
   function selectCandidate(uci: string) {
     if ((!coachResponse && !engineReview) || hideReview) return;
@@ -199,7 +201,8 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     </div>
     <div className="replay-columns">
       <div className="board-column" ref={boardColumn}>
-        <MoveList moves={game.moves} positions={game.positions} reviews={reviews} ply={ply} onSelect={seek}/>
+        <GameOverview game={game} reviews={reviews} statistics={statistics} ply={ply} onSelect={seek} response={coachResponse}
+          onMainLine={onMainLine} analyzing={analyzing} submitting={submitting} onComplete={() => void resumeAnalysis()}/>
         {playerBar(top)}
         <Board position={shownPosition} flipped={flipped}
           candidate={!playback ? candidate : undefined} candidateName={candidateName} originalMove={originalMove}
