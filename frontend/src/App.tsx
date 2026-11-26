@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, BookOpen, Check, CircleAlert, Clock3, GraduationCap, LoaderCircle, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleAlert, Clock3, GraduationCap, LoaderCircle, Search, UserRound } from 'lucide-react';
 import { BrandKnight } from './Board';
 import Replay from './Replay';
 import GameAnalysisAction from './GameAnalysisAction';
 import Lessons from './Lessons';
-import { api, perspective, readStored, store, timeControl } from './types';
-import type { Game, GameDetail, ImportJob, Profile } from './types';
+import { api, perspective, readStored, timeControl } from './types';
+import type { GameDetail } from './types';
+import AccountDialog from './AccountDialog';
+import useGameLibrary from './useGameLibrary';
 
 function readReplayRoute() {
   const match = window.location.hash.match(/^#game\/([\w-]+)(?:\?(.*))?$/);
@@ -13,11 +15,9 @@ function readReplayRoute() {
 }
 
 export default function App() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [username, setUsername] = useState('');
-  const [input, setInput] = useState(readStored('username'));
-  const [limit, setLimit] = useState(50);
-  const [games, setGames] = useState<Game[]>([]);
+  const {username, profiles, profilesLoading, profileError, games, setGames, loading, libraryError,
+    sync, selectAccount, retrySync, reloadLibrary} = useGameLibrary();
+  const [accountOpen, setAccountOpen] = useState(false);
   const [replayRoute, setReplayRoute] = useState(readReplayRoute);
   const [lessonsOpen, setLessonsOpen] = useState(() => ['#lessons', '#lessons/multi-game'].includes(window.location.hash));
   const [multiGameOpen, setMultiGameOpen] = useState(() => window.location.hash === '#lessons/multi-game');
@@ -25,22 +25,13 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [speed, setSpeed] = useState('all');
   const [result, setResult] = useState('all');
-  const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [jobId, setJobId] = useState(readStored('importJob'));
-  const [job, setJob] = useState<ImportJob | null>(null);
-  const [error, setError] = useState('');
-  const [libraryError, setLibraryError] = useState('');
   const [detailError, setDetailError] = useState('');
   const [revision, setRevision] = useState(0);
-  const [boot, setBoot] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const gameListRef = useRef<HTMLUListElement>(null);
   const libraryPosition = useRef({ page: 0, list: 0, game: '' });
   const wasOutsideLibrary = useRef(!!replayRoute || lessonsOpen);
-  const busy = submitting || !!jobId;
 
   useEffect(() => {
     const navigate = () => {
@@ -68,29 +59,6 @@ export default function App() {
   }, [replayRoute, lessonsOpen, multiGameOpen]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true); setLibraryError('');
-    api<Profile[]>('/api/profiles', { signal: controller.signal }).then(data => {
-      setProfiles(data);
-      const remembered = readStored('username');
-      setUsername(data.find(p => p.username === remembered)?.username || data[0]?.username || '');
-      if (!data.length) setLoading(false);
-    }).catch(err => { if (err.name !== 'AbortError') { setLibraryError('Could not load your library. Check that the app server is running.'); setLoading(false); } });
-    return () => controller.abort();
-  }, [boot]);
-
-  useEffect(() => {
-    if (!username) return;
-    const controller = new AbortController();
-    setLoading(true); setLibraryError(''); store('username', username);
-    api<Game[]>(`/api/games?username=${encodeURIComponent(username)}`, { signal: controller.signal }).then(data => {
-      setGames(data);
-      setLoading(false);
-    }).catch(err => { if (err.name !== 'AbortError') { setLibraryError(err.message); setLoading(false); } });
-    return () => controller.abort();
-  }, [username, revision, boot]);
-
-  useEffect(() => {
     if (!replayRoute) { setDetail(null); setDetailError(''); setDetailLoading(false); return; }
     const controller = new AbortController();
     setDetailLoading(true); setDetailError(''); setDetail(null);
@@ -100,43 +68,11 @@ export default function App() {
     return () => controller.abort();
   }, [replayRoute, revision]);
 
-  useEffect(() => {
-    if (!jobId) return;
-    let cancelled = false;
-    let timer: number;
-    const poll = async () => {
-      try {
-        const current = await api<ImportJob>(`/api/imports/${jobId}`);
-        if (cancelled) return;
-        setJob(current);
-        if (current.status === 'completed' || current.status === 'failed') {
-          store('importJob', '');
-          if (current.status === 'completed') {
-            const updated = await api<Profile[]>('/api/profiles');
-            if (cancelled) return;
-            setProfiles(updated); setUsername(current.username); setInput(current.username);
-            setSearch(''); setSpeed('all'); setResult('all'); setRevision(r => r + 1);
-          }
-          setJobId('');
-        } else timer = window.setTimeout(poll, 800);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Could not check the import. Try again.');
-        setJobId(''); store('importJob', '');
-      }
-    };
-    void poll();
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [jobId]);
-
-  async function importGames(event: React.FormEvent) {
-    event.preventDefault();
-    setSubmitting(true); setError(''); setJob(null);
-    try {
-      const created = await api<ImportJob>('/api/imports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: input.trim(), limit }) });
-      setJob(created); store('importJob', created.id); setJobId(created.id);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the import.'); }
-    finally { setSubmitting(false); }
+  function saveAccount(value: string) {
+    if (value === username) return;
+    selectAccount(value);
+    setSearch(''); setSpeed('all'); setResult('all');
+    if (replayRoute) window.location.hash = '#games';
   }
 
   const filtered = games.filter(game => {
@@ -152,30 +88,39 @@ export default function App() {
         <a href="#lessons" aria-current={lessonsOpen ? 'page' : undefined} onClick={() => {
           if (!replayRoute && !lessonsOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
         }}><GraduationCap size={17}/> Lessons</a>
-      </nav></header>
+      </nav>
+      <button className="account-button" onClick={() => setAccountOpen(true)} aria-label={username ? `Account settings for ${username}` : 'Add your Chess.com account'}
+        aria-haspopup="dialog" aria-expanded={accountOpen}><UserRound size={17}/><span>{username || 'Account'}</span><ChevronDown size={14}/></button>
+    </header>
+    {accountOpen && <AccountDialog username={username} profiles={profiles} onSave={saveAccount} onClose={() => setAccountOpen(false)}/>}
     <main className={`app-layout ${replayRoute ? 'replay-layout' : 'library-layout'}`}>
-      {lessonsOpen ? <Lessons key={username} profiles={profiles} username={username} multiGameOpen={multiGameOpen} profilesLoading={loading && !profiles.length}
-        profileError={!username ? libraryError : ''} onRetryProfiles={() => setBoot(value => value + 1)}
-        onSelectPlayer={value => { setUsername(value); setInput(value); setSearch(''); setSpeed('all'); setResult('all'); }}/>
+      {lessonsOpen ? <Lessons key={username} username={username} multiGameOpen={multiGameOpen} profilesLoading={profilesLoading}
+        profileError={profileError} onRetryProfiles={reloadLibrary}/>
       : !replayRoute ? <div className="library">
-        <div className="library-heading"><h1>Your game library.</h1><p>Import your Chess.com games and choose one to replay.</p></div>
-        <section className="import-section" aria-label="Import games from Chess.com">
-          <div className="import-fields">
-          <form onSubmit={importGames}>
-            <div className="username-field"><label htmlFor="username">Chess.com username</label>
-            <div className="username-input"><input ref={inputRef} id="username" name="username" autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="Your username" required maxLength={50} pattern="[A-Za-z0-9_\-]+" title="Use the username from your Chess.com profile." value={input} onChange={e => setInput(e.target.value)} disabled={busy}/>{input && !busy && <button type="button" className="clear-input" aria-label="Clear username" onClick={() => { setInput(''); inputRef.current?.focus(); }}><X size={15}/></button>}</div>
-            </div>
-            <div className="import-actions"><select aria-label="Number of recent games to import" value={limit} onChange={e => setLimit(Number(e.target.value))} disabled={busy}><option value={20}>Latest 20</option><option value={50}>Latest 50</option><option value={100}>Latest 100</option></select><button type="submit" className="primary-button" disabled={busy || !input.trim()}>{busy ? <><LoaderCircle className="spin" size={16}/> Importing</> : <>Import games <ArrowRight size={16}/></>}</button></div>
-          </form>
-          <p className="import-hint">Completed games only. Recent games may take time to appear.</p>
-          {(job || error) && <div className={`import-status ${(error || job?.status === 'failed') ? 'error' : ''}`} role={error || job?.status === 'failed' ? 'alert' : 'status'}>{error || job?.status === 'failed' ? <CircleAlert size={17}/> : busy ? <LoaderCircle size={17} className="spin"/> : <Check size={17}/>}<div>{error || job?.message}{!!job?.skipped && job.status === 'completed' && <small>{job.skipped} unsupported or unreadable {job.skipped === 1 ? 'game' : 'games'} skipped.</small>}</div></div>}
-          </div>
-        </section>
-        <section className="library-section" aria-labelledby="library-title">
-          <div className="section-heading"><h2 id="library-title">Saved games</h2>
-          {profiles.length > 0 && <div className="profile-row"><select aria-label="Imported player" value={username} onChange={e => { setGames([]); setUsername(e.target.value); setInput(e.target.value); setSearch(''); setSpeed('all'); setResult('all'); }}><option value="" disabled>Select player</option>{profiles.map(p => <option key={p.username} value={p.username}>{p.username}</option>)}</select><button className="icon-button" title="Refresh saved library" aria-label="Refresh saved library" disabled={loading} onClick={() => setBoot(b => b + 1)}><RefreshCw size={15}/></button></div>}</div>
+        <div className="library-heading"><div><h1>Your game library</h1><p>Your games, ready for a closer look.</p></div>
+          {username && <div className={`sync-status ${sync.status === 'failed' ? 'sync-failed' : ''}`} role="status" aria-live="polite" aria-atomic="true">
+            {sync.status === 'checking' ? <><LoaderCircle className="spin" size={14}/><span>Checking for new games…</span></>
+              : sync.status === 'failed' ? <><CircleAlert size={14}/><span>Couldn’t sync</span></>
+              : sync.status === 'completed' ? <><Check size={14}/><span>{sync.added ? `${sync.added} new ${sync.added === 1 ? 'game' : 'games'} added` : 'Checked just now'}</span></>
+              : activeProfile ? <><Clock3 size={14}/><span>Last checked {new Date(activeProfile.last_synced * 1000).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}</span></> : null}
+          </div>}
+        </div>
+        {sync.status === 'failed' && <div className="sync-notice" role="alert"><CircleAlert size={17}/><div><p>{sync.message}</p>
+          {games.length > 0 && <p className="sync-notice-hint">Your saved games are still available.</p>}
+          <div className="sync-notice-actions"><button className="text-button" onClick={retrySync}>Try again</button>
+            <button className="text-button" onClick={() => setAccountOpen(true)}>Account settings</button></div></div></div>}
+        {sync.status === 'completed' && sync.skipped > 0 && <p className="sync-footnote">{sync.skipped} unsupported or unreadable {sync.skipped === 1 ? 'game was' : 'games were'} skipped.</p>}
+        <section className="library-section" aria-label="Saved games">
           {games.length > 0 && <div className="library-toolbar"><div className="search-field"><Search size={16}/><input aria-label="Search opponents" placeholder="Find an opponent…" value={search} onChange={e => setSearch(e.target.value)}/></div><div className="filters"><select aria-label="Filter by time control" value={speed} onChange={e => setSpeed(e.target.value)}><option value="all">All speeds</option><option value="rapid">Rapid</option><option value="blitz">Blitz</option><option value="bullet">Bullet</option><option value="daily">Daily</option></select><select aria-label="Filter by result" value={result} onChange={e => setResult(e.target.value)}><option value="all">All results</option><option value="win">Wins</option><option value="loss">Losses</option><option value="draw">Draws</option></select></div></div>}
-          {libraryError ? <div className="library-empty" role="alert"><CircleAlert size={22}/><p>{libraryError}</p><button className="text-button" onClick={() => setBoot(b => b + 1)}>Try again</button></div> : loading ? <div className="library-empty" role="status"><LoaderCircle className="spin" size={24}/><p>Loading your games…</p></div> : !games.length ? <div className="library-empty"><BookOpen size={26}/><h3>{profiles.length ? 'No games imported yet' : 'A home for your games'}</h3><p>Import your recent games to keep them here, ready to revisit.</p></div> : <>
+          {(libraryError || profileError) && <div className="sync-notice" role="alert"><CircleAlert size={18}/><div><p>{libraryError || profileError}</p>
+            <button className="text-button" onClick={reloadLibrary}>Try again</button></div></div>}
+          {!games.length && (loading || profilesLoading) ? <div className="library-empty" role="status"><LoaderCircle className="spin" size={24}/><p>Loading your games…</p></div>
+            : !games.length && !username ? <div className="library-empty account-empty"><BookOpen size={30}/><h2>A home for your games</h2>
+              <p>Add your Chess.com account to see your games.<br/>We’ll keep your library up to date automatically.</p>
+              <button className="primary-button" onClick={() => setAccountOpen(true)}>Add Chess.com account <ArrowRight size={16}/></button></div>
+            : !games.length ? <div className="library-empty" role="status">{sync.status === 'checking' ? <><LoaderCircle className="spin" size={24}/><h3>Finding your recent games</h3><p>Your completed games will appear here.</p></>
+              : <><BookOpen size={26}/><h3>{sync.status === 'failed' || libraryError || profileError ? 'Your library will appear here' : 'No completed games yet'}</h3>
+                <p>{sync.status === 'failed' || libraryError || profileError ? 'Try again or check your account settings above.' : 'We’ll check for completed standard-chess games each time you visit. Recent games may take time to appear.'}</p></>}</div> : <>
             <div className="list-summary"><span aria-live="polite">{filtered.length} {filtered.length === 1 ? 'game' : 'games'}</span><span>Newest first</span></div>
             {!!filtered.length && <div className="game-list-heading" aria-hidden="true"><span>Result</span><span>Opponent</span><span>Time control</span><span>Played</span><span/></div>}
             <ul className="game-list" ref={gameListRef} aria-label="Saved games">{filtered.map(game => {
@@ -192,7 +137,6 @@ export default function App() {
             })}</ul>
             {!filtered.length && <div className="library-empty"><p>No games match these filters.</p><button className="text-button" onClick={() => { setSearch(''); setSpeed('all'); setResult('all'); }}>Clear filters</button></div>}
           </>}
-          {activeProfile && <p className="last-sync"><Clock3 size={13}/> Last import {new Date(activeProfile.last_synced * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>}
         </section>
         <footer className="library-footer">Independent project. Not affiliated with Chess.com.</footer>
       </div> : <div className="workspace" ref={workspaceRef} tabIndex={-1} aria-label="Game replay workspace">

@@ -135,8 +135,13 @@ components:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
     rounded: "{rounded.field}"
-    height: "44px"
-    padding: "0px 36px 0px 12px"
+    height: "46px"
+    padding: "10px 12px"
+  account-button:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    padding: "8px 12px"
   game-row:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
@@ -194,7 +199,7 @@ components:
 
 A focused pure-black workspace gives the chess position a clear visual anchor while providing comfortable room for coaching. Blue-grey squares, soft white text, and a compact library support patient review. DM Sans carries headings and the working interface.
 
-This records the implemented import and replay UI and the user's approved replacement of the light workspace with a dark theme. Pure-black canvas and panels, blue selection, and white primary actions define the surrounding interface. The board artwork follows the user's November 15, 2026 reference and retains its established texture and pieces.
+This records the implemented account, library, Lessons, and replay UI and the user's approved replacement of the light workspace with a dark theme. Pure-black canvas and panels, blue selection, and white primary actions define the surrounding interface. The board artwork follows the user's November 15, 2026 reference and retains its established texture and pieces.
 
 **Key Characteristics:**
 - Dark, flat surfaces separated by fine rules and tonal changes.
@@ -208,7 +213,7 @@ The palette is cool and muted, with semantic colors reserved for game and reques
 
 ### Primary
 
-Soft white identifies primary actions such as Import games, with charcoal labels and a slightly darker hover state. Muted sky blue identifies text actions, keyboard focus, and selected move outlines. Replay play/pause uses a neutral tonal fill.
+Soft white identifies primary actions such as Add account and Save account, with charcoal labels and a slightly darker hover state. Muted sky blue identifies text actions, keyboard focus, and selected move outlines. Replay play/pause uses a neutral tonal fill.
 
 ### Neutral
 
@@ -226,7 +231,7 @@ Lessons segmented bars and severity dots use warning amber for Inaccuracy, warm 
 
 Locally bundled DM Sans Variable supplies all headings, controls, names, metadata, and notation. The game-title separator uses the same family at regular weight. Newsreader is no longer imported.
 
-The library title is (38px), saved-games heading (19px), opponent names (14px), and working controls (12-14px). At narrow widths the library title becomes (32px) and game titles (23px). Below (370px), the library title becomes (29px). Coach prose uses (14px) text at (1.6) line height with a maximum line length of (72ch); section headings use (15px) and the Coach title (16px). Candidate explanations use (13px), SAN (14px), and score chips (12px). Counts, dates, and evaluations use tabular numerals where applicable.
+The library title is (38px), opponent names (14px), and working controls (12-14px). The account dialog uses a (22px) heading, a (16px) username field, and (12-13px) supporting text. At narrow widths the library title becomes (32px) and game titles (23px). Below (370px), the library title becomes (29px). Coach prose uses (14px) text at (1.6) line height with a maximum line length of (72ch); section headings use (15px) and the Coach title (16px). Candidate explanations use (13px), SAN (14px), and score chips (12px). Counts, dates, and evaluations use tabular numerals where applicable.
 
 Lessons reuses the display title, with its own heading and total roles from the frontmatter. Topic labels use (16px) at (550) weight, while supporting descriptions and matching counts use (13px). Overview totals and all breakdown counts use tabular numerals. Mobile size changes are recorded in Layout.
 
@@ -234,46 +239,52 @@ Multi-game analysis uses the same DM Sans hierarchy. Report prose is (16px) with
 
 ## Layout
 
-The app has library, replay, and Lessons screens. The root URL opens the game library without a board. The library is centered at a maximum outer width of (1120px), with (38px 36px 24px) padding. A (68px) canvas-colored header sits above it. A short title leads into one compact import form, then saved-player selection, search, filters, and a scrollable list. Desktop rows align result, opponent, time control, date, and Analyze in columns.
+The app has library, replay, and Lessons screens. The root URL opens the game library without a board. The library is centered at a maximum outer width of (1120px), with (38px 36px 24px) padding. A (68px) canvas-colored header holds brand and navigation at left and a compact account button at right. The title and quiet sync status lead directly into search, filters, and a scrollable list. Desktop rows align result, opponent, time control, date, and analysis actions in columns; the list height is capped by the larger of (320px) and the dynamic viewport height minus (350px). Account entry and saved-account selection live in the global dialog.
 
-Lessons shares the library container. Its title and player/refresh controls sit opposite each other with a (24px) gap and (28px) space before the content. A compact error count and library-coverage summary precede two equal-width Positional and Tactical overview buttons with an (18px) separation and a (16px) grid gap. A separate Unclassified row appears below when needed. A fine rule introduces the explorer, with (20px) outer separation and (28px) top padding. Tactical subgroup controls form two equal columns; severity filters form four. Topic disclosures occupy the full width beneath them. Coverage notes follow after (28px), separated by a rule and (18px) top padding.
+Lessons shares the library container. Its title sits opposite the Multi-game analysis link and refresh control with a (24px) gap and (28px) space before the content. The global header supplies account selection. A compact error count and library-coverage summary precede two equal-width Positional and Tactical overview buttons with an (18px) separation and a (16px) grid gap. A separate Unclassified row appears below when needed. A fine rule introduces the explorer, with (20px) outer separation and (28px) top padding. Tactical subgroup controls form two equal columns; severity filters form four. Topic disclosures occupy the full width beneath them. Coverage notes follow after (28px), separated by a rule and (18px) top padding.
 
-The Lessons heading includes a secondary Multi-game analysis link to `#lessons/multi-game`. This screen shares the library container and places Back to lessons above the title and primary Run analysis action. An inline player/refresh group and wrapping saved-sample counts sit above a fine rule. Coach responses begins after (32px), with a labeled saved-response selector opposite its heading. The report follows as unboxed prose; major sections have (36px) separation, (28px) top padding, and a fine divider.
+The Lessons heading includes a secondary Multi-game analysis link to `#lessons/multi-game`. This screen shares the library container and places Back to lessons above the title and primary Run analysis action. A refresh control and wrapping saved-sample counts sit above a fine rule; account selection remains in the global header. Coach responses begins after (32px), with a labeled saved-response selector opposite its heading. The report follows as unboxed prose; major sections have (36px) separation, (28px) top padding, and a fine divider.
 
 Analyze opens a hash route containing the game ID and player. The dedicated replay screen has a maximum outer width of (2000px), a Back to games link, game heading, board, and Coach panel. The board caps at (840px), with a (400px) Coach sidebar and a (32px) gap. A flexible empty leading track balances the sidebar track on wide displays, centering the board itself in the viewport. As space narrows, that leading track yields first, then the board scales to the remaining width. The game heading and Back to games link follow the board's left edge. Inside Coach, one outlined response panel spans the available width. Position teaching, the original move control, and selected move detail share one card; the existing exercise card precedes it when practice is available. The panel grows with its content and the page scrolls naturally. Browser navigation and direct replay links work. Returning within the session restores filters, list/page scrolling, and focus to the originating Analyze link. Replay position remains saved per game.
 
 - At (960px) and below, page side padding becomes (24px), game columns tighten, and the replay gap becomes (24px).
 - In side-by-side replay layouts above (900px) wide and at most (1000px) tall, the board cap reduces to (720px). Replay top padding becomes (16px), navigation bottom padding (10px), and navigation and game-heading bottom margins (14px), saving vertical space on laptops while retaining the existing text sizes.
 - At (900px) and below, Coach moves below the centered board; both columns share an (840px) maximum width and the combined response remains one panel.
-- At (700px) and below, the header wraps into two rows with a minimum height of (108px) and padding of (12px 18px 0). The full-width second row keeps both navigation links visible with targets at least (44px) tall. Library side padding becomes (18px), and import controls wrap under the username. Filters sit below search. Game rows place their Analyze link on the right with date beneath it. The list caps at (520px).
+- At (700px) and below, the header wraps into two rows with a minimum height of (108px) and padding of (12px 18px 0). The full-width second row keeps both navigation links visible with targets at least (44px) tall. The account button stays beside the brand with a minimum (44px) height and truncates long usernames; its chevron is hidden. Library side padding becomes (18px), and sync status moves below the title. Filters sit below search. Game rows place their analysis actions on the right with date beneath the opponent metadata. The list caps at (520px).
 - At (700px) and below, Lessons stacks its heading and controls with a (16px) gap, uses a (32px) title, and stacks the coverage summary. Overview buttons retain two columns with a (12px) gap and (18px 16px) padding; their headings become (18px) and totals (32px). Topic summaries use (16px 8px) padding and filters use (13px) text. At (440px) and below, overview buttons and loading placeholders stack into one column, card padding becomes (18px), and the explorer heading may wrap. Filter text becomes (12px) with (4px) grid gaps, preserving two tactical choices and four full severity labels; controls retain a minimum (44px) height. Severity breakdowns and legends wrap naturally.
-- At (700px) and below, Multi-game analysis stacks its heading and action, makes the saved-response selector full width beneath Coach responses, and reduces report prose to (15px). At (440px) and below, its title becomes (30px) and Run analysis fills the available width. Player selection and refresh remain an inline group while sample counts wrap; report text and metadata wrap without horizontal overflow.
+- At (700px) and below, Multi-game analysis stacks its heading and action, makes the saved-response selector full width beneath Coach responses, and reduces report prose to (15px). At (440px) and below, its title becomes (30px) and Run analysis fills the available width. The refresh control remains beside the wrapping sample counts; report text and metadata wrap without horizontal overflow.
 - At (700px) and below, replay uses one column. Replay side padding and response body padding are (16px). Candidate rows and stronger-move links retain touch targets at least (44px) tall.
 - At (370px) and below, spacing and replay controls tighten and response padding becomes (14px). The body has no fixed minimum width, so (320px) viewports accommodate the scrollbar without horizontal overflow.
 
 ## Elevation & Depth
 
-The implementation has no shadows. Thin borders and tonal hover or selection fills establish hierarchy on the pure-black workspace and panels. Interactive feedback is a color change, not movement or elevation.
+The implementation has no shadows. Thin borders and tonal hover or selection fills establish hierarchy on the pure-black workspace and panels. Interactive feedback is a color change, not movement or elevation. The account dialog dims the page with a translucent black backdrop (#000000b8); its border defines the modal without a shadow.
 
 ## Shapes
 
-The board has square outer corners to match the reference. Player tokens retain (3px) corners; result labels use the move radius; icon controls, selected candidates, inputs, and actions use (8px) corners. Import, library, and Coach containers use (12px) corners; status blocks use (6px). Game rows remain flat with horizontal dividers. Section boundaries and field outlines use fine (1px) borders.
+The board has square outer corners to match the reference. Player tokens retain (3px) corners; result labels use the move radius; icon controls, selected candidates, inputs, and actions use (8px) corners. Account dialog, library, and Coach containers use (12px) corners; status blocks use (6px). Game rows remain flat with horizontal dividers. Section boundaries and field outlines use fine (1px) borders.
 
 ## Components
 
 ### Buttons and focus
 
-Primary actions use soft white with charcoal labels; import includes a trailing arrow. Replay play/pause uses a neutral tonal fill in a compact icon control. Secondary retry actions use pure black with an outline. Text actions have no container and underline on hover. Icon controls are transparent until hovered. Disabled buttons use reduced opacity (.42) and a default cursor.
+Primary actions use soft white with charcoal labels; account submission includes a trailing arrow. Replay play/pause uses a neutral tonal fill in a compact icon control. Secondary retry actions use pure black with an outline. Text actions have no container and underline on hover. Icon controls are transparent until hovered. Disabled buttons use reduced opacity (.42) and a default cursor.
 
-Button color transitions take (140ms). Interactive focus uses a solid blue outline (2px) with an offset (4px). Import and loading spinners rotate over (1s); reduced-motion preference removes animations and transitions.
+Button color transitions take (140ms). Interactive focus uses a solid blue outline (2px) with an offset (4px). Sync and loading spinners rotate over (1s); reduced-motion preference removes animations and transitions.
 
 ### Inputs and filters
 
-Pure-black fields use clearly visible grey borders and gently curved corners. The username field reserves room for its clear control. Search has a leading icon, while native select controls handle imported player, import count, speed, and result. Keep visible labels or accessible names on all fields.
+Pure-black fields use clearly visible grey borders and gently curved corners. The account dialog has a full-width username field with (10px 12px) padding and a minimum (46px) height. Search has a leading icon, while native select controls handle speed and result. Keep visible labels or accessible names on all fields.
 
 ### Primary navigation
 
 The persistent header contains real links to Your game library and Lessons. Muted (13px) labels and compact outline SVG icons sit (8px) apart within links; the links are separated by (24px). Hover uses soft white, while the current page combines soft white with a blue bottom rule (2px) and `aria-current="page"`. Replay keeps the library tab current. Existing keyboard focus remains visible. The header gap between brand and navigation is (40px), reducing to (24px) at (960px); its mobile treatment is defined in Layout.
+
+### Account settings
+
+One outlined account button at the right of the persistent header identifies the current username, or Account before setup. It uses the established control radius, muted outline icons, a neutral hover fill, and ellipsis for long names. The desktop target has a minimum (40px) height and maximum (240px) width; mobile uses a minimum (44px) height.
+
+The native modal dialog centers within the viewport, caps its width at (440px), retains (16px) viewport clearance, and scrolls internally when needed. Its pure-black surface uses a fine field-colored border, panel corners, and (28px) padding, reduced to (24px) at (700px). A visible username label and public-games hint precede the full-width Add account or Save account action. Saved accounts use flat, full-width buttons with a minimum (44px) height and a check for the current account. The close control is (44px) square. Opening focuses the username; Tab stays inside, Escape or the backdrop closes it, and closing returns focus to the opener.
 
 ### Lessons category explorer
 
@@ -283,13 +294,13 @@ Tactical subgroup and severity filters are native buttons with pressed states an
 
 Each topic is a native details/summary disclosure with its name on the left, count and chevron on the right, and a thin sky-blue proportion bar below. Hover adds a neutral fill; opening rotates the chevron and reveals the matching proportion and the topic's complete severity breakdown, including zeros. Text gives the bar's percentage to assistive technology. Disclosures show aggregate counts rather than individual move lists. The summary uses the established control radius and visible keyboard focus; its color and chevron transitions take (140ms) and respect reduced-motion preference.
 
-Player selection and refresh reuse existing controls with minimum (44px) targets. Loading uses two overview placeholders and one full-width explorer placeholder. Errors offer retry; the empty state links to the game library. A filter with no matches explains the result and offers Show all severities. Unclassified detail offers a library link for adding categories. Earlier-review and pending-review notices appear below the explorer as neutral text with blue links, followed by the counting rule; these notices are not success states.
+Account selection uses the global dialog; the local refresh control retains a minimum (44px) target. Loading uses two overview placeholders and one full-width explorer placeholder. Errors offer retry; the empty state links to the game library. A filter with no matches explains the result and offers Show all severities. Unclassified detail offers a library link for adding categories. Earlier-review and pending-review notices appear below the explorer as neutral text with blue links, followed by the counting rule; these notices are not success states.
 
 ### Multi-game analysis report
 
 The screen extends the existing black surfaces, DM Sans, white primary actions, and blue links without adding design tokens. Run analysis is an explicit action, disabled while data is unavailable or a request is starting, queued, or running. Active requests show a spinner and plain-language status while retaining the previous report. Failures appear inline; data-loading failures include Try again. Empty states explain missing analyzed mistakes or the absence of saved responses and provide the applicable next action.
 
-The native Saved analysis selector lists completed responses by local date, time, and game count, identifying the newest as Latest. Completing a run selects its saved response automatically. Metadata beneath the selector gives the games, evaluated moves, and errors captured at the time of that response. Player, refresh, and response controls retain accessible labels, visible keyboard focus, and minimum (44px) targets.
+The native Saved analysis selector lists completed responses by local date, time, and game count, identifying the newest as Latest. Completing a run selects its saved response automatically. Metadata beneath the selector gives the games, evaluated moves, and errors captured at the time of that response. Local refresh and response controls retain accessible labels, visible keyboard focus, and minimum (44px) targets. The shared account dialog supplies player selection.
 
 The report opens with an overall assessment, followed by Decision-making patterns and Foundations to develop when present. Each pattern pairs a title with written confidence, explanatory prose, and a Try this in your next game adjustment. An ordered practice list gives the foundation, reason, Practice focus, and related pattern titles. Fine dividers and spacing establish hierarchy without additional cards; internal pattern and position identifiers are not displayed.
 
@@ -340,7 +351,7 @@ Coordinates remain at the board's left and bottom edges after flipping. They use
 
 ### Status and empty states
 
-Loading and import feedback combine short text with a small icon. Failures use an error surface or a plainly labeled retry action. The initial screen shows only import and game selection; empty libraries have a text invitation to import, with no decorative board. Replay keeps Back to games available during loading and errors. The library's empty and filtered-empty states explain what is missing and provide an applicable next action.
+Library sync uses muted (12px) status text and a small icon beside the title, announced through a polite live region. Saved games remain visible and usable during checks and refreshes. Sync failures add warning-colored iconography and a short notice between fine rules with Try again and Account settings actions; the notice confirms that existing games remain available. Before setup, a centered invitation opens the account dialog. A configured account with no games shows finding, failure, or no-completed-games copy as appropriate; a filtered-empty list offers Clear filters. These states use the established typography and no decorative board. Replay keeps Back to games available during loading and errors.
 
 ## Do's and Don'ts
 
