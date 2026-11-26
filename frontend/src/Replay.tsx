@@ -3,9 +3,6 @@ import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, In
 import Board from './Board';
 import GameOverview from './GameOverview';
 import CoachCards from './CoachCards';
-import PracticeCard from './PracticeCard';
-import { needsPractice } from './reviewPractice';
-import { useReviewPractice } from './useReviewPractice';
 import type { CoachResponse, EngineReview, GameAnalysis, GameDetail } from './types';
 import { api, perspective, readStored, store } from './types';
 import { AUTOPLAY_TURN_MS, replayStops, replayNavigation, restoreReplay } from './replayNavigation';
@@ -27,7 +24,6 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const [analysis, setAnalysis] = useState<GameAnalysis | null>(() => game.engine_analyses?.[color] ?? null);
   const [analysisError, setAnalysisError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [revealedPly, setRevealedPly] = useState<number | null>(null);
   const [navigation, dispatch] = useReducer(replayNavigation, undefined, () =>
     restoreReplay(replayStops(game.positions), Number(readStored(`position:${game.id}`))));
   const { ply, playing, stops } = navigation;
@@ -35,12 +31,14 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [flipped, setFlipped] = useState(!player.isWhite);
   const [coachResponses, setCoachResponses] = useState<Record<string, CoachResponse>>(() => game.coach_responses ?? {});
-  const position = game.positions[ply];
-  const nextMove = game.moves[ply];
-  const opponentTurn = !!nextMove && nextMove.color !== color;
-  const savedResponse = coachResponses[String(ply)];
-  const coachResponse = !opponentTurn && savedResponse?.fen === position.fen
-    && savedResponse.played_move === (nextMove?.uci ?? null) ? savedResponse : undefined;
+  // Replay selects a completed move. Saved analysis is keyed by its pre-move ply.
+  const reviewPly = ply - 1;
+  const position = game.positions[Math.max(0, reviewPly)];
+  const playedMove = game.moves[reviewPly];
+  const opponentMove = !!playedMove && playedMove.color !== color;
+  const savedResponse = coachResponses[String(reviewPly)];
+  const coachResponse = !opponentMove && playedMove && savedResponse?.fen === position.fen
+    && savedResponse.played_move === playedMove.uci ? savedResponse : undefined;
   const reviews = useMemo(() => {
     const result: Record<string, EngineReview> = {};
     for (const saved of Object.values(game.engine_analyses ?? {})) Object.assign(result, saved?.opponent_moves, saved?.moves);
@@ -50,11 +48,8 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     }
     return result;
   }, [game.engine_analyses, analysis, coachResponses]);
-  const engineReview = matchingReview(nextMove, position, reviews[String(ply)]);
-  const practiceEligible = revealedPly !== ply && needsPractice(nextMove, color, position.fen, engineReview, coachResponse);
-  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, false, reducedMotion, game.analysis_revision ?? 0);
-  const hideReview = practice.active || !!practice.shownMove;
-  const speechId = `${game.id}:${ply}:${coachResponse?.response_id ?? position.fen}:reset-${game.analysis_revision ?? 0}`;
+  const engineReview = matchingReview(playedMove, position, reviews[String(reviewPly)]);
+  const speechId = `${game.id}:${reviewPly}:${coachResponse?.response_id ?? position.fen}:reset-${game.analysis_revision ?? 0}`;
   const markers = errorMarkers(game.moves, game.positions, stops, reviews, color);
   const reviewPlies = coachedErrorPlies(game.moves, game.positions, reviews, coachResponses, color);
   const previousReview = reviewPlies.filter(value => value < ply).at(-1);
@@ -62,7 +57,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null);
   const [variation, setVariation] = useState<VariationPlayback | null>(null);
   const boardColumn = useRef<HTMLDivElement>(null);
-  const candidate = hideReview ? undefined : coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, false)
+  const candidate = coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, false)
     : visibleEngineCandidate(candidateSelection, engineReview, position.fen, false);
   const candidateName = candidate ? coachResponse?.candidate_san?.[candidate.uci]
     ?? (coachResponse?.stockfish?.played_move.uci === candidate.uci ? coachResponse.stockfish.played_move.san
@@ -72,36 +67,37 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   }) : null;
   const positionLabel = ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].number}${game.moves[ply - 1].color === 'white' ? '.' : '…'} ${game.moves[ply - 1].san}`;
   const coachDetails = coachResponse ? `${positionLabel} · ${coachModelLabel(coachResponse.model)} · Saved ${savedAt}` : positionLabel;
-  const playback = !hideReview && variation?.gamePly === ply && variation.responseId === coachResponse?.response_id
+  const playback = variation?.gamePly === ply && variation.responseId === coachResponse?.response_id
     && variation.ownerUci === candidate?.uci ? variation : null;
-  const shownPosition = practice.shownMove?.position ?? (playback ? playback.sequence.positions[playback.step] : boardPosition);
-  const onMainLine = !practice.shownMove && !playback;
+  // Only an explicitly selected alternative needs the original decision position.
+  // The played move's explanation keeps the board after the move, without an arrow.
+  const boardCandidate = candidate?.uci !== playedMove?.uci ? candidate : undefined;
+  const shownPosition = playback ? playback.sequence.positions[playback.step] : boardCandidate ? position : boardPosition;
+  const onMainLine = !boardCandidate && !playback;
   const statistics = analysis?.statistics ?? Object.values(game.engine_analyses ?? {}).find(saved => saved?.statistics?.complete)?.statistics;
   const turn = shownPosition.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
-  const seek = (value: number) => { setRevealedPly(null); setCandidateSelection(null); setVariation(null); dispatch({ type: 'seek', ply: value }); };
-  const step = (direction: 1 | -1) => { setRevealedPly(null); setVariation(null); dispatch({ type: 'step', direction }); };
-  const jumpReview = (value: number) => { setRevealedPly(value); setVariation(null); dispatch({ type: 'seek', ply: value }); };
-  const toggleGamePlayback = () => { setVariation(null); dispatch({type: 'toggle-play'}); };
+  const seek = (value: number) => { setCandidateSelection(null); setVariation(null); dispatch({ type: 'seek', ply: value }); };
+  const step = (direction: 1 | -1) => { setCandidateSelection(null); setVariation(null); dispatch({ type: 'step', direction }); };
+  const toggleGamePlayback = () => { if (boardCandidate) setCandidateSelection(null); setVariation(null); dispatch({type: 'toggle-play'}); };
 
   useEffect(() => {
-    setCandidateSelection((revealedPly === ply || practice.complete) && coachResponse?.played_move
-      ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move} : null);
+    setCandidateSelection(coachResponse?.played_move
+      ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move}
+      : engineReview ? {fen: position.fen, responseId: engineSelectionId(engineReview), uci: engineReview.played_move} : null);
     setVariation(null);
-  }, [ply, revealedPly, coachResponse?.response_id, practice.complete]);
-  useEffect(() => { if (practice.active) dispatch({type: 'pause'}); }, [practice.active, ply]);
-  const originalMove = onMainLine ? nextMove : undefined;
+  }, [ply, coachResponse?.response_id, engineReview?.fen, engineReview?.played_move]);
 
   function selectCandidate(uci: string) {
-    if ((!coachResponse && !engineReview) || hideReview) return;
+    if (!coachResponse && !engineReview) return;
     setVariation(null);
     dispatch({ type: 'pause' });
     setCandidateSelection(candidate?.uci === uci ? null : { fen: position.fen, responseId: coachResponse?.response_id ?? engineSelectionId(engineReview!), uci });
   }
 
   function playSequence(sequence: PvSequence) {
-    if (!candidate || !coachResponse || hideReview) return;
+    if (!candidate || !coachResponse) return;
     dispatch({type: 'pause'});
     setVariation({sequence, step: 0, gamePly: ply, responseId: coachResponse.response_id, ownerUci: candidate.uci});
     const board = boardColumn.current?.querySelector('.board');
@@ -166,11 +162,11 @@ export default function Replay({ game, username }: { game: GameDetail; username:
 
   useEffect(() => { store(`position:${game.id}`, String(ply)); }, [game.id, ply]);
   useEffect(() => {
-    if (!playing || practice.active) return;
+    if (!playing) return;
     if (ply >= game.moves.length) { dispatch({ type: 'pause' }); return; }
     const timer = window.setTimeout(() => dispatch({ type: 'step', direction: 1, automatic: true }), AUTOPLAY_TURN_MS);
     return () => window.clearTimeout(timer);
-  }, [playing, ply, game.moves.length, practice.active]);
+  }, [playing, ply, game.moves.length]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -181,14 +177,14 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', ' '].includes(event.key)) return;
       event.preventDefault();
       setVariation(null);
-      if (event.key !== ' ') { setRevealedPly(null); setCandidateSelection(null); }
-      if (event.key === ' ') { if (!practice.active) dispatch({ type: 'toggle-play' }); }
+      if (event.key !== ' ' || boardCandidate) setCandidateSelection(null);
+      if (event.key === ' ') dispatch({ type: 'toggle-play' });
       else if (event.key === 'Home' || event.key === 'End') dispatch({ type: 'seek', ply: event.key === 'Home' ? 0 : game.moves.length });
       else dispatch({ type: 'step', direction: event.key === 'ArrowRight' ? 1 : -1 });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [game.moves.length, practice.active]);
+  }, [game.moves.length, boardCandidate?.uci]);
 
   const playerBar = (color: 'white' | 'black') => <div className="player-bar">
     <span className={`color-token ${color}`} aria-label={`${color} pieces`}/>
@@ -205,9 +201,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
           onMainLine={onMainLine} analyzing={analyzing} submitting={submitting} onComplete={() => void resumeAnalysis()}/>
         {playerBar(top)}
         <Board position={shownPosition} flipped={flipped}
-          candidate={!playback ? candidate : undefined} candidateName={candidateName} originalMove={originalMove}
-          legalMoves={practice.legalMoves.map(move => move.uci)} onMove={practice.active ? uci => { dispatch({type: 'pause'}); void practice.attemptMove(uci); } : undefined}
-          inputDisabled={practice.inputDisabled}/>
+          candidate={!playback ? boardCandidate : undefined} candidateName={candidateName} playedMove={onMainLine ? playedMove : undefined}/>
         {playerBar(bottom)}
         {playback && <div className="variation-playback" role="group" aria-label="Variation playback">
           <span className="variation-status" role="status">{playback.step < playback.sequence.san.length ? 'Exploring variation' : 'Variation complete'}
@@ -223,7 +217,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
           <div className="transport">
             <button className="icon-button" disabled={ply === 0} onClick={() => seek(0)} title="First position (Home)" aria-label="First position"><ChevronsLeft size={21}/></button>
             <button className="icon-button" disabled={ply === 0} onClick={() => step(-1)} title="Previous move (left arrow)" aria-label="Previous move"><ChevronLeft size={22}/></button>
-            <button className="play-button" disabled={practice.active} onClick={toggleGamePlayback} title="Autoplay moves (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
+            <button className="play-button" onClick={toggleGamePlayback} title="Autoplay moves (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
             <button className="icon-button" disabled={ply === game.moves.length} onClick={() => step(1)} title="Next move (right arrow)" aria-label="Next move"><ChevronRight size={22}/></button>
             <button className="icon-button" disabled={ply === game.moves.length} onClick={() => seek(game.moves.length)} title="Final position (End)" aria-label="Final position"><ChevronsRight size={21}/></button>
           </div>
@@ -240,11 +234,11 @@ export default function Replay({ game, username }: { game: GameDetail; username:
             </button>)}
           </div>}
         </div>
-        <div className="visually-hidden" aria-live="polite">{!playback && ply === game.moves.length ? `Final position · ${game.result}` : `${playback ? 'Variation · ' : practice.shownMove ? `Your attempt ${practice.shownMove.san} · ` : ''}${turn} to move${shownPosition.check_square ? ' · Check' : ''}`}</div>
+        <div className="visually-hidden" aria-live="polite">{onMainLine ? `${positionLabel} · ${ply === game.moves.length ? `Final position · ${game.result}` : `${turn} to move${shownPosition.check_square ? ' · Check' : ''}`}` : `${playback ? 'Variation' : `Candidate ${candidateName}`} · ${turn} to move${shownPosition.check_square ? ' · Check' : ''}`}</div>
       </div>
       <aside className="coach-panel" aria-labelledby="coach-title">
         <div className="coach-heading">
-          <div className="coach-title-group"><h2 id="coach-title">{opponentTurn ? 'Opponent’s moves' : 'Coach'}</h2>
+          <div className="coach-title-group"><h2 id="coach-title">{opponentMove ? 'Opponent’s moves' : 'Coach'}</h2>
             <span className="coach-details" tabIndex={0} role="note" aria-label={coachDetails}>
               <Info size={14} aria-hidden="true"/><span className="coach-tooltip" aria-hidden="true">{coachDetails}</span>
             </span>
@@ -255,17 +249,14 @@ export default function Replay({ game, username }: { game: GameDetail; username:
           <button type="button" className="text-button" disabled={submitting} onClick={() => void resumeAnalysis()}>{submitting ? 'Starting…' : 'Analyze remaining moves'}</button></p>}
         {(analysisError || analysis?.error) && <p className="coach-error" role="alert">{analysisError || analysis?.error} Return to the library to resume.</p>}
         <div className="coach-result" aria-busy={analyzing && !coachResponse}>
-          {practiceEligible && hideReview && <div className={`practice-stage${practice.complete && !practice.checking ? ' practice-stage-complete' : ''}`}>
-            <div><PracticeCard practice={practice} original={nextMove} overview={coachResponse?.teaching?.position_overview} speechId={speechId} reducedMotion={reducedMotion}/></div>
-          </div>}
-          {!hideReview && <div key={speechId} className={practice.justCompleted ? 'coach-review-reveal' : undefined}><div>
-            <CoachCards response={coachResponse} engineReview={engineReview} engineMode={!!analysis || opponentTurn} opponent={opponentTurn} nextMove={nextMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={false}
+          {playedMove ? <div key={speechId}>
+            <CoachCards response={coachResponse} engineReview={engineReview} engineMode={!!analysis || opponentMove} opponent={opponentMove} reviewedMove={playedMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={false}
               speechId={speechId} reducedMotion={reducedMotion} activeSequenceId={playback?.sequence.id} onPlaySequence={playSequence}/>
-          </div></div>}
+          </div> : <p className="coach-placeholder">Play a move to see its review.</p>}
           {reviewPlies.length > 0 && <nav className="coach-review-navigation" aria-label="Navigate saved coach reviews">
-            <button type="button" disabled={previousReview === undefined} onClick={() => previousReview !== undefined && jumpReview(previousReview)}
+            <button type="button" disabled={previousReview === undefined} onClick={() => previousReview !== undefined && seek(previousReview)}
               aria-label="Previous coached inaccuracy, mistake or blunder"><ChevronLeft size={22} aria-hidden="true"/><span>Previous review</span></button>
-            <button type="button" disabled={nextReview === undefined} onClick={() => nextReview !== undefined && jumpReview(nextReview)}
+            <button type="button" disabled={nextReview === undefined} onClick={() => nextReview !== undefined && seek(nextReview)}
               aria-label="Next coached inaccuracy, mistake or blunder"><span>Next review</span><ChevronRight size={22} aria-hidden="true"/></button>
           </nav>}
         </div>
