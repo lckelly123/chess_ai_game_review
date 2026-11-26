@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, CircleAlert, LoaderCircle, Play, RefreshCw } from 'lucide-react';
 import { api } from './types';
-import type { Profile } from './types';
 import type { LessonAnalytics } from './lessonsData';
 import './multiGameAnalysis.css';
 
@@ -45,8 +44,8 @@ function Report({report}: {report: MultiGameReport}) {
   </div>;
 }
 
-export default function MultiGameAnalysis({username, profiles, onSelectPlayer, summary, summaryLoading, summaryError, onRefreshSummary}: {
-  username: string; profiles: Profile[]; onSelectPlayer: (value: string) => void;
+export default function MultiGameAnalysis({username, summary, summaryLoading, summaryError, onRefreshSummary}: {
+  username: string;
   summary: LessonAnalytics | null; summaryLoading: boolean; summaryError: string; onRefreshSummary: () => void;
 }) {
   const [runs, setRuns] = useState<MultiGameRun[]>([]);
@@ -119,10 +118,6 @@ export default function MultiGameAnalysis({username, profiles, onSelectPlayer, s
     </div>
     <div className="multi-game-scope">
       <div className="profile-row lessons-controls">
-        {profiles.length > 0 && <><label className="visually-hidden" htmlFor="multi-game-player">Player for multi-game analysis</label>
-          <select id="multi-game-player" value={username} onChange={event => onSelectPlayer(event.target.value)}>
-            {profiles.map(profile => <option key={profile.username} value={profile.username}>{profile.username}</option>)}
-          </select></>}
         <button className="icon-button" aria-label="Refresh multi-game analysis" title="Refresh multi-game analysis"
           onClick={refresh} disabled={loading || summaryLoading}><RefreshCw size={16}/></button>
       </div>

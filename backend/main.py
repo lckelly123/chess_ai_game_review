@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 class ImportRequest(BaseModel):
     username: str = Field(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
     limit: int = Field(default=50, ge=1, le=100)
+    sync: bool = False
 
     @field_validator("username", mode="before")
     @classmethod
@@ -120,17 +121,22 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
 
     @app.post("/api/imports", status_code=202)
     async def start_import(request: ImportRequest):
-        active = next((job for job in app.state.jobs.values() if job["status"] in {"queued", "running"}), None)
-        if active:
-            if active["username"] == request.username:
-                return active
+        active_jobs = [job for job in app.state.jobs.values() if job["status"] in {"queued", "running"}]
+        existing = next((job for job in active_jobs if job["username"] == request.username), None)
+        if existing:
+            return existing
+        if active_jobs and not request.sync:
             raise HTTPException(409, "Another import is running. Please wait for it to finish.")
         if len(app.state.jobs) >= 20:
-            del app.state.jobs[next(iter(app.state.jobs))]
+            finished = next((key for key, job in app.state.jobs.items() if job["status"] in {"completed", "failed"}), None)
+            if finished:
+                del app.state.jobs[finished]
+            else:
+                raise HTTPException(409, "Several accounts are syncing. Please try again shortly.")
         job_id = uuid.uuid4().hex
         job = {"id": job_id, "username": request.username, "status": "queued", "found": 0, "added": 0, "skipped": 0, "message": "Starting import…"}
         app.state.jobs[job_id] = job
-        task = asyncio.create_task(app.state.importer.run(request.username, request.limit, job))
+        task = asyncio.create_task(app.state.importer.run(request.username, request.limit, job, sync=request.sync))
         app.state.tasks.add(task)
         task.add_done_callback(app.state.tasks.discard)
         return job

@@ -37,32 +37,46 @@ button { border: 0; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .app-layout { max-width: 1120px; margin: 0 auto; min-height: calc(100vh - 68px); padding: 38px 36px 24px; }
 .library { min-width: 0; }
-.library-heading { margin-bottom: 28px; }
+.library-heading { margin-bottom: 32px; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .library-heading h1 { font-size: 38px; font-weight: 550; letter-spacing: -.035em; line-height: 1.15; }
-.library-heading > p { margin-top: 10px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.import-section { padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
-.import-fields { min-width: 0; }
-.import-section form { display: flex; align-items: flex-end; gap: 10px; }
-.username-field { flex: 1; min-width: 0; }
-.import-section label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 7px; }
-.username-input { display: flex; position: relative; }
+.library-heading p { margin-top: 10px; color: var(--muted); font-size: 14px; line-height: 1.6; }
 input, select, textarea { min-width: 0; border: 1px solid var(--field-border); background: var(--surface); color: var(--ink); border-radius: 8px; }
 input, textarea { caret-color: var(--accent); }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 ::selection { background: var(--selected); color: var(--ink); }
-.username-input input { width: 100%; height: 44px; padding: 0 36px 0 12px; font-size: 14px; }
-.clear-input { position: absolute; right: 3px; top: 3px; height: 38px; width: 32px; background: transparent; color: var(--muted); display: grid; place-items: center; border-radius: 4px; }
-.clear-input:hover { background: var(--hover); }
-.import-actions { display: flex; gap: 10px; }
-.import-actions select { width: 105px; height: 44px; font-size: 12px; padding: 0 8px; }
 .primary-button { background: var(--primary); color: var(--primary-ink); border-radius: 8px; min-height: 44px; padding: 10px 16px; font-size: 13px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
 .primary-button:hover:not(:disabled) { background: var(--primary-hover); }
-.import-hint { font-size: 11px; line-height: 1.6; color: var(--muted); margin-top: 10px; }
-.import-status { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.6; margin-top: 14px; background: var(--hover); border-radius: 6px; padding: 10px; }
-.import-status svg { flex-shrink: 0; margin-top: 2px; }
-.import-status.error { background: var(--negative-surface); color: var(--negative); }
-.import-status small { display: block; margin-top: 5px; font-size: 11px; }
-.library-section { margin-top: 32px; }
+.account-button { margin-left: auto; min-width: 0; max-width: 240px; min-height: 40px; padding: 8px 12px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 13px; }
+.account-button:hover { background: var(--hover); }
+.account-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-button > svg { color: var(--muted); }
+.account-dialog { box-sizing: border-box; width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 28px; overflow-y: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--field-border); border-radius: 12px; }
+.account-dialog::backdrop { background: #000000b8; }
+.account-dialog-heading { display: flex; align-items: center; justify-content: space-between; margin: -4px -8px 16px 0; color: var(--muted); }
+.account-dialog-heading .icon-button { width: 44px; height: 44px; }
+.account-dialog h2 { font-size: 22px; font-weight: 600; line-height: 1.3; letter-spacing: -.025em; }
+.account-dialog > p { color: var(--muted); font-size: 13px; line-height: 1.65; margin-top: 10px; }
+.account-dialog form { margin-top: 24px; }
+.account-dialog label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+.account-dialog input { width: 100%; min-height: 46px; padding: 10px 12px; font-size: 16px; }
+.account-dialog form > p { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.account-dialog form > button { margin-top: 22px; width: 100%; }
+.account-dialog .account-footnote { padding-top: 20px; margin-top: 24px; border-top: 1px solid var(--line); font-size: 12px; }
+.saved-accounts { margin-top: 24px; }
+.saved-accounts h3 { font-size: 12px; color: var(--muted); font-weight: 500; margin-bottom: 8px; }
+.saved-accounts button { width: 100%; display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 10px 8px; background: transparent; border-radius: 8px; font-size: 13px; text-align: left; }
+.saved-accounts button:hover { background: var(--hover); }
+.saved-accounts button span { flex: 1; overflow-wrap: anywhere; min-width: 0; }
+.sync-status { display: flex; align-items: center; gap: 7px; min-height: 24px; padding-bottom: 2px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.sync-status svg, .sync-notice > svg { flex-shrink: 0; }
+.sync-failed { color: var(--warning); }
+.sync-notice { display: flex; align-items: flex-start; gap: 10px; padding: 16px 0; margin-bottom: 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.6; }
+.sync-notice > svg { color: var(--warning); margin-top: 2px; }
+.sync-notice-hint { color: var(--muted); margin-top: 3px; }
+.sync-notice .text-button { min-height: 36px; }
+.sync-notice-actions { display: flex; gap: 20px; flex-wrap: wrap; }
+.sync-footnote { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+.library-section { margin-top: 0; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .section-heading h2 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; }
 .profile-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -76,7 +90,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .list-summary { display: flex; justify-content: space-between; margin: 18px 0 12px; font-size: 11px; color: var(--muted); }
 .game-list-heading, .game-item { display: grid; grid-template-columns: 64px minmax(0, 1fr) 130px 120px 140px; align-items: center; column-gap: 16px; padding: 14px 20px; }
 .game-list-heading { border: 1px solid var(--line); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--surface); font-size: 11px; color: var(--muted); padding-top: 13px; padding-bottom: 13px; }
-.game-list { padding: 0; margin: 0; list-style: none; overflow-y: auto; max-height: clamp(320px, calc(100vh - 480px), 650px); scrollbar-width: thin; scrollbar-color: var(--field-border) transparent; background: var(--surface); border: 1px solid var(--line); border-radius: 0 0 12px 12px; }
+.game-list { padding: 0; margin: 0; list-style: none; overflow-y: auto; max-height: max(320px, calc(100dvh - 350px)); scrollbar-width: thin; scrollbar-color: var(--field-border) transparent; background: var(--surface); border: 1px solid var(--line); border-radius: 0 0 12px 12px; }
 .game-list:empty { display: none; }
 .game-item { min-height: 82px; border-bottom: 1px solid var(--line); }
 .game-item:last-child { border-bottom: 0; }
@@ -112,6 +126,9 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .library-empty > svg { color: var(--muted); margin-bottom: 10px; }
 .library-empty h3 { font-size: 17px; font-weight: 500; color: var(--ink); margin-bottom: 5px; }
 .library-empty .text-button { margin: 10px auto 0; }
+.account-empty { padding: 76px 20px; }
+.account-empty h2 { margin-bottom: 12px; color: var(--ink); font-size: 24px; font-weight: 550; letter-spacing: -.025em; }
+.account-empty .primary-button { margin: 24px auto 0; }
 .last-sync { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); padding-top: 16px; }
 .library-footer { margin-top: 30px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .replay-layout {
@@ -281,8 +298,6 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .better-candidate { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 5px 10px; background: transparent; color: var(--accent); font-size: 12px; }
 .better-candidate:disabled { opacity: .55; cursor: wait; }
 .move-empty-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
-.tactic-classification { margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
-.tactic-classification > span { color: var(--muted); }
 .coach-cards ::selection { background: var(--selection-badge); color: var(--ink); }
 .coach-placeholder { color: var(--muted); }
 .coach-prose > :first-child { margin-top: 0; }
@@ -333,16 +348,13 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   .primary-nav { order: 3; flex-basis: 100%; gap: 24px; min-height: 44px; }
   .primary-nav a { min-height: 44px; }
   .app-layout { padding: 26px 18px 22px; min-height: calc(100vh - 108px); }
-  .library-heading { margin-bottom: 22px; }
+  .library-heading { margin-bottom: 24px; flex-direction: column; align-items: flex-start; gap: 14px; }
   .library-heading h1 { font-size: 32px; }
-  .library-heading > p { font-size: 13px; max-width: 38ch; }
-  .import-section { padding: 18px; }
-  .import-section form { flex-wrap: wrap; }
-  .username-field { flex-basis: 100%; }
-  .import-actions { width: 100%; }
-  .import-actions select { width: 110px; }
-  .import-actions .primary-button { flex: 1; }
-  .library-section { margin-top: 28px; }
+  .library-heading p { font-size: 13px; max-width: 38ch; }
+  .account-button { max-width: min(190px, calc(100% - 172px)); min-height: 44px; padding: 8px; gap: 6px; }
+  .account-button > svg:last-child { display: none; }
+  .account-dialog { padding: 24px; }
+  .library-section { margin-top: 0; }
   .section-heading h2 { font-size: 18px; white-space: nowrap; }
   .profile-row select { max-width: 170px; padding-right: 20px; }
   .library-toolbar { flex-wrap: wrap; gap: 10px; }

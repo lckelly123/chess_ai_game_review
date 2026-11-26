@@ -7,7 +7,6 @@ import { coachMoves } from './coachMoves';
 import { engineMoves, qualityLabels } from './engineReview';
 import { positionDecision } from './positionDecision';
 import { moveReferences } from './moveReferences';
-import { tacticSummary } from './tacticClassification';
 
 function Prose({ children }: { children: string }) {
   return <div className="coach-prose"><Markdown skipHtml disallowedElements={['img']} components={{ h1: 'h4', h2: 'h4', h3: 'h4' }}>{children}</Markdown></div>;
@@ -63,7 +62,6 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   if (inlineMoves && response?.played_move && !moveReferences(explanation ?? '', rows).some(part => part.move?.isPlayed)) {
     paragraphs.push(`Your move was [[${response.played_move}]].`);
   }
-  const tactics = tacticSummary(response, engineReview);
 
   return <div className="coach-cards">
     <div className="coach-card-body" aria-busy={pending}>
@@ -152,7 +150,6 @@ export default function CoachCards({ response, engineReview, engineMode = false,
           </div>}
         </section>}
       </div>
-      {tactics && <p className="tactic-classification"><span>Tactic classification:</span> {tactics}</p>}
     </div>
   </div>;
 }

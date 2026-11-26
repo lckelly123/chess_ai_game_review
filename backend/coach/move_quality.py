@@ -11,7 +11,6 @@ from .move_review import MoveReview
 from .player_move_quality import PLAYER_QUALITY_POLICY, assess_player_move
 from .sharpness import with_position_sharpness
 from .stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError, StockfishUnavailableError, _candidate
-from ..tactics import with_tactic_classification
 
 # Legacy WDL comparison remains available for existing evidence consumers.
 # New teaching candidates use the shared player-severity classifier below.
@@ -88,9 +87,8 @@ def _played_candidate(board: chess.Board, info: dict) -> dict:
     return played
 
 
-def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishSettings | None = None, *,
-                        include_tactics: bool = True) -> dict:
-    """Grade the move; saved reviews also classify tactics, live practice opts out."""
+def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishSettings | None = None) -> dict:
+    """Grade the move without running the disabled Lichess motif detectors."""
     review = MoveReview.from_fen(review.position.fen, review.played_move_uci)
     if evidence.get("fen") != review.position.fen or evidence.get("perspective") != review.position.side_to_move:
         raise StockfishAnalysisError("Stockfish evidence did not match the selected position.")
@@ -124,7 +122,6 @@ def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishS
     if played["uci"] != review.played_move_uci:
         raise StockfishAnalysisError("Stockfish evaluated a different played move.")
     played = {**played, "quality": assess_player_move(candidates[0], played)}
-    result = {"fen": review.position.fen, "engine": engine_name, "perspective": review.position.side_to_move,
+    return {"fen": review.position.fen, "engine": engine_name, "perspective": review.position.side_to_move,
             "top_moves": candidates, "played_move": played, "played_move_in_top": in_top,
             "move_quality": played["quality"], "move_quality_policy": PLAYER_QUALITY_POLICY.copy()}
-    return with_tactic_classification(review.position.fen, review.played_move_uci, result, settings=settings) if include_tactics else result
