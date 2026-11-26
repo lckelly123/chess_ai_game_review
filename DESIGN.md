@@ -63,8 +63,8 @@ typography:
     fontWeight: 400
     lineHeight: 1.65
   coach-body:
-    fontFamily: "'DM Sans Variable', sans-serif"
-    fontSize: "14px"
+    fontFamily: "'Times New Roman', Times, serif"
+    fontSize: "17px"
     fontWeight: 400
     lineHeight: 1.6
   working:
@@ -214,7 +214,7 @@ This records the implemented account, library, Lessons, and replay UI and the us
 - Dark, flat surfaces separated by fine rules and tonal changes.
 - An Icy Sea textured board with Classic black-and-white pieces, matching the supplied reference.
 - Compact game rows and precise move selection.
-- DM Sans throughout, with compact coaching prose and working controls.
+- DM Sans for the working interface; Times New Roman for the Coach panel.
 
 ## Colors
 
@@ -238,9 +238,9 @@ Lessons segmented bars and severity dots use warning amber for Inaccuracy, warm 
 
 ## Typography
 
-Locally bundled DM Sans Variable supplies all headings, controls, names, metadata, and notation. The game-title separator uses the same family at regular weight. Newsreader is no longer imported.
+Locally bundled DM Sans Variable supplies headings, controls, names, metadata, and notation outside Coach. The Coach panel uses Times New Roman with Times and serif fallbacks. The game-title separator uses DM Sans at regular weight. Newsreader is no longer imported.
 
-The library title is (38px), opponent names (14px), and working controls (12-14px). The account dialog uses a (22px) heading, a (16px) username field, and (12-13px) supporting text. At narrow widths the library title becomes (32px) and game titles (23px). Below (370px), the library title becomes (29px). Coach prose uses (14px) text at (1.6) line height with a maximum line length of (72ch); section headings use (15px) and the Coach title (16px). Candidate explanations use (13px), SAN (14px), and score chips (12px). Counts, dates, and evaluations use tabular numerals where applicable.
+The library title is (38px), opponent names (14px), and working controls (12-14px). The account dialog uses a (22px) heading, a (16px) username field, and (12-13px) supporting text. At narrow widths the library title becomes (32px) and game titles (23px). Below (370px), the library title becomes (29px). Coach prose uses Times New Roman (17px) text at (1.6) line height with a maximum line length of (72ch); section headings use (18px) and the Coach title (20px). Candidate explanations use (17px), move-list SAN (14px), and score chips (12px). Counts, dates, and evaluations use tabular numerals where applicable.
 
 Lessons reuses the display title, with its own heading and total roles from the frontmatter. Topic labels use (16px) at (550) weight, while supporting descriptions and matching counts use (13px). Overview totals and all breakdown counts use tabular numerals. Mobile size changes are recorded in Layout.
 
@@ -333,7 +333,7 @@ The Coach response is one compact outlined card without tabs. The heading sits d
 
 An engine-only result renders just the Moves section in the existing coaching card. It contains the first three Stockfish choices plus the recorded move as a fourth row only when it is outside those three, with scores and severity but no generated explanations. Opponent turns use the heading Opponent’s moves and mark their recorded choice Opponent move. Each score retains its mover's perspective. Board selection derives arrows and highlights from UCI. Coach feedback adds the position explanation without a separate needs or plan section. Partial analysis updates do not reset the replay position or board selection. Older analyses without complete opponent coverage show Analyze remaining moves; missing scores remain unavailable until saved evidence arrives.
 
-When practice is available, its exercise card contains only the heading Find a better move than {SAN} and the short `position_overview`, which stays visible after completion. The overview introduces the position without revealing candidate explanations. The original move's origin and destination use full-square translucent red overlays (#d85c5c66) beneath the pieces, with a slim red arrow (#c43c46 at 85% opacity) connecting them and no outlined borders; candidate previews in the revealed review retain their arrows. Attempt feedback, errors, and View review appear below the card when needed, while the idle instructions and attempt history are omitted. View review reveals the coaching card, whose Understand the position section renders `position_explanation`. Recognized SAN moves are native buttons within the prose, using muted blue, an underline, inherited type, and visible keyboard focus. Hover and expanded states add the existing dark blue selection fill. The new format has no candidate list; a Your move control retains access to the original move's assessment.
+When practice is available, its exercise card contains the heading Find a better move than {SAN} and the short `position_overview`, typed incrementally without revealing candidate explanations. The original move's origin and destination use full-square translucent red overlays (#d85c5c66) beneath the pieces, with a slim red arrow (#c43c46 at 85% opacity) connecting them and no outlined borders; candidate previews in the revealed review retain their arrows. Attempt feedback and errors appear below the card when needed. A correct move receives brief success feedback, then the hint fades and collapses automatically. The review expands into place: Understand the position types `position_explanation`, followed by the automatically selected original move's explanation. The completed hint and View review button are absent. Show all finishes both queued explanations; previously read passages appear immediately, with completion saved locally by response and content. Reduced motion shows full text immediately and skips spatial animation. Text reserves its final line wrapping; screen readers receive complete text without per-character announcements. Recognized SAN moves appear as whole native buttons within the prose, using muted blue, an underline, inherited type, and visible keyboard focus. Hover and expanded states add the existing dark blue selection fill. The new format has no candidate list; the inline original move retains access to its assessment.
 
 Under the board slider, small amber, orange, and red markers identify the selected player's inaccuracies, mistakes, and blunders. Good and uncertain moves are unmarked. Hover/focus tooltips and accessible labels give meaning beyond color; the visible legend and turn caption are omitted. Marker placement follows the full half-move timeline; clicking jumps to the pre-move decision and pauses replay.
 
@@ -349,7 +349,7 @@ Move rows place SAN and optional Player move and quality indicators on the left,
 
 The selected row adds a blue (1px) outline and dark blue fill; keyboard focus remains a distinct (2px) outline. Selecting an inline move or row pauses autoplay, opens its detail, and shows two highlighted squares and an arrow on the root position without playing the move. Each bracketed SAN excerpt in a move explanation is one inline variation link. Clicking it autoplays only the relevant excerpt at one ply per second, then holds the final position. A compact status below the board provides Back to game and Replay; returning restores the original game position and candidate annotations. Missing or ambiguous excerpts remain plain text. The full engine-continuation list and comparison button are omitted. Selecting the same move again collapses its detail and clears its annotations; navigation, new responses, and transient replay states reset selection. The separate explanation and Clear strip below the board is omitted. The board layout and controls retain their established styling. Missing practice summaries or older feedback show descriptive notices. No second-node essay is displayed.
 
-The card uses (16px) padding, (14px) body text, 1.6 line height, and (15px) headings. The practice card uses the same padding, body type, and heading scale; selected move details also use (15px) headings. Consecutive sections and selected move details have (20px) top margin, (16px) top padding, and a fine divider. Move rows use (12px 8px) padding and (13px) explanations, with fine horizontal rules. Below (370px), both cards use (14px) padding; heading tags and move labels wrap naturally, and coarse-pointer variation controls remain at least (44px) tall. Repeated engine-source text and Show on board labels are replaced by row icons. Raw HTML and embedded Markdown images remain excluded.
+The card uses (16px) padding, Times New Roman (17px) body text, 1.6 line height, and (18px) headings. The practice card and selected move details use the same body type and heading scale. Consecutive sections and selected move details have (20px) top margin, (16px) top padding, and a fine divider. Move rows use (12px 8px) padding with fine horizontal rules. Below (370px), both cards use (14px) padding; heading tags and move labels wrap naturally, and coarse-pointer variation controls remain at least (44px) tall. Repeated engine-source text and Show on board labels are replaced by row icons. Raw HTML and embedded Markdown images remain excluded.
 
 Coaching is prepared through game analysis in the library. The replay has no model selection or manual generation controls. The info icon reveals the saved model, position, and timestamp on hover or focus; analysis progress and failures appear inline. The header omits the Saved on this device label. The question field and its draft persistence have been removed.
 
