@@ -210,6 +210,11 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .color-token.black { background: var(--canvas); border: 1px solid var(--muted); }
 .rating { color: var(--muted); font-size: 12px; }
 .board-controls { display: flex; align-items: center; justify-content: space-between; padding-top: 9px; margin-top: 2px; border-top: 1px solid var(--line); }
+.variation-playback { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 8px 0; border-top: 1px solid var(--line); }
+.variation-status { color: var(--accent); font-size: 13px; }
+.variation-status > span { display: block; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.variation-actions { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.variation-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
 .icon-button { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; background: transparent; color: var(--muted); }
 .icon-button:hover:not(:disabled) { background: var(--hover); }
 .transport { display: flex; align-items: center; gap: 4px; }
@@ -265,15 +270,11 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .inline-move { display: inline; padding: 1px 3px; border-radius: 4px; background: transparent; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .inline-move:hover:not(:disabled), .inline-move[aria-expanded="true"] { background: var(--selected); color: var(--accent-hover); }
 .inline-move:disabled { opacity: .55; cursor: wait; }
+.inline-pv { white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.inline-pv[aria-pressed="true"] { background: var(--selected); color: var(--accent-hover); }
 .move-detail { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 16px; }
 .move-detail h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; }
 .move-detail p { margin: 10px 0 0; }
-.engine-line { margin-top: 16px; }
-.engine-line > p { color: var(--muted); font-size: 12px; }
-.line-moves { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-.line-moves button { min-width: 36px; min-height: 36px; padding: 6px 8px; background: transparent; border-radius: 4px; color: var(--accent); font-size: 14px; }
-.line-moves button:hover:not(:disabled), .line-moves button[aria-pressed="true"] { background: var(--selected); color: var(--ink); }
-.line-moves button:disabled { opacity: .55; cursor: wait; }
 .practice-overview { max-width: 72ch; color: var(--ink); }
 .candidate-moves { margin-top: 12px; }
 .candidate-row { border-bottom: 1px solid var(--line); }
@@ -317,8 +318,6 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .engine-score { min-width: 50px; padding: 3px 7px; border-radius: 6px; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
 .engine-score.favourable { background: var(--positive-surface); color: var(--positive); }
 .engine-score.unfavourable { background: var(--negative-surface); color: var(--negative); }
-.better-candidate { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 5px 10px; background: transparent; color: var(--accent); font-size: 12px; }
-.better-candidate:disabled { opacity: .55; cursor: wait; }
 .move-empty-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .coach-cards ::selection { background: var(--selection-badge); color: var(--ink); }
 .coach-placeholder { color: var(--muted); }
@@ -434,5 +433,5 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
   .candidate-meta { gap: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
-@media (pointer: coarse) { .better-candidate { min-height: 44px; } }
+@media (pointer: coarse) { .variation-actions button { min-height: 44px; } }
 @media (pointer: coarse) { .move-list td button { min-height: 44px; } }

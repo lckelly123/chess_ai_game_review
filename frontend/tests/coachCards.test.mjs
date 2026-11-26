@@ -25,7 +25,7 @@ const response = {
   candidate_san: {e2e4: 'e4', d2d4: 'd4'},
   move_lines: {e2e4: {san: ['e4', 'e5'], positions: []}, d2d4: {san: ['d4', 'd5'], positions: []}},
 };
-const render = props => renderToStaticMarkup(React.createElement(CoachCards, {response, pending: false, transitioning: false, onSelectCandidate() {}, onSelectLinePly() {}, ...props}));
+const render = props => renderToStaticMarkup(React.createElement(CoachCards, {response, pending: false, transitioning: false, onSelectCandidate() {}, onPlaySequence() {}, ...props}));
 
 test('the revealed review contains inline SAN buttons but no move-specific details until selected', () => {
   const html = render();
@@ -38,23 +38,22 @@ test('the revealed review contains inline SAN buttons but no move-specific detai
   assert.doesNotMatch(html, />Moves<|>Your move<|candidate-row|Positional thesis|Error classification:/);
 });
 
-test('selecting a candidate reveals only its detail and continuation; clearing it hides both', () => {
+test('selecting a candidate reveals only its explanation without the full engine continuation', () => {
   const html = render({selectedUci: 'e2e4'});
   assert.match(html, /Unique candidate detail/);
-  assert.match(html, /Engine continuation/);
+  assert.doesNotMatch(html, /Engine continuation/);
   assert.doesNotMatch(html, /Unique original move assessment|Error classification:|Missed tactic/);
   assert.doesNotMatch(render({selectedUci: undefined}), /Unique candidate detail|Engine continuation/);
 });
 
-test('the embedded original move opens its assessment, model classification, and continuation', () => {
+test('the embedded original move opens its assessment and model classification without a continuation list', () => {
   const html = render({selectedUci: 'd2d4'});
   assert.match(html, /Unique original move assessment/);
   assert.match(html, /Hide explanation for d4, player move/);
   assert.match(html, /Error classification:/);
   assert.match(html, /Missed tactic/);
   assert.match(html, /Fork/);
-  assert.match(html, /Engine continuation/);
-  assert.match(html, /Show d5, step 2/);
+  assert.doesNotMatch(html, /Engine continuation|Show d5, step 2/);
   assert.doesNotMatch(html, /Unique candidate detail|Show e5, step 2/);
   assert.doesNotMatch(render({selectedUci: undefined}), /Unique original move assessment|Error classification:|Engine continuation/);
 });
@@ -91,12 +90,12 @@ test('saved inline reviews without a player link retain access through a neutral
   assert.doesNotMatch(render({response: {...current, played_move: null}}), /Your move was|player move|Error classification:/);
 });
 
-test('comparison uses the backend-derived target without a model comparison field', () => {
+test('the compare button is absent even when a backend-derived target is available', () => {
   const current = {...response, better_candidate_uci: 'e2e4', stockfish: {
     perspective: 'White', move_quality: {status: 'blunder'},
     played_move: {uci: 'd2d4', san: 'd4', depth: 12, score: {cp: -200, mate: null, bound: 'exact'}},
   }};
-  assert.match(render({response: current, selectedUci: 'd2d4'}), /Compare with e4/);
+  assert.doesNotMatch(render({response: current, selectedUci: 'd2d4'}), /Compare with/);
   assert.doesNotMatch(render({response: {...current, better_candidate_uci: null}, selectedUci: 'd2d4'}), /Compare with/);
 });
 
@@ -117,10 +116,23 @@ test('saved tactic findings stay hidden while move details and continuation play
       const html = render({response: currentResponse, engineReview, selectedUci});
       assert.doesNotMatch(html, /tactic-classification|Tactic classification:|Missed: fork|Allowed: hanging piece|Not yet analysed/);
       assert.equal(html.includes('Unique candidate detail'), !!currentResponse && !!selectedUci);
-      assert.equal(html.includes('Engine continuation'), !!currentResponse && !!selectedUci);
+      assert.doesNotMatch(html, /Engine continuation/);
       assert.doesNotMatch(html, /Unique original move assessment/);
     }
   }
+});
+
+test('move explanations render each verified PV sequence as one button and unresolved text without brackets', () => {
+  const positions = ['root', 'e4', 'e5'].map((name, index) => ({fen: `${name} ${index % 2 ? 'b' : 'w'} - - 0 1`}));
+  const current = {...response, move_lines: {e2e4: {san: ['e4', 'e5'], positions}},
+    teaching: {...response.teaching, candidate_moves: [{...response.teaching.candidate_moves[0],
+      reason: 'After [[e4 e5]], develop. Unavailable: [[Nf3 Nc6]].'}]}};
+  const html = render({response: current, selectedUci: 'e2e4', activeSequenceId: 'e2e4:0:2'});
+  assert.equal((html.match(/class="inline-move inline-pv"/g) ?? []).length, 1);
+  assert.match(html, /aria-label="Play variation e4 e5" aria-pressed="true"/);
+  assert.match(html, />e4 e5<\/button>/);
+  assert.match(html, /Unavailable: Nf3 Nc6/);
+  assert.doesNotMatch(html, /\[\[|Engine continuation|Compare with/);
 });
 
 test('legacy thesis stays readable with collapsed move explanations', () => {
