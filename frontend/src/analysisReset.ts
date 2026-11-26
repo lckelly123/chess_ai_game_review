@@ -13,6 +13,8 @@ export function clearAnalysisStorage(storage: Pick<Storage, 'length' | 'key' | '
         const identity: unknown = JSON.parse(key.slice('review-practice:v1:'.length));
         if (Array.isArray(identity) && ids.has(identity[0])) remove.push(key);
       } catch { /* Unknown storage keys are left alone. */ }
+    } else if (key.startsWith('coach-speech:v1:') && (all || ids.has(key.slice('coach-speech:v1:'.length).split(':')[0]))) {
+      remove.push(key);
     } else if (key.startsWith('position:') && (all || ids.has(key.slice('position:'.length)))) {
       remove.push(key);
     }

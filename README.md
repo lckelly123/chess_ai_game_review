@@ -156,7 +156,7 @@ The **Dev** tab beside the account control opens a searchable list of every save
 
 Resets remove both players' engine results, coach feedback, analysis progress, and related multi-game reports. Reports for affected player libraries are invalidated because their coverage summaries also depend on the cleared game. Lessons is recomputed from the remaining saved analysis. Older position-only feedback shared by multiple games stays available to untouched games, but a reset game cannot reuse it. New game reviews are saved with their game owner.
 
-Practice attempts and completion are stored in the browser. Resetting removes those local records and replay bookmarks; other open tabs refresh their analysis state. A durable per-game reset revision makes previous attempts unusable on other browsers or devices when they next load the game. Account and model preferences are retained.
+Practice attempts, completion, and coach narration progress are stored in the browser. Resetting removes those local records and replay bookmarks; other open tabs refresh their analysis state. A durable per-game reset revision makes previous attempts and narration progress unusable on other browsers or devices when they next load the game. Account and model preferences are retained.
 
 `GET /api/dev/games` lists saved games. `POST /api/dev/analysis/reset` takes `{"game_id":"..."}` for one game or `{}` for all games. It cancels affected background jobs and deletes derived records in one database transaction. Reset revisions guard against late engine or coach writes restoring old results, including after a fresh run starts. These controls follow the application's existing local, single-user, single-API-worker model.
 

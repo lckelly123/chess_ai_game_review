@@ -11,6 +11,7 @@ import useGameLibrary from './useGameLibrary';
 import Dev from './Dev';
 import { analysisResetEvent } from './analysisReset';
 import type { AnalysisReset } from './analysisReset';
+import { resetCoachSpeech } from './useCoachSpeech';
 
 function readReplayRoute() {
   const match = window.location.hash.match(/^#game\/([\w-]+)(?:\?(.*))?$/);
@@ -42,6 +43,7 @@ export default function App() {
   useEffect(() => {
     const reset = (result: AnalysisReset) => {
       const ids = new Set(result.game_ids);
+      resetCoachSpeech(result.game_ids);
       setDetail(null);
       setRevision(value => value + 1);
       setGames(current => current.map(game => ids.has(game.id) ? {...game, analysis: null} : game));

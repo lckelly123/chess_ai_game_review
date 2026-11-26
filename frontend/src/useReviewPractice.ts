@@ -4,7 +4,7 @@ import { practiceComplete, practiceKey, restoreAttempts, resultMatches } from '.
 import type { PracticeAttempt, PracticeContext, PracticeMove, PracticeResult } from './reviewPractice';
 import { analysisResetEvent } from './analysisReset';
 
-export function useReviewPractice(gameId: string, color: string, ply: number, fen: string, original: string, eligible: boolean, transitioning: boolean, analysisRevision = 0) {
+export function useReviewPractice(gameId: string, color: string, ply: number, fen: string, original: string, eligible: boolean, transitioning: boolean, reducedMotion = false, analysisRevision = 0) {
   const key = practiceKey(gameId, color, ply, fen, original, analysisRevision);
   const [sessions, setSessions] = useState<Record<string, PracticeAttempt[]>>({});
   const attempts = sessions[key] ?? restoreAttempts(readStored(key));
@@ -15,12 +15,14 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
   const [revision, setRevision] = useState(0);
   const [preview, setPreview] = useState<{key: string; move: PracticeMove} | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const resetTimer = useRef<number | undefined>(undefined);
   const endpoint = `/api/games/${encodeURIComponent(gameId)}/practice/${ply}`;
 
   useEffect(() => {
     setPreview(null);
+    setRevealedKey(null);
     window.clearTimeout(resetTimer.current);
   }, [key]);
   useEffect(() => () => { request.current?.abort(); window.clearTimeout(resetTimer.current); }, []);
@@ -74,12 +76,15 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
     } finally {
       if (!controller.signal.aborted) {
         request.current = null; setPendingKey(null);
-        if (!accepted) resetTimer.current = window.setTimeout(() => setPreview(current => current?.key === key ? null : current), 650);
+        resetTimer.current = window.setTimeout(() => {
+          setPreview(current => current?.key === key ? null : current);
+          if (accepted) setRevealedKey(key);
+        }, accepted ? reducedMotion ? 300 : 1000 : 650);
       }
     }
   }
 
-  return {active, complete, attempts, legalMoves, shownMove, busy, checking: pendingKey === key,
+  return {active, complete, attempts, legalMoves, shownMove, busy, checking: pendingKey === key, justCompleted: revealedKey === key,
     inputDisabled: !active || transitioning || busy || pendingKey !== null || !legalMoves.length,
     error: error?.key === key ? error.message : '', loading: active && context?.key !== key,
     retry: () => setRevision(value => value + 1), attemptMove, showReview: () => setPreview(null)};
