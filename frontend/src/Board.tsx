@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { CandidateMove, Move, Position } from './types';
 import { squareCenter } from './boardAnnotations';
+import { useBoardSound } from './useBoardSound';
 
 const names: Record<string, string> = { p: 'pawn', r: 'rook', n: 'knight', b: 'bishop', q: 'queen', k: 'king' };
 
@@ -24,6 +25,7 @@ export default function Board({ position, flipped, candidate, candidateName, ori
   position: Position; flipped: boolean; candidate?: CandidateMove; candidateName?: string; originalMove?: Move;
   legalMoves?: string[]; onMove?: (uci: string) => void; inputDisabled?: boolean;
 }) {
+  useBoardSound(position.fen);
   const arrowId = useId();
   const [selected, setSelected] = useState<string | null>(null);
   const [promotion, setPromotion] = useState<string[]>([]);
