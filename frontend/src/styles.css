@@ -69,12 +69,9 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .saved-accounts button span { flex: 1; overflow-wrap: anywhere; min-width: 0; }
 .sync-status { display: flex; align-items: center; gap: 7px; min-height: 24px; padding-bottom: 2px; font-size: 12px; line-height: 1.5; color: var(--muted); }
 .sync-status svg, .sync-notice > svg { flex-shrink: 0; }
-.sync-failed { color: var(--warning); }
 .sync-notice { display: flex; align-items: flex-start; gap: 10px; padding: 16px 0; margin-bottom: 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.6; }
 .sync-notice > svg { color: var(--warning); margin-top: 2px; }
-.sync-notice-hint { color: var(--muted); margin-top: 3px; }
 .sync-notice .text-button { min-height: 36px; }
-.sync-notice-actions { display: flex; gap: 20px; flex-wrap: wrap; }
 .sync-footnote { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
 .library-section { margin-top: 0; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
