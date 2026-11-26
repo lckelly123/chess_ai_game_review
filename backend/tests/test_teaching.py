@@ -207,8 +207,33 @@ def test_all_candidates_must_be_linked_and_later_variation_moves_cannot_be_linke
         TeachingOutput.model_validate(data).validate_references(played_move=None)
 
 
-def test_move_assessment_cannot_embed_clickable_tokens():
+def test_move_assessment_cannot_embed_position_uci_tokens():
     data = teaching_output()
     data["move_evaluation"]["explanation"] = "Compare with [[g1h3]]."
     with pytest.raises(ValueError):
         TeachingOutput.model_validate(data)
+
+
+@pytest.mark.parametrize("sequence", ["...Nxe4 Qxe4 Be6", "12…Nxe4 13. Qxe4 Be6", "O-O a1=N+ Kh2#", "0-0-0", "exd6", "Be6"])
+def test_move_explanations_accept_san_pv_sequences_and_exports_omit_delimiters(sequence):
+    data = teaching_output()
+    data["candidate_moves"][0]["reason"] = f"This works after [[{sequence}]]."
+    data["move_evaluation"]["explanation"] = f"It allows [[{sequence}]]."
+    output = TeachingOutput.model_validate(data)
+    saved = TeachingAnalysis.model_validate(output.model_dump())
+    assert saved.move_evaluation.explanation == data["move_evaluation"]["explanation"]
+    markdown = output.as_markdown(chess.STARTING_FEN)
+    assert sequence in markdown and "[[" not in markdown
+    assert set(output.model_dump()) == {"position_overview", "position_explanation", "candidate_moves", "move_evaluation"}
+
+
+@pytest.mark.parametrize("sequence", ["[[]]", "[[Nxe4]", "[[[[Nxe4]]]]", "[[Nxe4 and Qxe4]]", "[[g1f3]]", "[[Qh9]]", "[[Nxe4 ... Qxe4]]"])
+def test_malformed_pv_sequences_are_rejected_in_both_move_explanation_fields(sequence):
+    for field in ("candidate", "player"):
+        data = teaching_output()
+        if field == "candidate":
+            data["candidate_moves"][0]["reason"] = f"Consider {sequence}."
+        else:
+            data["move_evaluation"]["explanation"] = f"It allows {sequence}."
+        with pytest.raises(ValueError):
+            TeachingOutput.model_validate(data)

@@ -7,6 +7,7 @@ import { coachMoves } from './coachMoves';
 import { engineMoves, qualityLabels } from './engineReview';
 import { positionDecision } from './positionDecision';
 import { moveReferences } from './moveReferences';
+import { pvReferences, type PvSequence } from './pvReferences';
 
 function Prose({ children }: { children: string }) {
   return <div className="coach-prose"><Markdown skipHtml disallowedElements={['img']} components={{ h1: 'h4', h2: 'h4', h3: 'h4' }}>{children}</Markdown></div>;
@@ -27,10 +28,10 @@ const mistakeSubcategoryLabels: Record<MistakeClassification['subcategory'], str
   pawn: 'Pawn', knight: 'Knight', bishop: 'Bishop', rook: 'Rook', queen: 'Queen', king: 'King',
 };
 
-export default function CoachCards({ response, engineReview, engineMode = false, opponent = false, nextMove, pending, selectedUci, onSelectCandidate, transitioning, linePly = 0, onSelectLinePly }: {
+export default function CoachCards({ response, engineReview, engineMode = false, opponent = false, nextMove, pending, selectedUci, onSelectCandidate, transitioning, activeSequenceId, onPlaySequence }: {
   response?: CoachResponse; engineReview?: EngineReview; engineMode?: boolean; nextMove?: Move; pending: boolean;
   selectedUci?: string; onSelectCandidate: (uci: string) => void; transitioning: boolean;
-  linePly?: number; onSelectLinePly?: (ply: number) => void;
+  activeSequenceId?: string; onPlaySequence?: (sequence: PvSequence) => void;
   opponent?: boolean;
 }) {
   const id = useId();
@@ -50,14 +51,18 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   const qualityDescription = qualityLoss != null
     ? `Winning chances lost: ${qualityLoss.toFixed(2)} percentage points from ${engine?.perspective ?? 'the mover'}’s perspective. Less than 5: Good; 5 to less than 10: Inaccuracy; 10 to less than 15: Mistake; 15 or more: Blunder.`
     : mateQualityDescriptions[engine?.move_quality?.reason ?? ''] ?? 'The available engine scores do not support a reliable comparison.';
-  const betterUci = ['inaccuracy', 'mistake', 'blunder'].includes(quality) ? response?.better_candidate_uci : undefined;
   const waiting = pending ? 'Game analysis is in progress.' : 'Analyze this game from the library to prepare coaching for inaccuracies, mistakes, and blunders.';
   const explanation = teaching?.position_explanation ?? teaching?.positional_thesis;
   const inlineMoves = !!teaching?.position_overview && !!teaching.position_explanation;
   const selectedMove = rows.find(move => move.uci === selectedUci);
   const mistake = selectedMove?.isPlayed ? moveFeedback?.mistake_classification : undefined;
   const selectedScore = selectedMove?.engineMove ? engineEvaluation(scoreContext, selectedMove.engineMove) : null;
-  const line = selectedUci ? response?.move_lines?.[selectedUci] : undefined;
+  const moveExplanation = (text: string) => pvReferences(text, response?.move_lines, selectedUci).map((part, index) =>
+    part.sequence && onPlaySequence
+      ? <button key={index} type="button" className="inline-move inline-pv" disabled={transitioning}
+          aria-label={`Play variation ${part.text}`} aria-pressed={activeSequenceId === part.sequence.id}
+          onClick={() => onPlaySequence(part.sequence!)}>{part.text}</button>
+      : part.text);
   const paragraphs = (explanation ?? '').split(/\r?\n\s*\r?\n/).map(text => text.trim()).filter(Boolean);
   // Older saved reviews may predate the final player-move paragraph. Keep the
   // move accessible without inventing a comparison or making another model call.
@@ -132,24 +137,13 @@ export default function CoachCards({ response, engineReview, engineMode = false,
             </>}</h3>
             {selectedScore && <span className={`engine-score ${selectedScore.tone}`} title={`${selectedScore.label} · ${selectedScore.perspective}'s perspective`}>{selectedScore.value}</span>}
           </div>
-          {selectedMove.reason && <p className="candidate-reason">{selectedMove.reason}</p>}
-          {selectedMove.feedback && selectedMove.feedback !== selectedMove.reason && <p className="candidate-feedback">{selectedMove.feedback}</p>}
+          {selectedMove.reason && <p className="candidate-reason">{moveExplanation(selectedMove.reason)}</p>}
+          {selectedMove.feedback && selectedMove.feedback !== selectedMove.reason && <p className="candidate-feedback">{moveExplanation(selectedMove.feedback)}</p>}
           {mistake && <p className="mistake-classification">
             <span>Error classification:</span>
             <span className="mistake-category">{mistakeCategoryLabels[mistake.category]}</span>
             <span className="mistake-subcategory">{mistakeSubcategoryLabels[mistake.subcategory]}</span>
           </p>}
-          {selectedMove.isPlayed && betterUci && <button className="better-candidate" type="button" disabled={transitioning} onClick={() => onSelectCandidate(betterUci)}>
-            Compare with {response?.candidate_san?.[betterUci] ?? betterUci} <ArrowUpRight size={14} aria-hidden="true"/>
-          </button>}
-          {line && onSelectLinePly && <div className="engine-line" role="group" aria-label="Explore engine continuation">
-            <p>Engine continuation</p>
-            <div className="line-moves">
-              <button type="button" disabled={transitioning} aria-pressed={linePly === 0} onClick={() => onSelectLinePly(0)}>Position</button>
-              {line.san.map((san, index) => <button type="button" key={index} disabled={transitioning}
-                aria-label={`Show ${san}, step ${index + 1}`} aria-pressed={linePly === index + 1} onClick={() => onSelectLinePly(index + 1)}>{san}</button>)}
-            </div>
-          </div>}
         </section>}
       </div>
     </div>

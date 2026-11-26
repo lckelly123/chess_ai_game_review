@@ -11,12 +11,36 @@ from .classification import positional_details
 Square = Annotated[str, Field(pattern=r"^[a-h][1-8]$")]
 PieceType = Literal["pawn", "knight", "bishop", "rook", "queen", "king"]
 MOVE_REFERENCE = re.compile(r"\[\[([a-h][1-8][a-h][1-8][qrbn]?)\]\]")
+PV_REFERENCE = re.compile(r"\[\[([^\[\]]+)\]\]")
 
 
 def no_move_references(value: str) -> str:
     if "[[" in value or "]]" in value:
-        raise ValueError("Clickable move references belong only in position_explanation.")
+        raise ValueError("The position overview cannot contain clickable references.")
     return value
+
+
+def validate_pv_references(value: str) -> str:
+    remainder = PV_REFERENCE.sub("", value)
+    if "[[" in remainder or "]]" in remainder:
+        raise ValueError("Malformed inline PV sequence.")
+    for sequence in PV_REFERENCE.findall(value):
+        notation = re.sub(r"0-0(?:-0)?", lambda match: match[0].replace("0", "O"), sequence.replace("…", "..."))
+        notation = re.sub(r"\d+\.(?:\.\.)?", " ", notation).strip()
+        notation = re.sub(r"^\.{3}", "", notation)
+        moves = notation.split()
+        if not moves or any(
+            re.fullmatch(r"[a-h][1-8][a-h][1-8][qrbn]?", move)
+            or not (chess.SAN_REGEX.fullmatch(move.rstrip("!?"))
+                    or re.fullmatch(r"O-O(?:-O)?[+#]?[!?]*", move))
+            for move in moves
+        ):
+            raise ValueError("Inline PV sequences must contain uninterrupted SAN moves, not UCI references.")
+    return value
+
+
+def plain_pv_text(value: str) -> str:
+    return PV_REFERENCE.sub(lambda match: match[1].strip(), value)
 
 
 class TacticalMistake(BaseModel):
@@ -64,7 +88,7 @@ class MoveEvaluation(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("Move feedback must not be blank.")
         if value is not None:
-            no_move_references(value)
+            validate_pv_references(value)
         return value
 
 
@@ -87,7 +111,7 @@ class CandidateMove(BaseModel):
     def nonblank_reason(cls, value):
         if not value.strip():
             raise ValueError("Candidate reasoning must not be blank.")
-        return no_move_references(value)
+        return validate_pv_references(value)
 
 
 class TeachingOutput(BaseModel):
@@ -178,7 +202,7 @@ class TeachingOutput(BaseModel):
     def as_markdown(self, fen: str) -> str:
         """Readable CLI/export fallback; the UI uses the structured fields."""
         names = self.candidate_san(fen)
-        candidates = "\n".join(f"- **{names[item.uci]}**: {item.reason}" for item in self.candidate_moves)
+        candidates = "\n".join(f"- **{names[item.uci]}**: {plain_pv_text(item.reason)}" for item in self.candidate_moves)
         board = chess.Board(fen)
         explanation = MOVE_REFERENCE.sub(lambda match: board.san(chess.Move.from_uci(match[1])), self.position_explanation)
         text = (
@@ -188,7 +212,7 @@ class TeachingOutput(BaseModel):
             + "### 2. Move Exploration\n\n" + (candidates or "No approved candidate moves are available.")
         )
         if self.move_evaluation is not None:
-            feedback = self.move_evaluation.explanation or "Your move follows the recommended idea."
+            feedback = plain_pv_text(self.move_evaluation.explanation or "Your move follows the recommended idea.")
             text += f"\n\n### 3. Your Move\n\n{feedback}"
         return text
 
