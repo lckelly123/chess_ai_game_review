@@ -72,7 +72,8 @@ def analyze_game_move(review: MoveReview) -> dict:
     # coaching, without constructing a graph or contacting a model. The UI shows
     # the first three of these ranked lines, independent of candidate approval.
     position = analyze_position(review.position.fen)
-    return {**analyze_played_move(review, position), "position_evidence": position}
+    result = analyze_played_move(review, position)
+    return {"position_evidence": position, **result}
 
 
 def analyze_final_position(pgn: str) -> dict:

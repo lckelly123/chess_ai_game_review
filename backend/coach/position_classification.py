@@ -49,7 +49,8 @@ def _validated_candidates(board: chess.Board, infos: list[dict]) -> list[tuple[d
     return evaluated
 
 
-async def _complete_candidates(engine, board: chess.Board, limit: chess.engine.Limit, count: int) -> list[dict]:
+async def _complete_candidates(engine, board: chess.Board, limit: chess.engine.Limit, count: int,
+                               *, root_moves: list[chess.Move] | None = None) -> list[dict]:
     # Stockfish emits ranked batches, sometimes with new-depth leaders followed
     # by older-depth lines. Merging those updates by depth/rank can duplicate a
     # root after it changes rank. Only commit a whole, validated batch; later
@@ -57,7 +58,8 @@ async def _complete_candidates(engine, board: chess.Board, limit: chess.engine.L
     pending: list[dict] = []
     complete: list[dict] = []
     last_error = None
-    with await engine.analysis(board, limit, multipv=count) as analysis:
+    options = {"root_moves": root_moves} if root_moves is not None else {}
+    with await engine.analysis(board, limit, multipv=count, **options) as analysis:
         async for info in analysis:
             depth, rank = info.get("depth"), info.get("multipv")
             if type(rank) is not int or rank not in range(1, count + 1):
@@ -75,6 +77,8 @@ async def _complete_candidates(engine, board: chess.Board, limit: chess.engine.L
             if rank == count:
                 try:
                     _validated_candidates(board, pending)
+                    if root_moves is not None and {info["pv"][0] for info in pending} != set(root_moves):
+                        raise StockfishAnalysisError("Stockfish returned different comparison moves.")
                 except StockfishAnalysisError as exc:
                     last_error = exc
                 else:
@@ -86,7 +90,8 @@ async def _complete_candidates(engine, board: chess.Board, limit: chess.engine.L
     raise StockfishAnalysisError("Stockfish did not return a complete, consistent candidate batch at a common depth with WDL estimates.") from last_error
 
 
-async def _analyze_candidates(board: chess.Board, settings: StockfishSettings, count: int) -> tuple[str, list[dict]]:
+async def _analyze_candidates(board: chess.Board, settings: StockfishSettings, count: int,
+                              *, root_moves: list[chess.Move] | None = None) -> tuple[str, list[dict]]:
     transport, engine = await asyncio.wait_for(chess.engine.popen_uci(settings.executable()), timeout=5.0)
     try:
         if "UCI_ShowWDL" not in engine.options:
@@ -98,7 +103,7 @@ async def _analyze_candidates(board: chess.Board, settings: StockfishSettings, c
         for attempt in range(2):
             try:
                 async with asyncio.timeout(settings.time_limit + 5.0):
-                    infos = await _complete_candidates(engine, board, limit, count)
+                    infos = await _complete_candidates(engine, board, limit, count, root_moves=root_moves)
                 return engine.id.get("name", "Stockfish"), infos
             except StockfishAnalysisError:
                 # A search with no usable snapshot gets one fresh stream. Keep
@@ -107,6 +112,23 @@ async def _analyze_candidates(board: chess.Board, settings: StockfishSettings, c
                     raise
     finally:
         transport.close()
+
+
+def compare_candidate_moves(fen: str, ucis: list[str], settings: StockfishSettings) -> tuple[str, list[dict]]:
+    """Re-evaluate every supplied root in one exact, common-depth MultiPV batch."""
+    board = chess.Board(CoachPosition.from_fen(fen).fen)
+    roots = [chess.Move.from_uci(uci) for uci in ucis]
+    if not roots or len(set(roots)) != len(roots) or any(move not in board.legal_moves for move in roots):
+        raise StockfishAnalysisError("Comparison requires distinct legal moves.")
+    try:
+        name, infos = asyncio.run(_analyze_candidates(board, settings, len(roots), root_moves=roots))
+        return name, [candidate for candidate, _ in _validated_candidates(board, infos)]
+    except TimeoutError as exc:
+        raise StockfishTimeoutError("Stockfish exceeded its response deadline during move comparison.") from exc
+    except OSError as exc:
+        raise StockfishUnavailableError("Stockfish could not be started.") from exc
+    except chess.engine.EngineError as exc:
+        raise StockfishAnalysisError("Stockfish could not compare the candidate moves.") from exc
 
 
 def classify_position(fen: str, settings: StockfishSettings | None = None) -> dict:

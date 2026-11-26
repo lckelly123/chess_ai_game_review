@@ -48,7 +48,7 @@ def game_accuracy(cps: list[float], start_color: str) -> dict:
 
 
 def position_evaluation(evidence: dict, ply: int, fen: str) -> dict | None:
-    """Use the unrestricted best line, never the constrained played-move score."""
+    """Use the best ranked line, never substitute a separately searched played score."""
     if evidence.get("fen", fen) != fen:
         return None
     expected_perspective = "White" if chess.Board(fen).turn else "Black"
