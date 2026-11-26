@@ -52,9 +52,9 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   }, [game.engine_analyses, analysis, coachResponses]);
   const engineReview = matchingReview(nextMove, position, reviews[String(ply)]);
   const practiceEligible = revealedPly !== ply && needsPractice(nextMove, color, position.fen, engineReview, coachResponse);
-  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, false, reducedMotion);
+  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, false, reducedMotion, game.analysis_revision ?? 0);
   const hideReview = practice.active || !!practice.shownMove;
-  const speechId = `${game.id}:${ply}:${coachResponse?.response_id ?? position.fen}`;
+  const speechId = `${game.id}:${ply}:${coachResponse?.response_id ?? position.fen}:reset-${game.analysis_revision ?? 0}`;
   const markers = errorMarkers(game.moves, game.positions, stops, reviews, color);
   const reviewPlies = coachedErrorPlies(game.moves, game.positions, reviews, coachResponses, color);
   const previousReview = reviewPlies.filter(value => value < ply).at(-1);

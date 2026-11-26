@@ -147,7 +147,7 @@ def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRo
         except InvalidPositionError as exc:
             raise HTTPException(422, str(exc)) from exc
         key = (position.fen, played_move, context_key(previous_move))
-        saved = await run_in_threadpool(http_request.app.state.db.coach_feedback_for_reviews, [key])
+        saved = await run_in_threadpool(http_request.app.state.db.coach_feedback_for_reviews, [key], game_id=game_id)
         return saved.get(key)
 
     @router.post("/analyze", response_model=AnalyzePositionResponse)
@@ -184,7 +184,10 @@ def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRo
                 if result.position.fen != position.fen or result.played_move != played_move:
                     raise CoachResponseError("The coach returned a different position.", result.response_id)
                 try:
-                    saved = await run_in_threadpool(database.save_coach_feedback, result)
+                    scope = {"game_id": request.game_id, "expected_revision": record.get("analysis_revision", 0)} if request.game_id else {}
+                    saved = await run_in_threadpool(database.save_coach_feedback, result, **scope)
+                    if saved is None:
+                        raise HTTPException(409, "Analysis was cleared while this review was running. Run it again for fresh results.")
                 except psycopg.Error as exc:
                     raise HTTPException(503, "The coach replied, but its feedback could not be saved. Any previously saved answer is unchanged.") from exc
                 return AnalyzePositionResponse(**saved)

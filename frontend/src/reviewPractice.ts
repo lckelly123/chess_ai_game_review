@@ -14,8 +14,8 @@ export function needsPractice(move: Move | undefined, color: string, fen: string
   return ['inaccuracy', 'mistake', 'blunder'].includes(review?.stockfish?.move_quality?.status ?? '');
 }
 
-export const practiceKey = (gameId: string, color: string, ply: number, fen: string, move: string) =>
-  `review-practice:v1:${JSON.stringify([gameId, color, ply, fen, move])}`;
+export const practiceKey = (gameId: string, color: string, ply: number, fen: string, move: string, revision = 0) =>
+  `review-practice:v1:${JSON.stringify([gameId, color, ply, fen, move, ...(revision ? [revision] : [])])}`;
 export const practiceComplete = (attempts: PracticeAttempt[]) => attempts.some(attempt => attempt.status === 'graded' && attempt.quality === 'good');
 
 export function restoreAttempts(raw: string): PracticeAttempt[] {

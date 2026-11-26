@@ -117,6 +117,14 @@ components:
     textColor: "{colors.ink}"
     rounded: "{rounded.control}"
     padding: "9px 16px"
+  button-danger:
+    backgroundColor: "{colors.error-surface}"
+    textColor: "{colors.error-ink}"
+    rounded: "{rounded.control}"
+    padding: "10px 16px"
+  button-danger-hover:
+    backgroundColor: "{colors.error-ink}"
+    textColor: "{colors.error-surface}"
   button-text:
     textColor: "{colors.accent}"
     typography: "{typography.label}"
@@ -208,7 +216,7 @@ components:
 
 A focused pure-black workspace gives the chess position a clear visual anchor while providing comfortable room for coaching. Blue-grey squares, soft white text, and a compact library support patient review. DM Sans carries headings and the working interface.
 
-This records the implemented account, library, Lessons, and replay UI and the user's approved replacement of the light workspace with a dark theme. Pure-black canvas and panels, blue selection, and white primary actions define the surrounding interface. The board artwork follows the user's November 15, 2026 reference and retains its established texture and pieces.
+This records the implemented account, library, Lessons, Dev, and replay UI and the user's approved replacement of the light workspace with a dark theme. Pure-black canvas and panels, blue selection, and white primary actions define the surrounding interface. The board artwork follows the user's November 15, 2026 reference and retains its established texture and pieces.
 
 **Key Characteristics:**
 - Dark, flat surfaces separated by fine rules and tonal changes.
@@ -236,6 +244,8 @@ The locally bundled Icy Sea image supplies the board's textured light and blue s
 
 Lessons segmented bars and severity dots use warning amber for Inaccuracy, warm orange for Mistake, and the existing negative coral for Blunder. Text summaries, named breakdowns, and a legend explain every severity color; counts remain neutral. Sky blue identifies the selected overview card and proportional topic bars. These severity roles match the library counts; the replay timeline retains its distinct stronger red Blunder marker.
 
+Dev reuses light coral on dark clay for destructive actions, with a coral outline and inverted hover colors. The written action and confirmation explain the consequence; color alone never carries it.
+
 ## Typography
 
 Locally bundled DM Sans Variable supplies headings, controls, names, metadata, and notation outside Coach. The Coach panel uses Times New Roman with Times and serif fallbacks. The game-title separator uses DM Sans at regular weight. Newsreader is no longer imported.
@@ -248,7 +258,7 @@ Multi-game analysis uses the same DM Sans hierarchy. Report prose is (16px) with
 
 ## Layout
 
-The app has library, replay, and Lessons screens. The root URL opens the game library without a board. The library is centered at a maximum outer width of (1120px), with (38px 36px 24px) padding. A (68px) canvas-colored header holds brand and navigation at left and a compact account button at right. The title and quiet sync status lead directly into search, filters, and a scrollable list. Desktop rows align result, opponent, time control, date, and analysis actions in columns; the list height is capped by the larger of (320px) and the dynamic viewport height minus (350px). Account entry and saved-account selection live in the global dialog.
+The app has library, replay, Lessons, Multi-game analysis, and Dev screens. The root URL opens the game library without a board. The library is centered at a maximum outer width of (1120px), with (38px 36px 24px) padding. A (68px) canvas-colored header holds brand and navigation at left and the Dev link beside a compact account button at right. The title and quiet sync status lead directly into search, filters, and a scrollable list. Desktop rows align result, opponent, time control, date, and analysis actions in columns; the list height is capped by the larger of (320px) and the dynamic viewport height minus (350px). Account entry and saved-account selection live in the global dialog.
 
 Lessons shares the library container. Its title sits opposite the Multi-game analysis link and refresh control with a (24px) gap and (28px) space before the content. The global header supplies account selection. A compact error count and library-coverage summary precede two equal-width Positional and Tactical overview buttons with an (18px) separation and a (16px) grid gap. A separate Unclassified row appears below when needed. A fine rule introduces the explorer, with (20px) outer separation and (28px) top padding. Tactical subgroup controls form two equal columns; severity filters form four. Topic disclosures occupy the full width beneath them. Coverage notes follow after (28px), separated by a rule and (18px) top padding.
 
@@ -291,11 +301,21 @@ Pure-black fields use clearly visible grey borders and gently curved corners. Th
 
 The persistent header contains real links to Your game library and Lessons. Muted (13px) labels and compact outline SVG icons sit (8px) apart within links; the links are separated by (24px). Hover uses soft white, while the current page combines soft white with a blue bottom rule (2px) and `aria-current="page"`. Replay keeps the library tab current. Existing keyboard focus remains visible. The header gap between brand and navigation is (40px), reducing to (24px) at (960px); its mobile treatment is defined in Layout.
 
+Dev is a separate header link beside account settings, with the same muted type, soft-white hover, blue current-page rule, and visible focus. Its minimum target height is (44px); the code icon disappears at (720px) and below. The account label disappears at (420px) and below while its accessible name remains.
+
 ### Account settings
 
 One outlined account button at the right of the persistent header identifies the current username, or Account before setup. It uses the established control radius, muted outline icons, a neutral hover fill, and ellipsis for long names. The desktop target has a minimum (40px) height and maximum (240px) width; mobile uses a minimum (44px) height.
 
 The native modal dialog centers within the viewport, caps its width at (440px), retains (16px) viewport clearance, and scrolls internally when needed. Its pure-black surface uses a fine field-colored border, panel corners, and (28px) padding, reduced to (24px) at (700px). A visible username label and public-games hint precede the full-width Add account or Save account action. Saved accounts use flat, full-width buttons with a minimum (44px) height and a check for the current account. The close control is (44px) square. Opening focuses the username; Tab stays inside, Escape or the backdrop closes it, and closing returns focus to the opener.
+
+### Dev reset controls
+
+Dev shares the library width and heading hierarchy. Fine rules bound Clear all analysis above the searchable Clear one game list. Desktop rows align player names, date, and an outlined action; metadata uses muted tabular text. At (720px) and below, the bulk action stacks beneath its description and dates move beneath player metadata. At (420px) and below, each row's action occupies a third line and the all-accounts label stacks under its heading. Long names wrap, preserving the layout at (320px).
+
+Clear all and final confirmation use the existing coral palette, control corners, (10px 16px) padding, and minimum (44px) height. Per-game entry uses the secondary outline. Both open a native modal using the account dialog's dimensions, border, backdrop, and spacing. Its text identifies the target, removed analysis, and preserved original games. Cancel receives initial focus; Escape cancels, and cancelling restores focus to the opener. Actions wrap with a (12px) gap.
+
+Loading and pending resets disable conflicting actions. A polite live region reports progress and success; failures use an alert with an icon and text. Load errors offer Try again, an empty library explains how to add games, and unmatched searches offer Clear search. Resetting does not trigger analysis.
 
 ### Lessons category explorer
 

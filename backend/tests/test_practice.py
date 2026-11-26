@@ -37,7 +37,7 @@ def practice_app(analyzer=grade_attempt, pgn=PGN):
             return {"white": {"moves": {"0": {"fen": original.position.fen,
                     "played_move": original.played_move_uci, "position_evidence": evidence}}}}
 
-        def coach_feedback_for_reviews(self, keys):
+        def coach_feedback_for_reviews(self, keys, *, game_id=None):
             return {}
 
     app = FastAPI()
@@ -135,9 +135,9 @@ def test_stale_game_evidence_falls_back_to_matching_coach_then_fresh_search(monk
     stale = {**evidence, 'fen': 'different position'}
     app.state.db.game_analyses = lambda *args: {'white': {'moves': {'0': {
         'fen': original.position.fen, 'played_move': 'e2e4', 'position_evidence': stale}}}}
-    app.state.db.coach_feedback_for_reviews = lambda keys: {keys[0]: {'position_evidence': evidence}}
+    app.state.db.coach_feedback_for_reviews = lambda keys, **kwargs: {keys[0]: {'position_evidence': evidence}}
     assert saved_evidence(app.state.db, 'saved', PGN, 0, original) is evidence
-    app.state.db.coach_feedback_for_reviews = lambda keys: {keys[0]: {'position_evidence': stale}}
+    app.state.db.coach_feedback_for_reviews = lambda keys, **kwargs: {keys[0]: {'position_evidence': stale}}
     assert saved_evidence(app.state.db, 'saved', PGN, 0, original) is None
     searched = []
     monkeypatch.setattr('backend.practice.analyze_position', lambda fen: searched.append(fen) or evidence)

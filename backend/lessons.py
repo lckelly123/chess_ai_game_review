@@ -70,7 +70,7 @@ def _lesson_snapshot(database, username: str, *, include_mistakes=False) -> tupl
         if color is None:
             continue
         imported_games.add(record["id"])
-        if record.get("pgn_hash") != pgn_fingerprint(record["pgn"]) or not record.get("moves"):
+        if record.get("pgn_hash") != pgn_fingerprint(record["pgn"], record.get("analysis_revision", 0)) or not record.get("moves"):
             continue
         try:
             detail = replay(record["pgn"])
@@ -104,12 +104,14 @@ def _lesson_snapshot(database, username: str, *, include_mistakes=False) -> tupl
                                "previous": detail["moves"][ply - 1] if ply else None,
                                "context_key": context_key(previous_move_from_replay(detail, ply))})
 
-    reviews = database.coach_feedback_for_reviews(list(dict.fromkeys((item["fen"], item["move"], item["context_key"]) for item in errors)))
+    reviews = {game: database.coach_feedback_for_reviews(
+        list(dict.fromkeys((item["fen"], item["move"], item["context_key"]) for item in errors if item["game"] == game)), game_id=game)
+        for game in {item["game"] for item in errors}}
     mistakes = []
     for item in errors:
         fen, move, severity = item["fen"], item["move"], item["severity"]
         increment(result["errors"], severity)
-        review = reviews.get((fen, move, item["context_key"]))
+        review = reviews[item["game"]].get((fen, move, item["context_key"]))
         teaching = (review or {}).get("teaching") or {}
         evaluation = teaching.get("move_evaluation") or {}
         classification = evaluation.get("mistake_classification")

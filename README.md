@@ -150,6 +150,16 @@ The strict JSON report contains `profile_summary`, up to four `decision_patterns
 
 LangGraph Studio exposes **multi_game_coach** separately from **chess_coach**. Its only path is `START → analyze_patterns → END`, with no nodes or edges connecting it to the position coach. Studio takes the same `summary` and `mistakes_by_category` input; the app supplies these from saved data.
 
+## Dev: reset analysis
+
+The **Dev** tab beside the account control opens a searchable list of every saved game across all accounts. **Clear analysis** resets one game; **Clear all** resets every game, independently of the search filter. Both actions ask for confirmation. They preserve game records, original PGNs and played moves, metadata, saved accounts, and import caches. No analysis starts automatically after a reset.
+
+Resets remove both players' engine results, coach feedback, analysis progress, and related multi-game reports. Reports for affected player libraries are invalidated because their coverage summaries also depend on the cleared game. Lessons is recomputed from the remaining saved analysis. Older position-only feedback shared by multiple games stays available to untouched games, but a reset game cannot reuse it. New game reviews are saved with their game owner.
+
+Practice attempts, completion, and coach narration progress are stored in the browser. Resetting removes those local records and replay bookmarks; other open tabs refresh their analysis state. A durable per-game reset revision makes previous attempts and narration progress unusable on other browsers or devices when they next load the game. Account and model preferences are retained.
+
+`GET /api/dev/games` lists saved games. `POST /api/dev/analysis/reset` takes `{"game_id":"..."}` for one game or `{}` for all games. It cancels affected background jobs and deletes derived records in one database transaction. Reset revisions guard against late engine or coach writes restoring old results, including after a fresh run starts. These controls follow the application's existing local, single-user, single-API-worker model.
+
 ## Import behavior
 
 The backend reads the documented [Chess.com Published Data API](https://www.chess.com/news/view/published-data-api). Imports run in the background, one at a time, with progress polling. They inspect up to the latest 24 available archive months, newest first, stopping at the requested number of valid standard-chess games. Variants, unfinished games, and malformed PGNs are skipped and reported. Each import adds to the library and deduplicates using the source game URL; requesting the latest 100 expands the same recent window, not an older-history pagination cursor.

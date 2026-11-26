@@ -74,7 +74,7 @@ def test_model_selection_does_not_leak_into_later_requests(mode, passes):
     models = []
     saved = []
 
-    def save_feedback(result):
+    def save_feedback(result, **kwargs):
         saved.append(result)
         return {"fen": result.position.fen, "played_move": result.played_move,
                 "text": result.text, "model": result.model, "response_id": result.response_id,

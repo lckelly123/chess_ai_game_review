@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { api, readStored, store } from './types';
 import { practiceComplete, practiceKey, restoreAttempts, resultMatches } from './reviewPractice';
 import type { PracticeAttempt, PracticeContext, PracticeMove, PracticeResult } from './reviewPractice';
+import { analysisResetEvent } from './analysisReset';
 
-export function useReviewPractice(gameId: string, color: string, ply: number, fen: string, original: string, eligible: boolean, transitioning: boolean, reducedMotion = false) {
-  const key = practiceKey(gameId, color, ply, fen, original);
+export function useReviewPractice(gameId: string, color: string, ply: number, fen: string, original: string, eligible: boolean, transitioning: boolean, reducedMotion = false, analysisRevision = 0) {
+  const key = practiceKey(gameId, color, ply, fen, original, analysisRevision);
   const [sessions, setSessions] = useState<Record<string, PracticeAttempt[]>>({});
   const attempts = sessions[key] ?? restoreAttempts(readStored(key));
   const complete = practiceComplete(attempts);
@@ -53,7 +54,9 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
     setPendingKey(key); setPreview({key, move}); setError(null);
     const entry: PracticeAttempt = {uci, san: move.san, at: new Date().toISOString(), quality: null, lossPp: null, status: 'checking'};
     const updated = [...attempts, entry];
+    const resetToken = readStored(analysisResetEvent);
     const save = (values: PracticeAttempt[]) => {
+      if (controller.signal.aborted || readStored(analysisResetEvent) !== resetToken) return;
       store(key, JSON.stringify(values));
       setSessions(current => ({...current, [key]: values}));
     };

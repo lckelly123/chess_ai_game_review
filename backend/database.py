@@ -7,6 +7,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from .chess_games import replay
 from .coach.context import COACH_CONTRACT_VERSION, context_key
 from .game_analysis import analysis_result, analysis_summary, coaching_total, pgn_fingerprint, quality_counts
 
@@ -57,7 +58,7 @@ class Database:
     def games(self, username: str) -> list[dict]:
         with self.connection() as db:
             rows = db.execute(
-                """SELECT g.metadata, g.pgn, a.game_id, a.player_color, a.pgn_hash, a.status,
+                """SELECT g.metadata, g.pgn, g.analysis_revision, a.game_id, a.player_color, a.pgn_hash, a.status,
                           a.total, a.completed, a.counts, a.coach_completed, a.coach_version, a.error, a.updated_at,
                           a.opponent_total, (SELECT count(*) FROM jsonb_object_keys(a.opponent_moves)) AS opponent_completed
                    FROM games g JOIN profile_games pg ON pg.game_id=g.id
@@ -65,21 +66,66 @@ class Database:
                        CASE WHEN lower(g.metadata->>'white')=%s THEN 'white' ELSE 'black' END
                    WHERE pg.username=%s ORDER BY g.end_time DESC, g.id""", (username, username))
             return [{**row["metadata"], "analysis": analysis_summary(row)
-                     if row["pgn_hash"] == pgn_fingerprint(row["pgn"]) else None} for row in rows]
+                     if row["pgn_hash"] == pgn_fingerprint(row["pgn"], row["analysis_revision"]) else None} for row in rows]
 
     def game(self, game_id: str) -> dict | None:
         with self.connection() as db:
-            row = db.execute("SELECT metadata, pgn FROM games WHERE id=%s", (game_id,)).fetchone()
-            return {**row["metadata"], "pgn": row["pgn"]} if row else None
+            row = db.execute("SELECT metadata, pgn, analysis_revision FROM games WHERE id=%s", (game_id,)).fetchone()
+            return {**row["metadata"], "pgn": row["pgn"], "analysis_revision": row["analysis_revision"]} if row else None
 
     def lesson_games(self, username: str) -> list[dict]:
         with self.connection() as db:
             return db.execute(
-                """SELECT g.id, g.pgn, g.metadata, a.pgn_hash, a.moves
+                """SELECT g.id, g.pgn, g.metadata, g.analysis_revision, a.pgn_hash, a.moves
                    FROM games g JOIN profile_games pg ON pg.game_id=g.id
                    LEFT JOIN game_engine_analysis a ON a.game_id=g.id AND a.player_color=
                        CASE WHEN lower(g.metadata->>'white')=%s THEN 'white' ELSE 'black' END
                    WHERE pg.username=%s ORDER BY g.id""", (username, username)).fetchall()
+
+    def dev_games(self) -> list[dict]:
+        with self.connection() as db:
+            return [{**row["metadata"], "analysis_revision": row["analysis_revision"]} for row in db.execute(
+                "SELECT metadata, analysis_revision FROM games ORDER BY end_time DESC, id")]
+
+    def analysis_reset_runs(self, game_id: str | None) -> list[str]:
+        with self.connection() as db:
+            return [row["id"] for row in db.execute(
+                """SELECT id FROM multi_game_analysis WHERE %s::text IS NULL OR input_snapshot @> %s
+                   OR username IN (SELECT username FROM profile_games WHERE game_id=%s)""",
+                (game_id, Jsonb({"mistakes_by_category": [{"mistakes": [{"game": game_id}]}]}), game_id))]
+
+    def reset_analysis(self, game_id: str | None) -> dict:
+        """One transaction removes derived data and advances each game's cache identity."""
+        with self.connection() as db:
+            games = db.execute("SELECT id, pgn FROM games WHERE %s::text IS NULL OR id=%s ORDER BY id FOR UPDATE",
+                               (game_id, game_id)).fetchall()
+            if game_id is not None and not games:
+                raise ValueError("Game not found.")
+            ids = [game["id"] for game in games]
+            db.execute("UPDATE games SET analysis_revision=analysis_revision+1 WHERE id=ANY(%s)", (ids,))
+            engine = db.execute("DELETE FROM game_engine_analysis WHERE game_id=ANY(%s)", (ids,)).rowcount
+            if game_id is None:
+                feedback = db.execute("DELETE FROM coach_feedback").rowcount
+                reports = db.execute("DELETE FROM multi_game_analysis").rowcount
+            else:
+                feedback = db.execute("DELETE FROM coach_feedback WHERE game_id=%s", (game_id,)).rowcount
+                # Old feedback had no game owner. Remove exclusive positions;
+                # shared legacy answers stay available to untouched games only.
+                try:
+                    exclusive = {p["fen"] for p in replay(games[0]["pgn"])["positions"]}
+                    for other in db.execute("SELECT pgn FROM games WHERE id<>%s", (game_id,)):
+                        exclusive.difference_update(p["fen"] for p in replay(other["pgn"])["positions"])
+                except ValueError:
+                    exclusive = set()  # Preserve ambiguous legacy ownership.
+                feedback += db.execute("DELETE FROM coach_feedback WHERE game_id IS NULL AND fen=ANY(%s)",
+                                       (list(exclusive),)).rowcount
+                # Report summaries include coverage even for games with no
+                # mistakes. Invalidate history for the affected libraries too.
+                reports = db.execute("""DELETE FROM multi_game_analysis WHERE input_snapshot @> %s
+                                     OR username IN (SELECT username FROM profile_games WHERE game_id=%s)""",
+                                     (Jsonb({"mistakes_by_category": [{"mistakes": [{"game": game_id}]}]}), game_id)).rowcount
+            return {"game_ids": ids, "games_reset": len(ids), "engine_records": engine,
+                    "coach_records": feedback, "reports": reports}
 
     def multi_game_analyses(self, username: str) -> list[dict]:
         with self.connection() as db:
@@ -119,8 +165,11 @@ class Database:
 
     def game_analyses(self, game_id: str, pgn: str) -> dict:
         with self.connection() as db:
+            game = db.execute("SELECT analysis_revision FROM games WHERE id=%s", (game_id,)).fetchone()
+            if game is None:
+                return {}
             return {row["player_color"]: analysis_result(row) for row in db.execute(
-                "SELECT * FROM game_engine_analysis WHERE game_id=%s AND pgn_hash=%s", (game_id, pgn_fingerprint(pgn)))}
+                "SELECT * FROM game_engine_analysis WHERE game_id=%s AND pgn_hash=%s", (game_id, pgn_fingerprint(pgn, game["analysis_revision"])))}
 
     def interrupt_game_analyses(self):
         # A server restart preserves completed moves, but no old worker survives.
@@ -191,13 +240,17 @@ class Database:
         with self.connection() as db:
             db.execute("INSERT INTO http_cache (url, body, etag, modified, fetched) VALUES (%s, %s, %s, %s, %s) ON CONFLICT(url) DO UPDATE SET body=excluded.body, etag=excluded.etag, modified=excluded.modified, fetched=excluded.fetched", (url, json.dumps(body), etag, modified, now))
 
-    def save_coach_feedback(self, analysis) -> dict:
+    def save_coach_feedback(self, analysis, *, game_id: str | None = None, expected_revision: int = 0) -> dict | None:
         # Append successful generations; a failed rerun never erases an answer.
         with self.connection() as db:
+            if game_id is not None:
+                game = db.execute("SELECT analysis_revision FROM games WHERE id=%s FOR UPDATE", (game_id,)).fetchone()
+                if game is None or game["analysis_revision"] != expected_revision:
+                    return None  # An old worker cannot restore feedback after a reset.
             return db.execute(
                 """INSERT INTO coach_feedback
-                   (fen, text, model, response_id, usage, played_move, position_analysis, move_analysis, stockfish, context_key)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   (fen, text, model, response_id, usage, played_move, position_analysis, move_analysis, stockfish, context_key, game_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING fen, NULLIF(played_move, '') AS played_move, text, model, response_id, created_at, stockfish,
                              position_analysis -> 'classification_version' AS classification_version,
                              position_analysis -> 'sharpness_version' AS sharpness_version,
@@ -209,14 +262,14 @@ class Database:
                  Jsonb(analysis.usage) if analysis.usage is not None else None, analysis.played_move or '',
                  Jsonb(analysis.position_analysis) if analysis.position_analysis is not None else None,
                  Jsonb(analysis.move_analysis) if analysis.move_analysis is not None else None,
-                 Jsonb(analysis.stockfish) if analysis.stockfish is not None else None, context_key(analysis.previous_move)),
+                 Jsonb(analysis.stockfish) if analysis.stockfish is not None else None, context_key(analysis.previous_move), game_id),
             ).fetchone()
 
     def coach_feedback_for_positions(self, fens: list[str]) -> dict[str, dict]:
         rows = self.coach_feedback_for_reviews([(fen, None) for fen in fens])
         return {fen: row for (fen, _), row in rows.items()}
 
-    def coach_feedback_for_reviews(self, reviews: list[tuple]) -> dict[tuple, dict]:
+    def coach_feedback_for_reviews(self, reviews: list[tuple], *, game_id: str | None = None) -> dict[tuple, dict]:
         """Match history-aware requests; legacy context-free reviews remain readable.
 
         Two-element keys explicitly request unknown history. They never match a
@@ -240,11 +293,13 @@ class Database:
                           position_analysis -> 'engine_evidence' AS position_evidence
                    FROM coach_feedback cf
                    WHERE cf.fen = ANY(%s) AND cf.played_move = ANY(%s) AND cf.context_key = ANY(%s)
+                     AND (%s::text IS NULL OR cf.game_id=%s OR (cf.game_id IS NULL AND EXISTS
+                         (SELECT 1 FROM games WHERE id=%s AND analysis_revision=0)))
                    ORDER BY cf.fen, cf.played_move, cf.context_key,
                             (position_analysis ->> 'coach_contract_version' IS NULL), created_at DESC, id DESC""",
                 (list({key[0] for key in normalized.values()}),
                  list({key[1] or '' for key in normalized.values()}),
-                 list({"", *(key[2] for key in normalized.values())})),
+                 list({"", *(key[2] for key in normalized.values())}), game_id, game_id, game_id),
             ).fetchall()
         exact, legacy = {}, {}
         for row in sorted(rows, key=lambda item: (item["created_at"], item["id"]), reverse=True):

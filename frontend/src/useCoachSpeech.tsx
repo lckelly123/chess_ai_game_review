@@ -4,6 +4,13 @@ const readPassages = new Set<string>();
 const TICK_MS = 24;
 const CHARACTERS_PER_TICK = 3;
 
+export function resetCoachSpeech(gameIds: string[]) {
+  const ids = new Set(gameIds);
+  for (const key of readPassages) {
+    if (ids.has(key.slice('coach-speech:v1:'.length).split(':')[0])) readPassages.delete(key);
+  }
+}
+
 function textOf(children: ReactNode): string {
   return Children.toArray(children).map(child => {
     if (typeof child === 'string' || typeof child === 'number') return String(child);
