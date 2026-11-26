@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Info, Pause, Play } from 'lucide-react';
+import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Info, Pause, Play, RotateCcw } from 'lucide-react';
 import Board from './Board';
 import GameOverview from './GameOverview';
 import CoachCards from './CoachCards';
@@ -10,6 +10,7 @@ import type { CoachResponse, EngineReview, GameAnalysis, GameDetail } from './ty
 import { api, perspective, readStored, store } from './types';
 import { AUTOPLAY_TURN_MS, replayStops, replayNavigation, restoreReplay } from './replayNavigation';
 import { visibleCandidate, type CandidateSelection } from './boardAnnotations';
+import type { PvSequence } from './pvReferences';
 import { analysisActive, analysisProgress, coachedErrorPlies, engineMoves, engineSelectionId, errorMarkers, matchingReview, mergeCoachResponses, opponentAnalysisPending, visibleEngineCandidate } from './engineReview';
 
 const COACH_MODELS = [
@@ -17,6 +18,8 @@ const COACH_MODELS = [
   { value: 'gpt-6.1-terra', label: 'GPT-6.1 Terra' },
 ] as const;
 const coachModelLabel = (model: string) => COACH_MODELS.find(option => option.value === model)?.label ?? model;
+const VARIATION_STEP_MS = 1000;
+type VariationPlayback = { sequence: PvSequence; step: number; gamePly: number; responseId: string; ownerUci: string };
 
 export default function Replay({ game, username }: { game: GameDetail; username: string }) {
   const player = perspective(game, username);
@@ -49,14 +52,15 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   }, [game.engine_analyses, analysis, coachResponses]);
   const engineReview = matchingReview(nextMove, position, reviews[String(ply)]);
   const practiceEligible = revealedPly !== ply && needsPractice(nextMove, color, position.fen, engineReview, coachResponse);
-  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, false);
+  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, false, reducedMotion, game.analysis_revision ?? 0);
   const hideReview = practice.active || !!practice.shownMove;
+  const speechId = `${game.id}:${ply}:${coachResponse?.response_id ?? position.fen}:reset-${game.analysis_revision ?? 0}`;
   const markers = errorMarkers(game.moves, game.positions, stops, reviews, color);
   const reviewPlies = coachedErrorPlies(game.moves, game.positions, reviews, coachResponses, color);
   const previousReview = reviewPlies.filter(value => value < ply).at(-1);
   const nextReview = reviewPlies.find(value => value > ply);
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null);
-  const [lineStep, setLineStep] = useState<{uci: string; ply: number} | null>(null);
+  const [variation, setVariation] = useState<VariationPlayback | null>(null);
   const boardColumn = useRef<HTMLDivElement>(null);
   const candidate = hideReview ? undefined : coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, false)
     : visibleEngineCandidate(candidateSelection, engineReview, position.fen, false);
@@ -68,32 +72,53 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   }) : null;
   const positionLabel = ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].number}${game.moves[ply - 1].color === 'white' ? '.' : '…'} ${game.moves[ply - 1].san}`;
   const coachDetails = coachResponse ? `${positionLabel} · ${coachModelLabel(coachResponse.model)} · Saved ${savedAt}` : positionLabel;
-  const line = candidate ? coachResponse?.move_lines?.[candidate.uci] : undefined;
-  const linePly = candidate && lineStep?.uci === candidate.uci && line?.positions[lineStep.ply] ? lineStep.ply : 0;
-  const shownPosition = practice.shownMove ? practice.shownMove.position : line?.positions[linePly] && linePly > 0 ? line.positions[linePly] : boardPosition;
-  const onMainLine = !practice.shownMove && linePly === 0;
+  const playback = !hideReview && variation?.gamePly === ply && variation.responseId === coachResponse?.response_id
+    && variation.ownerUci === candidate?.uci ? variation : null;
+  const shownPosition = practice.shownMove?.position ?? (playback ? playback.sequence.positions[playback.step] : boardPosition);
+  const onMainLine = !practice.shownMove && !playback;
   const statistics = analysis?.statistics ?? Object.values(game.engine_analyses ?? {}).find(saved => saved?.statistics?.complete)?.statistics;
   const turn = shownPosition.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
-  const seek = (value: number) => { setRevealedPly(null); setCandidateSelection(null); setLineStep(null); dispatch({ type: 'seek', ply: value }); };
-  const step = (direction: 1 | -1) => { setRevealedPly(null); dispatch({ type: 'step', direction }); };
-  const jumpReview = (value: number) => { setRevealedPly(value); dispatch({ type: 'seek', ply: value }); };
+  const seek = (value: number) => { setRevealedPly(null); setCandidateSelection(null); setVariation(null); dispatch({ type: 'seek', ply: value }); };
+  const step = (direction: 1 | -1) => { setRevealedPly(null); setVariation(null); dispatch({ type: 'step', direction }); };
+  const jumpReview = (value: number) => { setRevealedPly(value); setVariation(null); dispatch({ type: 'seek', ply: value }); };
+  const toggleGamePlayback = () => { setVariation(null); dispatch({type: 'toggle-play'}); };
 
   useEffect(() => {
-    setCandidateSelection(revealedPly === ply && coachResponse?.played_move
+    setCandidateSelection((revealedPly === ply || practice.complete) && coachResponse?.played_move
       ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move} : null);
-    setLineStep(null);
-  }, [ply, revealedPly, coachResponse?.response_id]);
+    setVariation(null);
+  }, [ply, revealedPly, coachResponse?.response_id, practice.complete]);
   useEffect(() => { if (practice.active) dispatch({type: 'pause'}); }, [practice.active, ply]);
   const originalMove = onMainLine ? nextMove : undefined;
 
   function selectCandidate(uci: string) {
     if ((!coachResponse && !engineReview) || hideReview) return;
-    setLineStep(null);
+    setVariation(null);
     dispatch({ type: 'pause' });
     setCandidateSelection(candidate?.uci === uci ? null : { fen: position.fen, responseId: coachResponse?.response_id ?? engineSelectionId(engineReview!), uci });
   }
+
+  function playSequence(sequence: PvSequence) {
+    if (!candidate || !coachResponse || hideReview) return;
+    dispatch({type: 'pause'});
+    setVariation({sequence, step: 0, gamePly: ply, responseId: coachResponse.response_id, ownerUci: candidate.uci});
+    const board = boardColumn.current?.querySelector('.board');
+    const bounds = board?.getBoundingClientRect();
+    if (bounds && (bounds.top < 0 || bounds.bottom > window.innerHeight)) {
+      board?.scrollIntoView({behavior: reducedMotion ? 'instant' : 'smooth', block: 'center'});
+    }
+  }
+
+  useEffect(() => {
+    if (!playback || playback.step >= playback.sequence.san.length) return;
+    const timer = window.setTimeout(() => {
+      // A replaced or cancelled sequence must never receive a stale timer tick.
+      setVariation(current => current === playback ? {...current, step: current.step + 1} : current);
+    }, VARIATION_STEP_MS);
+    return () => window.clearTimeout(timer);
+  }, [playback]);
 
   const analyzing = analysisActive(analysis);
   async function resumeAnalysis() {
@@ -155,7 +180,8 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       if (event.key === ' ' && target.closest('button, a')) return;
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', ' '].includes(event.key)) return;
       event.preventDefault();
-      if (event.key !== ' ') { setRevealedPly(null); setCandidateSelection(null); setLineStep(null); }
+      setVariation(null);
+      if (event.key !== ' ') { setRevealedPly(null); setCandidateSelection(null); }
       if (event.key === ' ') { if (!practice.active) dispatch({ type: 'toggle-play' }); }
       else if (event.key === 'Home' || event.key === 'End') dispatch({ type: 'seek', ply: event.key === 'Home' ? 0 : game.moves.length });
       else dispatch({ type: 'step', direction: event.key === 'ArrowRight' ? 1 : -1 });
@@ -179,16 +205,25 @@ export default function Replay({ game, username }: { game: GameDetail; username:
           onMainLine={onMainLine} analyzing={analyzing} submitting={submitting} onComplete={() => void resumeAnalysis()}/>
         {playerBar(top)}
         <Board position={shownPosition} flipped={flipped}
-          candidate={linePly === 0 ? candidate : undefined} candidateName={candidateName} originalMove={originalMove}
+          candidate={!playback ? candidate : undefined} candidateName={candidateName} originalMove={originalMove}
           legalMoves={practice.legalMoves.map(move => move.uci)} onMove={practice.active ? uci => { dispatch({type: 'pause'}); void practice.attemptMove(uci); } : undefined}
           inputDisabled={practice.inputDisabled}/>
         {playerBar(bottom)}
+        {playback && <div className="variation-playback" role="group" aria-label="Variation playback">
+          <span className="variation-status" role="status">{playback.step < playback.sequence.san.length ? 'Exploring variation' : 'Variation complete'}
+            <span>{playback.step === 0 ? 'Starting position' : playback.sequence.san[playback.step - 1]} · {playback.step} / {playback.sequence.san.length}</span>
+          </span>
+          <div className="variation-actions">
+            <button type="button" className="text-button" onClick={() => setVariation(null)}>Back to game</button>
+            <button type="button" className="text-button" onClick={() => playSequence(playback.sequence)}><RotateCcw size={14} aria-hidden="true"/>Replay</button>
+          </div>
+        </div>}
         <div className="board-controls">
           <button className="icon-button" onClick={() => setFlipped(f => !f)} title="Flip board" aria-label="Flip board"><ArrowDownUp size={19}/></button>
           <div className="transport">
             <button className="icon-button" disabled={ply === 0} onClick={() => seek(0)} title="First position (Home)" aria-label="First position"><ChevronsLeft size={21}/></button>
             <button className="icon-button" disabled={ply === 0} onClick={() => step(-1)} title="Previous move (left arrow)" aria-label="Previous move"><ChevronLeft size={22}/></button>
-            <button className="play-button" disabled={practice.active} onClick={() => dispatch({ type: 'toggle-play' })} title="Autoplay moves (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
+            <button className="play-button" disabled={practice.active} onClick={toggleGamePlayback} title="Autoplay moves (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
             <button className="icon-button" disabled={ply === game.moves.length} onClick={() => step(1)} title="Next move (right arrow)" aria-label="Next move"><ChevronRight size={22}/></button>
             <button className="icon-button" disabled={ply === game.moves.length} onClick={() => seek(game.moves.length)} title="Final position (End)" aria-label="Final position"><ChevronsRight size={21}/></button>
           </div>
@@ -205,7 +240,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
             </button>)}
           </div>}
         </div>
-        <div className="visually-hidden" aria-live="polite">{ply === game.moves.length ? `Final position · ${game.result}` : `${practice.shownMove ? `Your attempt ${practice.shownMove.san} · ` : ''}${turn} to move${shownPosition.check_square ? ' · Check' : ''}`}</div>
+        <div className="visually-hidden" aria-live="polite">{!playback && ply === game.moves.length ? `Final position · ${game.result}` : `${playback ? 'Variation · ' : practice.shownMove ? `Your attempt ${practice.shownMove.san} · ` : ''}${turn} to move${shownPosition.check_square ? ' · Check' : ''}`}</div>
       </div>
       <aside className="coach-panel" aria-labelledby="coach-title">
         <div className="coach-heading">
@@ -220,13 +255,13 @@ export default function Replay({ game, username }: { game: GameDetail; username:
           <button type="button" className="text-button" disabled={submitting} onClick={() => void resumeAnalysis()}>{submitting ? 'Starting…' : 'Analyze remaining moves'}</button></p>}
         {(analysisError || analysis?.error) && <p className="coach-error" role="alert">{analysisError || analysis?.error} Return to the library to resume.</p>}
         <div className="coach-result" aria-busy={analyzing && !coachResponse}>
-          {practiceEligible && <PracticeCard practice={practice} original={nextMove} overview={coachResponse?.teaching?.position_overview}/>}
-          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis || opponentTurn} opponent={opponentTurn} nextMove={nextMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={false}
-            linePly={linePly} onSelectLinePly={step => {
-              if (!candidate || !line?.positions[step]) return;
-              dispatch({type: 'pause'}); setLineStep({uci: candidate.uci, ply: step});
-              if (boardColumn.current && boardColumn.current.getBoundingClientRect().bottom < 0) boardColumn.current.scrollIntoView({behavior: reducedMotion ? 'instant' : 'smooth', block: 'start'});
-            }}/>}
+          {practiceEligible && hideReview && <div className={`practice-stage${practice.complete && !practice.checking ? ' practice-stage-complete' : ''}`}>
+            <div><PracticeCard practice={practice} original={nextMove} overview={coachResponse?.teaching?.position_overview} speechId={speechId} reducedMotion={reducedMotion}/></div>
+          </div>}
+          {!hideReview && <div key={speechId} className={practice.justCompleted ? 'coach-review-reveal' : undefined}><div>
+            <CoachCards response={coachResponse} engineReview={engineReview} engineMode={!!analysis || opponentTurn} opponent={opponentTurn} nextMove={nextMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={false}
+              speechId={speechId} reducedMotion={reducedMotion} activeSequenceId={playback?.sequence.id} onPlaySequence={playSequence}/>
+          </div></div>}
           {reviewPlies.length > 0 && <nav className="coach-review-navigation" aria-label="Navigate saved coach reviews">
             <button type="button" disabled={previousReview === undefined} onClick={() => previousReview !== undefined && jumpReview(previousReview)}
               aria-label="Previous coached inaccuracy, mistake or blunder"><ChevronLeft size={22} aria-hidden="true"/><span>Previous review</span></button>

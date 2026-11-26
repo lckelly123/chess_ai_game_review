@@ -101,6 +101,11 @@ class ChessComImporter:
                     # publication around a month rollover, then every newer month.
                     boundary = datetime.fromtimestamp(since, timezone.utc).replace(day=1)
                     first_month = (boundary - timedelta(days=1)).strftime("%Y/%m")
+                    if window["oldest"] is not None:
+                        # Older months cannot contribute games within the saved
+                        # history boundary, and an unavailable one can block sync.
+                        oldest_month = datetime.fromtimestamp(window["oldest"], timezone.utc).strftime("%Y/%m")
+                        first_month = max(first_month, oldest_month)
                     archive_months = [month for month in archive_months if month >= first_month]
                 else:
                     archive_months = archive_months[:24]

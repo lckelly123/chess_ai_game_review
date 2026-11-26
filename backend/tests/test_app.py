@@ -273,6 +273,64 @@ def test_sync_revisits_previous_month_for_delayed_games(test_db_url):
         assert job['added'] == 2  # Includes another game with the same completion time.
 
 
+@pytest.mark.parametrize('status', [404, 410])
+@pytest.mark.parametrize('year, month', [(2026, 11), (2027, 1)])
+def test_sync_ignores_unavailable_archives_before_library_history(test_db_url, status, year, month):
+    from backend.chess_games import normalize_game
+    previous_month = f'{year - 1}/12' if month == 1 else f'{year}/{month - 1:02d}'
+    current_month = f'{year}/{month:02d}'
+    saved = raw_game(1, end_time=timestamp(year, month, 6))
+    newest = raw_game(2, end_time=timestamp(year, month, 26))
+    db = Database(test_db_url)
+    db.save_import('alice', [normalize_game(saved, 'alice')], 123)
+    paths = []
+
+    def upstream(request):
+        paths.append(request.url.path)
+        if request.url.path.endswith('/archives'):
+            return httpx.Response(200, json={"archives": [
+                f'https://api.chess.com/pub/player/alice/games/{archive}'
+                for archive in [previous_month, current_month]]})
+        if request.url.path.endswith(f'/{previous_month}'):
+            return httpx.Response(status)
+        if request.url.path.endswith(f'/{current_month}'):
+            return httpx.Response(200, json={"games": [saved, newest]})
+        return httpx.Response(200, json={"username": "alice"})
+
+    with TestClient(create_app(test_db_url, httpx.MockTransport(upstream))) as client:
+        job = wait_job(client, client.post('/api/imports', json={"username": "alice", "sync": True}).json())
+        assert job['status'] == 'completed' and job['added'] == 1
+        assert len(client.get('/api/games?username=alice').json()) == 2
+        assert client.get('/api/profiles').json()[0]['last_synced'] > 123
+        assert not any(path.endswith(f'/{previous_month}') for path in paths)
+        repeated = wait_job(client, client.post('/api/imports', json={"username": "alice", "sync": True}).json())
+        assert repeated['status'] == 'completed' and repeated['added'] == 0
+
+
+def test_sync_failure_within_library_history_preserves_games_and_last_success(test_db_url):
+    from backend.chess_games import normalize_game
+    saved = [raw_game(1, end_time=timestamp(2026, 10, 29)),
+             raw_game(2, end_time=timestamp(2026, 11, 1))]
+    db = Database(test_db_url)
+    db.save_import('alice', [normalize_game(game, 'alice') for game in saved], 123)
+
+    def upstream(request):
+        if request.url.path.endswith('/archives'):
+            return httpx.Response(200, json={"archives": [
+                f'https://api.chess.com/pub/player/alice/games/2026/{month}' for month in ['10', '11']]})
+        if request.url.path.endswith('/2026/10'):
+            return httpx.Response(404)
+        if request.url.path.endswith('/2026/11'):
+            return httpx.Response(200, json={"games": [raw_game(3, end_time=timestamp(2026, 11, 26))]})
+        return httpx.Response(200, json={"username": "alice"})
+
+    with TestClient(create_app(test_db_url, httpx.MockTransport(upstream))) as client:
+        job = wait_job(client, client.post('/api/imports', json={"username": "alice", "sync": True}).json())
+        assert job['status'] == 'failed'
+        assert {game['url'] for game in client.get('/api/games?username=alice').json()} == {game['url'] for game in saved}
+        assert client.get('/api/profiles').json()[0]['last_synced'] == 123
+
+
 def test_failed_sync_preserves_library_and_last_success(test_db_url):
     from backend.chess_games import normalize_game
     db = Database(test_db_url)

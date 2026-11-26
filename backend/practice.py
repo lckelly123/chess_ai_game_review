@@ -42,7 +42,7 @@ def saved_evidence(db, game_id: str, pgn: str, ply: int, original: MoveReview):
         if evidence and evidence.get("fen") == original.position.fen and evidence.get("top_moves"):
             return evidence
     key = (original.position.fen, original.played_move_uci, context_key(previous_move_from_replay(replay(pgn), ply)))
-    saved = db.coach_feedback_for_reviews([key]).get(key) or {}
+    saved = db.coach_feedback_for_reviews([key], game_id=game_id).get(key) or {}
     evidence = saved.get("position_evidence")
     if evidence and evidence.get("fen") == original.position.fen and evidence.get("top_moves"):
         return evidence

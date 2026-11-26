@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-26T10:14:30.991583+00:00",
+  "generatedAt": "2026-11-26T21:49:09.955581+00:00",
   "title": "Design System: Chess study",
   "extensions": {
     "colorMeta": {
@@ -539,6 +539,16 @@
         "name": "stack-replay-coach",
         "value": "1120px",
         "query": "max-width"
+      },
+      {
+        "name": "stack-dev-controls",
+        "value": "720px",
+        "query": "max-width"
+      },
+      {
+        "name": "stack-dev-rows",
+        "value": "420px",
+        "query": "max-width"
       }
     ]
   },
@@ -547,7 +557,7 @@
       "name": "Primary navigation",
       "kind": "nav",
       "refersTo": "navigation-tab",
-      "description": "Persistent library and Lessons links share the header with the global account button. The 68px desktop header wraps to a minimum 108px at 700px, placing both links in a full-width second row.",
+      "description": "Persistent library and Lessons links share the header with Dev beside the global account button. The 68px desktop header wraps to a minimum 108px at 700px, placing the two primary links in a full-width second row.",
       "html": "<nav class=\"ds-primary-nav\" aria-label=\"Main navigation\"><a href=\"#games\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 7v14\"/><path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\"/></svg><span>Your game library</span></a><a href=\"#lessons\" aria-current=\"page\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z\"/><path d=\"M22 10v6\"/><path d=\"M6 12.5V16a6 3 0 0 0 12 0v-3.5\"/></svg>Lessons</a></nav>",
       "css": ".ds-primary-nav{font-family:\"DM Sans Variable\",sans-serif;display:flex;align-items:stretch;gap:24px;min-height:68px;background:var(--canvas,#000000)}.ds-primary-nav a{display:flex;align-items:center;gap:8px;padding:0 2px;border-bottom:2px solid transparent;font-size:13px;color:var(--muted,#a5adb8);text-decoration:none}.ds-primary-nav svg{flex-shrink:0}.ds-primary-nav a:hover{color:var(--ink,#f1f2f4)}.ds-primary-nav a[aria-current=\"page\"]{color:var(--ink,#f1f2f4);border-bottom-color:var(--accent,#91b4d3)}.ds-primary-nav a:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}@media(max-width:700px){.ds-primary-nav{order:3;flex-basis:100%;min-height:44px}.ds-primary-nav a{min-height:44px}}"
     },
@@ -555,9 +565,9 @@
       "name": "Account button",
       "kind": "button",
       "refersTo": "account-button",
-      "description": "Shared header access to the native account dialog. Username truncates within the available width; mobile keeps a 44px target and hides the chevron.",
+      "description": "Shared header access to the native account dialog, beside Dev. Username truncates within the available width; mobile keeps a 44px target, hides the chevron, and hides the visible label at 420px.",
       "html": "<button class=\"ds-account-button\" aria-label=\"Add your Chess.com account\" aria-haspopup=\"dialog\" aria-expanded=\"false\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"8\" r=\"5\"/><path d=\"M20 21a8 8 0 0 0-16 0\"/></svg><span>Account</span><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button>",
-      "css": ".ds-account-button{font-family:\"DM Sans Variable\",sans-serif;min-width:0;max-width:240px;min-height:40px;padding:8px 12px;display:flex;align-items:center;gap:9px;border:1px solid var(--line,#2b2e34);border-radius:8px;background:var(--surface,#000000);color:var(--ink,#f1f2f4);font-size:13px;cursor:pointer;transition:background-color 140ms,color 140ms}.ds-account-button:hover{background:var(--hover,#202329)}.ds-account-button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-account-button>svg{color:var(--muted,#a5adb8);flex-shrink:0}.ds-account-button:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}@media(max-width:700px){.ds-account-button{max-width:190px;min-height:44px;padding:8px;gap:6px}.ds-account-button>svg:last-child{display:none}}@media(prefers-reduced-motion:reduce){.ds-account-button{transition:none}}"
+      "css": ".ds-account-button{font-family:\"DM Sans Variable\",sans-serif;min-width:0;max-width:240px;min-height:40px;padding:8px 12px;display:flex;align-items:center;gap:9px;border:1px solid var(--line,#2b2e34);border-radius:8px;background:var(--surface,#000000);color:var(--ink,#f1f2f4);font-size:13px;cursor:pointer;transition:background-color 140ms,color 140ms}.ds-account-button:hover{background:var(--hover,#202329)}.ds-account-button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-account-button>svg{color:var(--muted,#a5adb8);flex-shrink:0}.ds-account-button:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}@media(max-width:700px){.ds-account-button{max-width:190px;min-height:44px;padding:8px;gap:6px}.ds-account-button>svg:last-child{display:none}}@media(prefers-reduced-motion:reduce){.ds-account-button{transition:none}}@media(max-width:720px){.ds-account-button{max-width:150px}}@media(max-width:420px){.ds-account-button{padding:8px}.ds-account-button>span{display:none}}"
     },
     {
       "name": "Lessons category explorer",
@@ -661,11 +671,27 @@
       "description": "Previous and next selected-player errors with saved coaching. Green arrows reveal the complete response and played-move assessment directly; endpoints disable unavailable directions.",
       "html": "<nav class=\"ds-review-nav\" aria-label=\"Saved coach reviews\"><button disabled><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m15 18-6-6 6-6\"/></svg>Previous review</button><button>Next review<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg></button></nav>",
       "css": ".ds-review-nav{display:flex;justify-content:space-between;gap:8px;padding-top:16px;margin-top:16px;border-top:1px solid var(--line,#2b2e34);font-family:inherit}.ds-review-nav button{display:flex;align-items:center;justify-content:center;gap:4px;min-height:44px;padding:6px;border:0;border-radius:8px;background:transparent;color:var(--positive,#9bd5b0);font:inherit;font-size:12px;cursor:pointer}.ds-review-nav button:hover:not(:disabled){background:var(--positive-surface,#1d3328)}.ds-review-nav button:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}.ds-review-nav button:disabled{opacity:.42;cursor:default}.ds-review-nav svg{flex-shrink:0}"
+    },
+    {
+      "name": "Dev navigation",
+      "kind": "nav",
+      "refersTo": "navigation-tab",
+      "description": "The Dev link sits beside account settings, with a blue current-page rule and a 44px minimum target. Its code icon hides at 720px.",
+      "html": "<a class=\"ds-dev-tab\" href=\"#dev\" aria-current=\"page\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m16 18 6-6-6-6M8 6l-6 6 6 6m6-14-4 16\"/></svg>Dev</a>",
+      "css": ".ds-dev-tab{font-family:\"DM Sans Variable\",sans-serif;display:inline-flex;align-items:center;gap:7px;min-height:44px;color:var(--muted,#a5adb8);font-size:13px;text-decoration:none;border-bottom:2px solid transparent}.ds-dev-tab:hover,.ds-dev-tab[aria-current=\"page\"]{color:var(--ink,#f1f2f4)}.ds-dev-tab[aria-current=\"page\"]{border-color:var(--accent,#91b4d3)}.ds-dev-tab:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}@media(max-width:720px){.ds-dev-tab>svg{display:none}}"
+    },
+    {
+      "name": "Destructive reset action",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Coral action for Clear all and final reset confirmation. Both reset scopes use a native confirmation dialog with initial focus on Cancel.",
+      "html": "<button class=\"ds-danger-button\">Clear all analysis</button>",
+      "css": ".ds-danger-button{font-family:\"DM Sans Variable\",sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;white-space:nowrap;background:var(--negative-surface,#392622);color:var(--negative,#f0ad9f);border:1px solid var(--negative,#f0ad9f);padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:background-color 140ms,color 140ms}.ds-danger-button:hover:not(:disabled){background:var(--negative,#f0ad9f);color:var(--negative-surface,#392622)}.ds-danger-button:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}.ds-danger-button:disabled{opacity:.42;cursor:default}@media(prefers-reduced-motion:reduce){.ds-danger-button{transition:none}}"
     }
   ],
   "narrative": {
     "northStar": "A focused study desk",
-    "overview": "A focused pure-black workspace gives the chess position a clear visual anchor while providing comfortable room for coaching. Blue-grey squares, soft white text, and a compact library support patient review. DM Sans carries headings and the working interface.\n\nThis records the implemented account, library, Lessons, and replay UI and the user's approved replacement of the light workspace with a dark theme. Pure-black canvas and panels, blue selection, and white primary actions define the surrounding interface. The board artwork follows the user's November 15, 2026 reference and retains its established texture and pieces.",
+    "overview": "A focused pure-black workspace gives the chess position a clear visual anchor while providing comfortable room for coaching. Blue-grey squares, soft white text, and a compact library support patient review. DM Sans carries headings and the working interface.\n\nThis records the implemented account, library, Lessons, Dev, and replay UI and the user's approved replacement of the light workspace with a dark theme. Pure-black canvas and panels, blue selection, and white primary actions define the surrounding interface. The board artwork follows the user's November 15, 2026 reference and retains its established texture and pieces.",
     "keyCharacteristics": [
       "Dark, flat surfaces separated by fine rules and tonal changes.",
       "An Icy Sea textured board with Classic black-and-white pieces, matching the supplied reference.",

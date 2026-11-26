@@ -4,6 +4,7 @@ export type Game = {
   result: string; end_time: number; time_class: string; time_control: string;
   opening: string; eco: string; ply_count: number;
   analysis?: GameAnalysisSummary | null;
+  analysis_revision?: number;
 };
 export type Position = { fen: string; last_move: string[] | null; check_square: string | null; phase?: 'opening' | 'middlegame' | 'endgame' };
 export type Move = { ply: number; san: string; uci: string; color: string; number: number; clock_seconds?: number | null; elapsed_seconds?: number | null };

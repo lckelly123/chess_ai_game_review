@@ -1,0 +1,10 @@
+{
+  "description": "Lichess standard move and capture sounds, bundled unchanged for the requested board audio",
+  "retrieved": "2026-11-26",
+  "ownership": "Embedded audio metadata: Copyright 2000, Sounddogs.com. No new license implied. Lichess lists the standard sounds among its non-free exceptions.",
+  "license_reference": "https://github.com/lichess-org/lila/blob/master/COPYING.md#exceptions-non-free",
+  "files": {
+    "Move.mp3": "https://raw.githubusercontent.com/lichess-org/lila/master/public/sound/standard/Move.mp3",
+    "Capture.mp3": "https://raw.githubusercontent.com/lichess-org/lila/master/public/sound/standard/Capture.mp3"
+  }
+}

@@ -30,8 +30,9 @@ def coaching_total(row: dict) -> int:
     return sum(row["counts"].get(quality, 0) for quality in COACH_QUALITIES)
 
 
-def pgn_fingerprint(pgn: str) -> str:
-    return hashlib.sha256(pgn.encode()).hexdigest()
+def pgn_fingerprint(pgn: str, revision: int = 0) -> str:
+    source = pgn if not revision else f"{pgn}\nanalysis-reset:{revision}"
+    return hashlib.sha256(source.encode()).hexdigest()
 
 
 def player_color(record: dict, username: str) -> str:
@@ -108,7 +109,7 @@ class GameAnalysisService:
             color = player_color(record, username)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
-        return record, color, pgn_fingerprint(record["pgn"])
+        return record, color, pgn_fingerprint(record["pgn"], record.get("analysis_revision", 0))
 
     async def start(self, game_id: str, username: str, model: CoachModel = DEFAULT_COACH_MODEL):
         async with self.start_lock:
@@ -169,12 +170,12 @@ class GameAnalysisService:
             # a manual review finishing while we wait cannot create a duplicate.
             async with self.coach_lock:
                 current = await run_in_threadpool(self.db.game, game_id)
-                if current is None or pgn_fingerprint(current["pgn"]) != fingerprint:
+                if current is None or pgn_fingerprint(current["pgn"], current.get("analysis_revision", 0)) != fingerprint:
                     return False
                 detail = await run_in_threadpool(replay, current["pgn"])
                 previous_move = previous_move_from_replay(detail, ply)
                 key = (fen, uci, context_key(previous_move))
-                previous = await run_in_threadpool(self.db.coach_feedback_for_reviews, [key])
+                previous = await run_in_threadpool(self.db.coach_feedback_for_reviews, [key], game_id=game_id)
                 if not current_coaching(previous.get(key)):
                     await run_in_threadpool(self.db.health)
                     options = {}
@@ -189,7 +190,10 @@ class GameAnalysisService:
                                                      **({"previous_move": previous_move} if previous_move else {}))
                     if result.position.fen != fen or result.played_move != uci:
                         raise CoachResponseError("The coach returned a different position or move.", result.response_id)
-                    await run_in_threadpool(self.db.save_coach_feedback, result)
+                    persisted = await run_in_threadpool(self.db.save_coach_feedback, result, game_id=game_id,
+                                                        expected_revision=current.get("analysis_revision", 0))
+                    if persisted is None:
+                        return False
                 completed += 1
                 if not await run_in_threadpool(self.db.save_game_coach_progress, game_id, color, fingerprint, completed):
                     return False

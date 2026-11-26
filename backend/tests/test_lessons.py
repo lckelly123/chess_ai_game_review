@@ -42,7 +42,7 @@ class MemoryDatabase:
     def lesson_games(self, username):
         return self.records
 
-    def coach_feedback_for_reviews(self, reviews):
+    def coach_feedback_for_reviews(self, reviews, *, game_id=None):
         return {key: self.feedback[key[:2]] for key in reviews if key[:2] in self.feedback}
 
 

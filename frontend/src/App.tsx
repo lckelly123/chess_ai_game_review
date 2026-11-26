@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleAlert, Clock3, GraduationCap, LoaderCircle, Search, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleAlert, Clock3, Code2, GraduationCap, LoaderCircle, Search, UserRound } from 'lucide-react';
 import { BrandKnight } from './Board';
 import Replay from './Replay';
 import GameAnalysisAction from './GameAnalysisAction';
@@ -8,6 +8,10 @@ import { api, perspective, readStored, timeControl } from './types';
 import type { GameDetail } from './types';
 import AccountDialog from './AccountDialog';
 import useGameLibrary from './useGameLibrary';
+import Dev from './Dev';
+import { analysisResetEvent } from './analysisReset';
+import type { AnalysisReset } from './analysisReset';
+import { resetCoachSpeech } from './useCoachSpeech';
 
 function readReplayRoute() {
   const match = window.location.hash.match(/^#game\/([\w-]+)(?:\?(.*))?$/);
@@ -21,6 +25,7 @@ export default function App() {
   const [replayRoute, setReplayRoute] = useState(readReplayRoute);
   const [lessonsOpen, setLessonsOpen] = useState(() => ['#lessons', '#lessons/multi-game'].includes(window.location.hash));
   const [multiGameOpen, setMultiGameOpen] = useState(() => window.location.hash === '#lessons/multi-game');
+  const [devOpen, setDevOpen] = useState(() => window.location.hash === '#dev');
   const [detail, setDetail] = useState<GameDetail | null>(null);
   const [search, setSearch] = useState('');
   const [speed, setSpeed] = useState('all');
@@ -31,19 +36,44 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const gameListRef = useRef<HTMLUListElement>(null);
   const libraryPosition = useRef({ page: 0, list: 0, game: '' });
-  const wasOutsideLibrary = useRef(!!replayRoute || lessonsOpen);
+  const wasOutsideLibrary = useRef(!!replayRoute || lessonsOpen || devOpen);
+  const reloadLibraryRef = useRef(reloadLibrary);
+  reloadLibraryRef.current = reloadLibrary;
+
+  useEffect(() => {
+    const reset = (result: AnalysisReset) => {
+      const ids = new Set(result.game_ids);
+      resetCoachSpeech(result.game_ids);
+      setDetail(null);
+      setRevision(value => value + 1);
+      setGames(current => current.map(game => ids.has(game.id) ? {...game, analysis: null} : game));
+      reloadLibraryRef.current();
+    };
+    const fromWindow = (event: Event) => reset((event as CustomEvent<AnalysisReset>).detail);
+    const fromStorage = (event: StorageEvent) => {
+      if (event.key !== analysisResetEvent || !event.newValue) return;
+      try {
+        const result = JSON.parse(event.newValue) as AnalysisReset;
+        if (Array.isArray(result.game_ids)) reset(result);
+      } catch { /* Ignore incomplete storage notifications. */ }
+    };
+    window.addEventListener(analysisResetEvent, fromWindow);
+    window.addEventListener('storage', fromStorage);
+    return () => { window.removeEventListener(analysisResetEvent, fromWindow); window.removeEventListener('storage', fromStorage); };
+  }, [setGames]);
 
   useEffect(() => {
     const navigate = () => {
       setReplayRoute(readReplayRoute()); setLessonsOpen(['#lessons', '#lessons/multi-game'].includes(window.location.hash));
       setMultiGameOpen(window.location.hash === '#lessons/multi-game');
+      setDevOpen(window.location.hash === '#dev');
     };
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
 
   useLayoutEffect(() => {
-    if (replayRoute || lessonsOpen) {
+    if (replayRoute || lessonsOpen || devOpen) {
       window.scrollTo(0, 0);
       if (replayRoute) workspaceRef.current?.focus({ preventScroll: true });
     } else if (wasOutsideLibrary.current) {
@@ -54,15 +84,16 @@ export default function App() {
       }
       window.scrollTo(0, libraryPosition.current.page);
     }
-    wasOutsideLibrary.current = !!replayRoute || lessonsOpen;
-    document.title = multiGameOpen ? 'Chess study — Multi-game analysis' : lessonsOpen ? 'Chess study — Lessons' : replayRoute ? 'Chess study — Game replay' : 'Chess study — Your game library';
-  }, [replayRoute, lessonsOpen, multiGameOpen]);
+    wasOutsideLibrary.current = !!replayRoute || lessonsOpen || devOpen;
+    document.title = devOpen ? 'Chess study — Dev' : multiGameOpen ? 'Chess study — Multi-game analysis' : lessonsOpen ? 'Chess study — Lessons' : replayRoute ? 'Chess study — Game replay' : 'Chess study — Your game library';
+  }, [replayRoute, lessonsOpen, multiGameOpen, devOpen]);
 
   useEffect(() => {
     if (!replayRoute) { setDetail(null); setDetailError(''); setDetailLoading(false); return; }
     const controller = new AbortController();
     setDetailLoading(true); setDetailError(''); setDetail(null);
     api<GameDetail>(`/api/games/${replayRoute.id}`, { signal: controller.signal }).then(data => {
+      if (controller.signal.aborted) return;
       setDetail(data); setDetailLoading(false);
     }).catch(err => { if (err.name !== 'AbortError') { setDetailError(err.message); setDetailLoading(false); } });
     return () => controller.abort();
@@ -84,17 +115,19 @@ export default function App() {
   return <>
     <header className="site-header"><a className="wordmark" href="#games" aria-label="Chess study home"><span className="brand-piece"><BrandKnight/></span>Chess <span>study</span></a>
       <nav className="primary-nav" aria-label="Main navigation">
-        <a href="#games" aria-current={!lessonsOpen ? 'page' : undefined}><BookOpen size={16}/> <span>Your game library</span></a>
+        <a href="#games" aria-current={!lessonsOpen && !devOpen ? 'page' : undefined}><BookOpen size={16}/> <span>Your game library</span></a>
         <a href="#lessons" aria-current={lessonsOpen ? 'page' : undefined} onClick={() => {
-          if (!replayRoute && !lessonsOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
+          if (!replayRoute && !lessonsOpen && !devOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
         }}><GraduationCap size={17}/> Lessons</a>
       </nav>
-      <button className="account-button" onClick={() => setAccountOpen(true)} aria-label={username ? `Account settings for ${username}` : 'Add your Chess.com account'}
-        aria-haspopup="dialog" aria-expanded={accountOpen}><UserRound size={17}/><span>{username || 'Account'}</span><ChevronDown size={14}/></button>
+      <div className="header-tools"><a className="dev-tab" href="#dev" aria-current={devOpen ? 'page' : undefined} onClick={() => {
+        if (!replayRoute && !lessonsOpen && !devOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
+      }}><Code2 size={16}/>Dev</a><button className="account-button" onClick={() => setAccountOpen(true)} aria-label={username ? `Account settings for ${username}` : 'Add your Chess.com account'}
+        aria-haspopup="dialog" aria-expanded={accountOpen}><UserRound size={17}/><span>{username || 'Account'}</span><ChevronDown size={14}/></button></div>
     </header>
     {accountOpen && <AccountDialog username={username} profiles={profiles} onSave={saveAccount} onClose={() => setAccountOpen(false)}/>}
     <main className={`app-layout ${replayRoute ? 'replay-layout' : 'library-layout'}`}>
-      {lessonsOpen ? <Lessons key={username} username={username} multiGameOpen={multiGameOpen} profilesLoading={profilesLoading}
+      {devOpen ? <Dev/> : lessonsOpen ? <Lessons key={`${username}:${revision}`} username={username} multiGameOpen={multiGameOpen} profilesLoading={profilesLoading}
         profileError={profileError} onRetryProfiles={reloadLibrary}/>
       : !replayRoute ? <div className="library">
         <div className="library-heading"><div><h1>Your game library</h1><p>Your games, ready for a closer look.</p></div>
@@ -125,7 +158,7 @@ export default function App() {
                 <span className="game-item-info"><span className="opponent">{player.opponent}<span>{player.opponentRating ?? 'Unrated'}</span></span><span className="game-item-meta"><span className={`tiny-token ${player.isWhite ? 'white' : 'black'}`} aria-hidden="true"/>You played {player.isWhite ? 'White' : 'Black'}</span></span>
                 <span className="game-speed"><span className="capitalize">{game.time_class}</span><span>{timeControl(game.time_control)}</span></span>
                 <time className="game-date" dateTime={new Date(game.end_time * 1000).toISOString()}>{new Date(game.end_time * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</time>
-                <GameAnalysisAction key={`${game.id}:${username}`} game={game} username={username}
+                <GameAnalysisAction key={`${game.id}:${username}:${revision}`} game={game} username={username}
                   onUpdate={analysis => setGames(current => current.map(item => item.id === game.id ? {...item, analysis} : item))}
                   onOpen={() => { libraryPosition.current = { page: window.scrollY, list: gameListRef.current?.scrollTop || 0, game: game.id }; }}/>
               </li>;

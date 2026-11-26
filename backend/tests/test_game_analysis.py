@@ -79,7 +79,7 @@ class MemoryDatabase:
     def health(self):
         pass
 
-    def save_coach_feedback(self, analysis):
+    def save_coach_feedback(self, analysis, *, game_id=None, expected_revision=0):
         saved = {"fen": analysis.position.fen, "played_move": analysis.played_move,
                  "text": analysis.text, "model": analysis.model, "response_id": analysis.response_id,
                  "created_at": datetime.now(timezone.utc), "stockfish": analysis.stockfish,
@@ -161,7 +161,7 @@ class MemoryDatabase:
         return {color: analysis_result(row) for (key, color), row in self.rows.items()
                 if key == game_id and row["pgn_hash"] == pgn_fingerprint(pgn)}
 
-    def coach_feedback_for_reviews(self, reviews):
+    def coach_feedback_for_reviews(self, reviews, *, game_id=None):
         return {key: deepcopy(self.feedback[key]) for key in reviews if key in self.feedback}
 
     def games(self, username):
