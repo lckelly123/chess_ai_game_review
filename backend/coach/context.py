@@ -8,7 +8,7 @@ from .position import CoachPosition, InvalidPositionError
 
 # Independent of mistake taxonomy and sharpness versions. Values through 3
 # were used by the former classification-based game coaching progress marker.
-COACH_CONTRACT_VERSION = 4
+COACH_CONTRACT_VERSION = 5
 
 
 def validate_previous_move(fen: str, previous_move: dict | None) -> dict | None:

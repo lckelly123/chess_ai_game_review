@@ -239,6 +239,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .decision-tag.critical { background: var(--negative-surface); color: var(--negative); }
 .decision-tag .coach-tooltip { left: 0; right: auto; }
 .teaching-paragraph { margin: 0; }
+.teaching-paragraph + .teaching-paragraph { margin-top: 16px; }
 .inline-move { display: inline; padding: 1px 3px; border-radius: 4px; background: transparent; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .inline-move:hover:not(:disabled), .inline-move[aria-expanded="true"] { background: var(--selected); color: var(--accent-hover); }
 .inline-move:disabled { opacity: .55; cursor: wait; }

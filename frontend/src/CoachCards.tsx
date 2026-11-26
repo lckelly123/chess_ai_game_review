@@ -1,7 +1,7 @@
 import { useId, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import { ArrowUpRight, Check, ChevronDown } from 'lucide-react';
-import type { CoachResponse, EngineReview, Move } from './types';
+import type { CoachResponse, EngineReview, MistakeClassification, Move } from './types';
 import { engineEvaluation, parseCoachContent } from './coachContent';
 import { coachMoves } from './coachMoves';
 import { engineMoves, qualityLabels } from './engineReview';
@@ -17,6 +17,14 @@ const mateQualityDescriptions: Record<string, string> = {
   mate_lost: 'Gives up a forced checkmate.',
   mate_retained: 'Keeps a forced checkmate.',
   already_forced_loss: 'The engine already found a forced loss; no new error is assigned.',
+};
+
+const mistakeCategoryLabels: Record<MistakeClassification['category'], string> = {
+  tactical_miss: 'Missed tactic', tactical_allowed: 'Allowed tactic', positional: 'Positional',
+};
+const mistakeSubcategoryLabels: Record<MistakeClassification['subcategory'], string> = {
+  hanging_piece: 'Hanging piece', fork: 'Fork', pin_skewer: 'Pin / skewer', discovered_attack: 'Discovered attack',
+  pawn: 'Pawn', knight: 'Knight', bishop: 'Bishop', rook: 'Rook', queen: 'Queen', king: 'King',
 };
 
 export default function CoachCards({ response, engineReview, engineMode = false, nextMove, pending, selectedUci, onSelectCandidate, transitioning, linePly = 0, onSelectLinePly }: {
@@ -45,9 +53,15 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   const explanation = teaching?.position_explanation ?? teaching?.positional_thesis;
   const inlineMoves = !!teaching?.position_overview && !!teaching.position_explanation;
   const selectedMove = rows.find(move => move.uci === selectedUci);
+  const mistake = selectedMove?.isPlayed ? moveFeedback?.mistake_classification : undefined;
   const selectedScore = selectedMove?.engineMove ? engineEvaluation(scoreContext, selectedMove.engineMove) : null;
   const line = selectedUci ? response?.move_lines?.[selectedUci] : undefined;
-  const moveRows = inlineMoves ? rows.filter(move => move.isPlayed) : rows;
+  const paragraphs = (explanation ?? '').split(/\r?\n\s*\r?\n/).map(text => text.trim()).filter(Boolean);
+  // Older saved reviews may predate the final player-move paragraph. Keep the
+  // move accessible without inventing a comparison or making another model call.
+  if (inlineMoves && response?.played_move && !moveReferences(explanation ?? '', rows).some(part => part.move?.isPlayed)) {
+    paragraphs.push(`Your move was [[${response.played_move}]].`);
+  }
 
   return <div className="coach-cards">
     <div className="coach-card-body" aria-busy={pending}>
@@ -63,12 +77,12 @@ export default function CoachCards({ response, engineReview, engineMode = false,
           </span>}
         </div>
         {teaching ? <>
-          <p className="teaching-paragraph">{moveReferences(explanation ?? '', rows).map((part, index) => part.move
+          {paragraphs.map((paragraph, paragraphIndex) => <p key={paragraphIndex} className="teaching-paragraph">{moveReferences(paragraph, rows).map((part, index) => part.move
             ? <button key={index} type="button" className="inline-move" disabled={transitioning}
-                aria-label={`${selectedUci === part.move.uci ? 'Hide' : 'Show'} explanation for ${part.text}`}
+                aria-label={`${selectedUci === part.move.uci ? 'Hide' : 'Show'} explanation for ${part.text}${part.move.isPlayed ? ', player move' : ''}`}
                 aria-expanded={selectedUci === part.move.uci} aria-controls={`${id}-move-detail`}
                 onClick={() => onSelectCandidate(part.move!.uci)}>{part.text}</button>
-            : part.text)}</p>
+            : part.text)}</p>)}
         </> : response ? <>
           {!!content.positionIntro && <Prose>{content.positionIntro.replace(/^\s*\*\*Position character:\*\*[^\n]*(?:\n|$)/gim, '').trim()}</Prose>}
           {content.factors.length > 0 && <>
@@ -84,10 +98,10 @@ export default function CoachCards({ response, engineReview, engineMode = false,
         </> : <p className="coach-placeholder">{waiting} The position explanation will appear here.</p>}
       </section>
       </>}
-      {(!inlineMoves || moveRows.length > 0) && <section className="coach-section coach-moves-section" aria-labelledby={`${id}-moves-title`}>
-        <div className="coach-section-heading moves-heading"><h3 id={`${id}-moves-title`}>{inlineMoves ? 'Your move' : 'Moves'}</h3></div>
-        {moveRows.length ? <div className="candidate-moves" role="group" aria-label={inlineMoves ? 'Player move' : 'Candidate moves and player move'}>
-          {moveRows.map(move => {
+      {!inlineMoves && <section className="coach-section coach-moves-section" aria-labelledby={`${id}-moves-title`}>
+        <div className="coach-section-heading moves-heading"><h3 id={`${id}-moves-title`}>Moves</h3></div>
+        {rows.length ? <div className="candidate-moves" role="group" aria-label="Candidate moves and player move">
+          {rows.map(move => {
             const selected = selectedUci === move.uci;
             const score = move.engineMove ? engineEvaluation(scoreContext, move.engineMove) : null;
             return <div className={`candidate-row${move.isPlayed ? ' player-move-row' : ''}`} key={move.uci} data-uci={move.uci}>
@@ -110,11 +124,19 @@ export default function CoachCards({ response, engineReview, engineMode = false,
       <div id={`${id}-move-detail`}>
         {selectedMove && <section className="move-detail" aria-label={`${selectedMove.san} explanation`}>
           <div className="candidate-heading">
-            <h3>{selectedMove.san}{selectedMove.isPlayed && <span className="player-move-badge">Player move</span>}</h3>
+            <h3>{selectedMove.san}{selectedMove.isPlayed && <>
+              <span className="player-move-badge">Player move</span>
+              <span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{quality === 'good' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span>
+            </>}</h3>
             {selectedScore && <span className={`engine-score ${selectedScore.tone}`} title={`${selectedScore.label} · ${selectedScore.perspective}'s perspective`}>{selectedScore.value}</span>}
           </div>
           {selectedMove.reason && <p className="candidate-reason">{selectedMove.reason}</p>}
           {selectedMove.feedback && selectedMove.feedback !== selectedMove.reason && <p className="candidate-feedback">{selectedMove.feedback}</p>}
+          {mistake && <p className="mistake-classification">
+            <span>Error classification:</span>
+            <span className="mistake-category">{mistakeCategoryLabels[mistake.category]}</span>
+            <span className="mistake-subcategory">{mistakeSubcategoryLabels[mistake.subcategory]}</span>
+          </p>}
           {selectedMove.isPlayed && betterUci && <button className="better-candidate" type="button" disabled={transitioning} onClick={() => onSelectCandidate(betterUci)}>
             Compare with {response?.candidate_san?.[betterUci] ?? betterUci} <ArrowUpRight size={14} aria-hidden="true"/>
           </button>}

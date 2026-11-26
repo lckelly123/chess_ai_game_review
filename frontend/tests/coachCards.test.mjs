@@ -19,11 +19,11 @@ await unlink(output);
 const response = {
   fen: '8/8/8/8/8/8/8/8 w - - 0 1', played_move: 'd2d4', text: '',
   teaching: {position_overview: 'The center needs attention.',
-    position_explanation: 'Control the center with [[e2e4]].',
+    position_explanation: 'Control the center with [[e2e4]].\n\nYour move, [[d2d4]], misses the stronger continuation.',
     candidate_moves: [{uci: 'e2e4', reason: 'Unique candidate detail.', highlight_squares: ['e4', 'd5']}],
     move_evaluation: {explanation: 'Unique original move assessment.', mistake_classification: {category: 'tactical_miss', subcategory: 'fork'}}},
   candidate_san: {e2e4: 'e4', d2d4: 'd4'},
-  move_lines: {e2e4: {san: ['e4', 'e5'], positions: []}},
+  move_lines: {e2e4: {san: ['e4', 'e5'], positions: []}, d2d4: {san: ['d4', 'd5'], positions: []}},
 };
 const render = props => renderToStaticMarkup(React.createElement(CoachCards, {response, pending: false, transitioning: false, onSelectCandidate() {}, onSelectLinePly() {}, ...props}));
 
@@ -31,22 +31,64 @@ test('the revealed review contains inline SAN buttons but no move-specific detai
   const html = render();
   assert.match(html, /class="inline-move"/);
   assert.match(html, /Show explanation for e4/);
+  assert.match(html, /Show explanation for d4, player move/);
+  assert.equal((html.match(/class="teaching-paragraph"/g) ?? []).length, 2);
+  assert.match(html, /<\/p><p class="teaching-paragraph">Your move,/);
   assert.doesNotMatch(html, /\[\[e2e4\]\]|Unique candidate detail|Unique original move assessment|Engine continuation|Missed tactic|Fork/);
-  assert.doesNotMatch(html, />Moves<|Positional thesis/);
+  assert.doesNotMatch(html, />Moves<|>Your move<|candidate-row|Positional thesis|Error classification:/);
 });
 
 test('selecting a candidate reveals only its detail and continuation; clearing it hides both', () => {
   const html = render({selectedUci: 'e2e4'});
   assert.match(html, /Unique candidate detail/);
   assert.match(html, /Engine continuation/);
-  assert.doesNotMatch(html, /Unique original move assessment/);
+  assert.doesNotMatch(html, /Unique original move assessment|Error classification:|Missed tactic/);
   assert.doesNotMatch(render({selectedUci: undefined}), /Unique candidate detail|Engine continuation/);
 });
 
-test('the original move opens its own assessment', () => {
+test('the embedded original move opens its assessment, model classification, and continuation', () => {
   const html = render({selectedUci: 'd2d4'});
   assert.match(html, /Unique original move assessment/);
-  assert.doesNotMatch(html, /Unique candidate detail|Engine continuation/);
+  assert.match(html, /Hide explanation for d4, player move/);
+  assert.match(html, /Error classification:/);
+  assert.match(html, /Missed tactic/);
+  assert.match(html, /Fork/);
+  assert.match(html, /Engine continuation/);
+  assert.match(html, /Show d5, step 2/);
+  assert.doesNotMatch(html, /Unique candidate detail|Show e5, step 2/);
+  assert.doesNotMatch(render({selectedUci: undefined}), /Unique original move assessment|Error classification:|Engine continuation/);
+});
+
+test('model error labels cover allowed tactics and normalized positional errors', () => {
+  for (const [mistake_classification, labels] of [
+    [{category: 'tactical_allowed', subcategory: 'pin_skewer'}, ['Allowed tactic', 'Pin / skewer']],
+    [{category: 'positional', subcategory: 'bishop'}, ['Positional', 'Bishop']],
+  ]) {
+    const current = {...response, teaching: {...response.teaching,
+      move_evaluation: {...response.teaching.move_evaluation, mistake_classification}}};
+    const html = render({response: current, selectedUci: 'd2d4'});
+    for (const label of labels) assert.ok(html.includes(label));
+  }
+});
+
+test('a good played candidate reuses its explanation without an error classification or extra move row', () => {
+  const current = {...response, played_move: 'e2e4', teaching: {...response.teaching,
+    position_explanation: 'Control the center with [[e2e4]].\n\nYour move, [[e2e4]], follows this plan.',
+    move_evaluation: {explanation: null, mistake_classification: null}}};
+  const html = render({response: current, selectedUci: 'e2e4'});
+  assert.equal((html.match(/Unique candidate detail/g) ?? []).length, 1);
+  assert.equal((html.match(/class="teaching-paragraph"/g) ?? []).length, 2);
+  assert.match(html, /Hide explanation for e4, player move/);
+  assert.doesNotMatch(html, /Error classification:|candidate-row|Your move was/);
+});
+
+test('saved inline reviews without a player link retain access through a neutral embedded reference', () => {
+  const current = {...response, teaching: {...response.teaching, position_explanation: 'Control the center with [[e2e4]].'}};
+  const html = render({response: current});
+  assert.match(html, /Your move was/);
+  assert.match(html, /Show explanation for d4, player move/);
+  assert.doesNotMatch(html, /candidate-row|Unique original move assessment/);
+  assert.doesNotMatch(render({response: {...current, played_move: null}}), /Your move was|player move|Error classification:/);
 });
 
 test('comparison uses the backend-derived target without a model comparison field', () => {
