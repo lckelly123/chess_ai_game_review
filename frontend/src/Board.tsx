@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import type { CandidateMove, Position } from './types';
+import type { CandidateMove, Move, Position } from './types';
 import { squareCenter } from './boardAnnotations';
 
 const names: Record<string, string> = { p: 'pawn', r: 'rook', n: 'knight', b: 'bishop', q: 'queen', k: 'king' };
@@ -20,8 +20,8 @@ export function BrandKnight() {
   </svg>;
 }
 
-export default function Board({ position, flipped, candidate, candidateName, annotationLabel = 'Candidate', legalMoves, onMove, inputDisabled = false }: {
-  position: Position; flipped: boolean; candidate?: CandidateMove; candidateName?: string; annotationLabel?: string;
+export default function Board({ position, flipped, candidate, candidateName, originalMove, legalMoves, onMove, inputDisabled = false }: {
+  position: Position; flipped: boolean; candidate?: CandidateMove; candidateName?: string; originalMove?: Move;
   legalMoves?: string[]; onMove?: (uci: string) => void; inputDisabled?: boolean;
 }) {
   const arrowId = useId();
@@ -38,6 +38,10 @@ export default function Board({ position, flipped, candidate, candidateName, ann
   }
   const origin = candidate ? squareCenter(candidate.uci.slice(0, 2), flipped) : null;
   const destination = candidate ? squareCenter(candidate.uci.slice(2, 4), flipped) : null;
+  const originalFrom = originalMove?.uci.slice(0, 2);
+  const originalTo = originalMove?.uci.slice(2, 4);
+  const originalOrigin = originalFrom ? squareCenter(originalFrom, flipped) : null;
+  const originalDestination = originalTo ? squareCenter(originalTo, flipped) : null;
   const squares: Record<string, string> = {};
   position.fen.split(' ')[0].split('/').forEach((rank, y) => {
     let x = 0;
@@ -49,21 +53,25 @@ export default function Board({ position, flipped, candidate, candidateName, ann
   const files = (flipped ? 'hgfedcba' : 'abcdefgh').split('');
   const ranks = flipped ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
   const summary = Object.entries(squares).map(([square, p]) => `${p === p.toUpperCase() ? 'White' : 'Black'} ${names[p.toLowerCase()]} ${square}`).join(', ');
-  return <><div className="board" role={onMove ? 'group' : 'img'} aria-label={`Chessboard. ${flipped ? 'Black' : 'White'} at bottom. ${candidate ? `${annotationLabel} ${candidateName ?? candidate.uci}: arrow from ${candidate.uci.slice(0, 2)} to ${candidate.uci.slice(2, 4)}; highlights ${candidate.highlight_squares.join(' and ')}. ${candidate.reason} ` : ''}${onMove ? 'Select a piece, then its destination.' : summary}`}>
+  return <><div className="board" role={onMove ? 'group' : 'img'} aria-label={`Chessboard. ${flipped ? 'Black' : 'White'} at bottom. ${originalMove ? `Your recorded move ${originalMove.san}: red arrow from ${originalFrom} to ${originalTo}, with both squares highlighted. ` : ''}${candidate ? `Candidate ${candidateName ?? candidate.uci}: arrow from ${candidate.uci.slice(0, 2)} to ${candidate.uci.slice(2, 4)}; highlights ${candidate.highlight_squares.join(' and ')}. ${candidate.reason} ` : ''}${onMove ? 'Select a piece, then its destination.' : summary}`}>
     {ranks.flatMap((rank, y) => files.map((file, x) => {
       const square = `${file}${rank}`;
       const Square = onMove ? 'button' : 'div';
       const piece = squares[square];
       const target = targets.some(move => move.slice(2, 4) === square);
       return <Square key={square} type={onMove ? 'button' : undefined} disabled={onMove ? inputDisabled : undefined}
-        aria-label={onMove ? `${square}${piece ? `, ${piece === piece.toUpperCase() ? 'White' : 'Black'} ${names[piece.toLowerCase()]}` : ', empty'}${target ? ', legal destination' : ''}` : undefined}
+        aria-label={onMove ? `${square}${piece ? `, ${piece === piece.toUpperCase() ? 'White' : 'Black'} ${names[piece.toLowerCase()]}` : ', empty'}${square === originalFrom ? ', recorded move origin' : square === originalTo ? ', recorded move destination' : ''}${target ? ', legal destination' : ''}` : undefined}
         aria-pressed={onMove ? selected === square : undefined} onClick={onMove ? () => chooseSquare(square) : undefined}
-        style={{ backgroundPosition: `${x * 100 / 7}% ${y * 100 / 7}%` }} className={`square ${(x + y) % 2 ? 'dark' : 'light'} ${position.last_move?.includes(square) ? 'last-move' : ''} ${position.check_square === square ? 'in-check' : ''} ${selected === square ? 'selected-square' : ''} ${target ? 'legal-target' : ''}`}>
+        style={{ backgroundPosition: `${x * 100 / 7}% ${y * 100 / 7}%` }} className={`square ${(x + y) % 2 ? 'dark' : 'light'} ${position.last_move?.includes(square) ? 'last-move' : ''} ${square === originalFrom || square === originalTo ? 'original-move' : ''} ${position.check_square === square ? 'in-check' : ''} ${selected === square ? 'selected-square' : ''} ${target ? 'legal-target' : ''}`}>
         {x === 0 && <span className="rank-label">{rank}</span>}
         {y === 7 && <span className="file-label">{file}</span>}
         {squares[square] && <Piece piece={squares[square]}/>}
       </Square>;
     }))}
+    {originalOrigin && originalDestination && <svg className="board-annotations original-move-annotations" viewBox="0 0 8 8" aria-hidden="true">
+      <defs><marker id={`${arrowId}-original`} markerWidth=".26" markerHeight=".26" refX=".26" refY=".13" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L.26 .13 L0 .26 Z" fill="currentColor"/></marker></defs>
+      <line x1={originalOrigin[0]} y1={originalOrigin[1]} x2={originalDestination[0]} y2={originalDestination[1]} className="original-move-arrow" markerEnd={`url(#${arrowId}-original)`}/>
+    </svg>}
     {candidate && origin && destination && <svg className="board-annotations" viewBox="0 0 8 8" aria-hidden="true">
       <defs><marker id={arrowId} markerWidth=".48" markerHeight=".48" refX=".39" refY=".24" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L.48 .24 L0 .48 Z" fill="currentColor"/></marker></defs>
       {candidate.highlight_squares.map(square => {

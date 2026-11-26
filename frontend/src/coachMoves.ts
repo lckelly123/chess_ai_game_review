@@ -12,7 +12,7 @@ export function playedMoveAnnotation(response: CoachResponse): CandidateMove | u
   if (!uci || !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) return undefined;
   return {
     uci,
-    reason: response.teaching?.move_evaluation?.explanation ?? 'Run coach again for feedback on this move.',
+    reason: response.teaching?.move_evaluation?.explanation ?? 'No saved explanation is available for this move.',
     highlight_squares: [uci.slice(0, 2), uci.slice(2, 4)],
   };
 }
