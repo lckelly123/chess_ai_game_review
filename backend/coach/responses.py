@@ -126,6 +126,9 @@ def build_request(
     review = MoveReview.from_fen(position.fen, played_move) if played_move is not None else None
     evidence = prepare_position_evidence(evidence if evidence is not None else analyze_position(position.fen))
     move_evidence = analyze_played_move(review, evidence) if review else None
+    if move_evidence and "position_evidence" in move_evidence:
+        move_evidence = dict(move_evidence)
+        evidence = move_evidence.pop("position_evidence")
     return _request_for(position, settings or CoachSettings(), evidence, move_evidence, previous_move)
 
 
@@ -173,6 +176,9 @@ class ResponsesCoach:
         if review and (move_evidence.get("fen") != position.fen or move_evidence.get("perspective") != position.side_to_move
                        or move_evidence.get("played_move", {}).get("uci") != review.played_move_uci):
             raise StockfishAnalysisError("Engine evidence did not match the reviewed move.")
+        if move_evidence and "position_evidence" in move_evidence:
+            move_evidence = dict(move_evidence)
+            evidence = move_evidence.pop("position_evidence")
         # Prompt reads must not block Agent Server's event loop in Studio.
         request = await asyncio.to_thread(_request_for, position, self.settings, evidence, move_evidence, previous_move)
         return await self._complete(request, position, evidence=evidence, move_evidence=move_evidence, previous_move=previous_move)
