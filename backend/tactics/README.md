@@ -1,6 +1,15 @@
-# Tactic classification
+# Tactic classification (disabled)
 
-This replaces the removed chess-telemetry comparison with a limited set of
+The Lichess motif classification is disabled in game analysis, manual coaching,
+and practice. The UI does not display its footer, including findings in older
+saved reviews. The detector source and its tests are retained for reference;
+no application path calls them or starts their extra Stockfish searches.
+Existing saved data is preserved. Coach classifications and Lessons are separate
+and remain enabled.
+
+## Retained detector behavior
+
+This module replaced the removed chess-telemetry comparison with a limited set of
 Lichess puzzle detectors: fork, hanging piece, skewer, discovered attack/check,
 absolute pin, and double check. It is independent of the coach's labels and
 Lessons taxonomy. It does not change severity, approved candidates, or scores.
@@ -22,15 +31,10 @@ failures preserve valid prefixes and are explicitly marked as partial evidence.
 Short lines with observed motifs retain those findings; short lines without a
 match remain insufficient rather than claiming no tactic.
 
-`analyze_played_move` performs this work during initial game analysis or a manual
-coach run. The result is persisted as `stockfish.tactic_classification` through
-the existing JSONB paths. Opening/replaying a game makes no engine calls. Existing
-records without this field display "Not yet analysed"; a new manual review
-creates a new saved result. Nothing automatically rewrites historical reviews
-or starts paid coaching. The comparison data is excluded from the coach prompt.
-Live practice opts out with `include_tactics=False`, retaining only the shared
-move grader and its existing root search. The footer remains hidden with the
-rest of the review until the player reveals it after practice.
+Previously, `analyze_played_move` ran this work during game analysis or manual
+coaching and persisted the result as `stockfish.tactic_classification` through
+the existing JSONB paths. That integration and its UI footer have been removed.
+The comparison data remains excluded from the coach prompt.
 
 ## Upstream source
 

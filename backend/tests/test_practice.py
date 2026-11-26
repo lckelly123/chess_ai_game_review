@@ -76,7 +76,7 @@ def test_context_exposes_only_legal_moves_and_board_previews_without_engine_work
 def test_attempts_use_saved_root_and_accept_any_good_move(move, quality, accepted, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail('Live practice must not classify tactics or extend their lines.')
-    monkeypatch.setattr('backend.coach.move_quality.with_tactic_classification', forbidden)
+    monkeypatch.setattr('backend.tactics.classification.classify_review', forbidden)
     app, evidence = practice_app()
     with TestClient(app) as client:
         response = client.post('/api/games/saved/practice/0', json=payload(move))
@@ -94,8 +94,7 @@ def test_attempts_use_saved_root_and_accept_any_good_move(move, quality, accepte
 def test_move_outside_top_candidates_is_evaluated_from_the_same_root(monkeypatch):
     seen = []
 
-    def evaluate(review, evidence, *, include_tactics):
-        assert include_tactics is False
+    def evaluate(review, evidence):
         seen.append(review)
         assert review.played_move_uci not in [item['uci'] for item in evidence['top_moves']]
         return {'move_quality': assess_player_move(evidence['top_moves'][0], candidate(review.played_move_uci, 95, None))}
