@@ -16,7 +16,7 @@ function readReplayRoute() {
 
 export default function App() {
   const {username, profiles, profilesLoading, profileError, games, setGames, loading, libraryError,
-    sync, selectAccount, retrySync, reloadLibrary} = useGameLibrary();
+    sync, selectAccount, reloadLibrary} = useGameLibrary();
   const [accountOpen, setAccountOpen] = useState(false);
   const [replayRoute, setReplayRoute] = useState(readReplayRoute);
   const [lessonsOpen, setLessonsOpen] = useState(() => ['#lessons', '#lessons/multi-game'].includes(window.location.hash));
@@ -98,17 +98,12 @@ export default function App() {
         profileError={profileError} onRetryProfiles={reloadLibrary}/>
       : !replayRoute ? <div className="library">
         <div className="library-heading"><div><h1>Your game library</h1><p>Your games, ready for a closer look.</p></div>
-          {username && <div className={`sync-status ${sync.status === 'failed' ? 'sync-failed' : ''}`} role="status" aria-live="polite" aria-atomic="true">
+          {username && sync.status !== 'failed' && <div className="sync-status" role="status" aria-live="polite" aria-atomic="true">
             {sync.status === 'checking' ? <><LoaderCircle className="spin" size={14}/><span>Checking for new games…</span></>
-              : sync.status === 'failed' ? <><CircleAlert size={14}/><span>Couldn’t sync</span></>
               : sync.status === 'completed' ? <><Check size={14}/><span>{sync.added ? `${sync.added} new ${sync.added === 1 ? 'game' : 'games'} added` : 'Checked just now'}</span></>
               : activeProfile ? <><Clock3 size={14}/><span>Last checked {new Date(activeProfile.last_synced * 1000).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})}</span></> : null}
           </div>}
         </div>
-        {sync.status === 'failed' && <div className="sync-notice" role="alert"><CircleAlert size={17}/><div><p>{sync.message}</p>
-          {games.length > 0 && <p className="sync-notice-hint">Your saved games are still available.</p>}
-          <div className="sync-notice-actions"><button className="text-button" onClick={retrySync}>Try again</button>
-            <button className="text-button" onClick={() => setAccountOpen(true)}>Account settings</button></div></div></div>}
         {sync.status === 'completed' && sync.skipped > 0 && <p className="sync-footnote">{sync.skipped} unsupported or unreadable {sync.skipped === 1 ? 'game was' : 'games were'} skipped.</p>}
         <section className="library-section" aria-label="Saved games">
           {games.length > 0 && <div className="library-toolbar"><div className="search-field"><Search size={16}/><input aria-label="Search opponents" placeholder="Find an opponent…" value={search} onChange={e => setSearch(e.target.value)}/></div><div className="filters"><select aria-label="Filter by time control" value={speed} onChange={e => setSpeed(e.target.value)}><option value="all">All speeds</option><option value="rapid">Rapid</option><option value="blitz">Blitz</option><option value="bullet">Bullet</option><option value="daily">Daily</option></select><select aria-label="Filter by result" value={result} onChange={e => setResult(e.target.value)}><option value="all">All results</option><option value="win">Wins</option><option value="loss">Losses</option><option value="draw">Draws</option></select></div></div>}
@@ -120,7 +115,7 @@ export default function App() {
               <button className="primary-button" onClick={() => setAccountOpen(true)}>Add Chess.com account <ArrowRight size={16}/></button></div>
             : !games.length ? <div className="library-empty" role="status">{sync.status === 'checking' ? <><LoaderCircle className="spin" size={24}/><h3>Finding your recent games</h3><p>Your completed games will appear here.</p></>
               : <><BookOpen size={26}/><h3>{sync.status === 'failed' || libraryError || profileError ? 'Your library will appear here' : 'No completed games yet'}</h3>
-                <p>{sync.status === 'failed' || libraryError || profileError ? 'Try again or check your account settings above.' : 'We’ll check for completed standard-chess games each time you visit. Recent games may take time to appear.'}</p></>}</div> : <>
+                <p>{libraryError || profileError ? 'Try again or check your account settings above.' : 'We’ll check for completed standard-chess games each time you visit. Recent games may take time to appear.'}</p></>}</div> : <>
             <div className="list-summary"><span aria-live="polite">{filtered.length} {filtered.length === 1 ? 'game' : 'games'}</span><span>Newest first</span></div>
             {!!filtered.length && <div className="game-list-heading" aria-hidden="true"><span>Result</span><span>Opponent</span><span>Time control</span><span>Played</span><span/></div>}
             <ul className="game-list" ref={gameListRef} aria-label="Saved games">{filtered.map(game => {
