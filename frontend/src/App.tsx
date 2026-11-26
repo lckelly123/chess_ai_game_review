@@ -152,7 +152,7 @@ export default function App() {
         <a href="#lessons" aria-current={lessonsOpen ? 'page' : undefined} onClick={() => {
           if (!replayRoute && !lessonsOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
         }}><GraduationCap size={17}/> Lessons</a>
-      </nav><span className="local-label"><span/> Saved on this device</span></header>
+      </nav></header>
     <main className={`app-layout ${replayRoute ? 'replay-layout' : 'library-layout'}`}>
       {lessonsOpen ? <Lessons key={username} profiles={profiles} username={username} multiGameOpen={multiGameOpen} profilesLoading={loading && !profiles.length}
         profileError={!username ? libraryError : ''} onRetryProfiles={() => setBoot(value => value + 1)}

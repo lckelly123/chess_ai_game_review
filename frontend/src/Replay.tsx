@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Info, LoaderCircle, Pause, Play } from 'lucide-react';
+import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Info, Pause, Play } from 'lucide-react';
 import Board from './Board';
 import CoachCards from './CoachCards';
 import PracticeCard from './PracticeCard';
@@ -15,7 +15,6 @@ const COACH_MODELS = [
   { value: 'gpt-6-astra', label: 'GPT-6 Astra' },
   { value: 'gpt-6.1-terra', label: 'GPT-6.1 Terra' },
 ] as const;
-type CoachModel = typeof COACH_MODELS[number]['value'];
 const coachModelLabel = (model: string) => COACH_MODELS.find(option => option.value === model)?.label ?? model;
 
 export default function Replay({ game, username }: { game: GameDetail; username: string }) {
@@ -30,12 +29,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const boardPosition = game.positions[transition?.via ?? ply];
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [flipped, setFlipped] = useState(!player.isWhite);
-  const [coachModel, setCoachModel] = useState<CoachModel>(() =>
-    COACH_MODELS.find(option => option.value === readStored('coach-model'))?.value ?? COACH_MODELS[0].value);
   const [coachResponses, setCoachResponses] = useState<Record<string, CoachResponse>>(() => game.coach_responses ?? {});
-  const [pendingPly, setPendingPly] = useState<number | null>(null);
-  const [coachError, setCoachError] = useState<{ ply: number; message: string } | null>(null);
-  const coachRequest = useRef<AbortController | null>(null);
   const position = game.positions[ply];
   const coachResponse = coachResponses[String(ply)];
   const prepared = analysis?.moves[String(ply)];
@@ -53,17 +47,9 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const candidateName = candidate ? coachResponse?.candidate_san?.[candidate.uci]
     ?? (coachResponse?.stockfish?.played_move.uci === candidate.uci ? coachResponse.stockfish.played_move.san
       : engineMoves(engineReview).find(move => move.uci === candidate.uci)?.san ?? candidate.uci) : undefined;
-  const currentCoachError = coachError?.ply === ply ? coachError.message : null;
   const savedAt = coachResponse ? new Date(coachResponse.created_at).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   }) : null;
-  const coachStatus = pendingPly !== null
-    ? pendingPly === ply
-      ? `Reviewing this position${nextMove ? ` and ${nextMove.san}` : ''}. This can take a few minutes.${coachResponse ? ' The saved response remains below until this finishes.' : ''}`
-      : 'Reviewing another position. Return to it to see the response.'
-    : currentCoachError && coachResponse
-      ? `The latest run did not complete. Showing the response saved ${savedAt}.`
-      : '';
   const positionLabel = ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].number}${game.moves[ply - 1].color === 'white' ? '.' : '…'} ${game.moves[ply - 1].san}`;
   const coachDetails = coachResponse ? `${positionLabel} · ${coachModelLabel(coachResponse.model)} · Saved ${savedAt}` : positionLabel;
   const line = candidate ? coachResponse?.move_lines?.[candidate.uci] : undefined;
@@ -77,9 +63,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
 
   useEffect(() => { setCandidateSelection(null); setLineStep(null); }, [ply, transition, coachResponse?.response_id]);
   useEffect(() => { if (practice.active) dispatch({type: 'pause'}); }, [practice.active, ply]);
-  const originalAnnotation = practice.active && !transition && !practice.shownMove ? {
-    uci: nextMove.uci, reason: '', highlight_squares: [nextMove.uci.slice(0, 2), nextMove.uci.slice(2, 4)] as [string, string],
-  } : undefined;
+  const originalMove = practice.active && !transition && !practice.shownMove ? nextMove : undefined;
 
   function selectCandidate(uci: string) {
     if ((!coachResponse && !engineReview) || transition || hideReview) return;
@@ -129,35 +113,6 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   }, [transition, reducedMotion]);
 
   useEffect(() => { store(`position:${game.id}`, String(ply)); }, [game.id, ply]);
-  useEffect(() => { store('coach-model', coachModel); }, [coachModel]);
-  useEffect(() => () => { coachRequest.current?.abort(); }, []);
-
-  async function runCoach() {
-    // Guard synchronously against double-clicks before React updates the button.
-    if (coachRequest.current || transition || hideReview) return;
-    const fen = position.fen;
-    const requestedPly = ply;
-    const playedMove = nextMove?.uci ?? null;
-    const controller = new AbortController();
-    coachRequest.current = controller;
-    dispatch({ type: 'pause' });
-    setPendingPly(requestedPly);
-    setCoachError(null);
-    try {
-      const response = await api<CoachResponse>('/api/coach/analyze', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ game_id: game.id, ply: requestedPly, model: coachModel }), signal: controller.signal,
-      });
-      if (!controller.signal.aborted) {
-        if (response.fen !== fen || response.played_move !== playedMove) throw new Error('The coach returned a different position or move. Please try again.');
-        setCoachResponses(responses => ({ ...responses, [String(requestedPly)]: response }));
-      }
-    } catch (error) {
-      if (!controller.signal.aborted) setCoachError({ ply: requestedPly, message: error instanceof Error ? error.message : 'Could not reach the coach. Please try again.' });
-    } finally {
-      if (!controller.signal.aborted) { coachRequest.current = null; setPendingPly(null); }
-    }
-  }
   useEffect(() => {
     if (!playing || transition || practice.active) return;
     if (ply >= game.moves.length) { dispatch({ type: 'pause' }); return; }
@@ -184,7 +139,6 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const playerBar = (color: 'white' | 'black') => <div className="player-bar">
     <span className={`color-token ${color}`} aria-label={`${color} pieces`}/>
     <strong>{game[color]}</strong><span className="rating">{game[`${color}_rating`] ?? 'Unrated'}</span>
-    {game[color].toLowerCase() === username && <span className="you-label">You</span>}
   </div>;
 
   return <section className="replay" aria-label="Game replay">
@@ -195,8 +149,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       <div className="board-column" ref={boardColumn}>
         {playerBar(top)}
         <Board position={shownPosition} flipped={flipped}
-          candidate={originalAnnotation ?? (linePly === 0 ? candidate : undefined)} candidateName={originalAnnotation ? nextMove.san : candidateName}
-          annotationLabel={originalAnnotation ? 'Your recorded move' : 'Candidate'}
+          candidate={linePly === 0 ? candidate : undefined} candidateName={candidateName} originalMove={originalMove}
           legalMoves={practice.legalMoves.map(move => move.uci)} onMove={practice.active ? uci => { dispatch({type: 'pause'}); void practice.attemptMove(uci); } : undefined}
           inputDisabled={practice.inputDisabled}/>
         {playerBar(bottom)}
@@ -231,20 +184,12 @@ export default function Replay({ game, username }: { game: GameDetail; username:
               <Info size={14} aria-hidden="true"/><span className="coach-tooltip" aria-hidden="true">{coachDetails}</span>
             </span>
           </div>
-          {!hideReview && <div className="coach-actions">
-            <select className="coach-model" aria-label="OpenAI model" value={coachModel} onChange={event => setCoachModel(event.target.value as CoachModel)} disabled={pendingPly !== null}>
-              {COACH_MODELS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-            <button className="primary-button coach-run" onClick={runCoach} disabled={pendingPly !== null || transition !== null}>{pendingPly !== null ? <><LoaderCircle size={15} className="spin"/> Thinking…</> : <><Play size={14}/> Run coach</>}</button>
-          </div>}
         </div>
-        <p className="coach-status" id="coach-status" role="status">{coachStatus}</p>
         {analysis && analyzing && <p className="engine-analysis-progress" role="status">{analysisProgress(analysis)}</p>}
         {(analysisError || analysis?.error) && <p className="coach-error" role="alert">{analysisError || analysis?.error} Return to the library to resume.</p>}
-        {currentCoachError && <p className="coach-error" role="alert">{currentCoachError}</p>}
-        <div className="coach-result" aria-busy={pendingPly === ply}>
-          {practiceEligible && <PracticeCard practice={practice} original={nextMove} previous={game.moves[ply - 1]} overview={coachResponse?.teaching?.position_overview}/>}
-          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis} nextMove={nextMove} pending={pendingPly === ply} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}
+        <div className="coach-result" aria-busy={analyzing && !coachResponse}>
+          {practiceEligible && <PracticeCard practice={practice} original={nextMove} overview={coachResponse?.teaching?.position_overview}/>}
+          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis} nextMove={nextMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}
             linePly={linePly} onSelectLinePly={step => {
               if (!candidate || !line?.positions[step]) return;
               dispatch({type: 'pause'}); setLineStep({uci: candidate.uci, ply: step});

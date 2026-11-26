@@ -42,7 +42,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
     ? `Winning chances lost: ${qualityLoss.toFixed(2)} percentage points from your perspective. Less than 5: Good; 5 to less than 10: Inaccuracy; 10 to less than 15: Mistake; 15 or more: Blunder.`
     : mateQualityDescriptions[engine?.move_quality?.reason ?? ''] ?? 'The available engine scores do not support a reliable comparison.';
   const betterUci = ['inaccuracy', 'mistake', 'blunder'].includes(quality) ? response?.better_candidate_uci : undefined;
-  const waiting = pending ? 'Your coach is thinking…' : 'Run coach to explore this position.';
+  const waiting = pending ? 'Game analysis is in progress.' : 'Analyze this game from the library to prepare coaching for inaccuracies, mistakes, and blunders.';
   const explanation = teaching?.position_explanation ?? teaching?.positional_thesis;
   const inlineMoves = !!teaching?.position_overview && !!teaching.position_explanation;
   const selectedMove = rows.find(move => move.uci === selectedUci);
@@ -53,9 +53,9 @@ export default function CoachCards({ response, engineReview, engineMode = false,
 
   return <div className="coach-cards">
     <div className="coach-card-body" aria-busy={pending}>
-      {(response?.coach_current === false || response?.classification_current === false) && <p className="coach-placeholder">This saved review uses an earlier coach. Run coach to update its analysis and lesson labels.</p>}
-      {response?.coach_current !== false && response?.classification_current !== false && response?.sharpness_current === false && <p className="coach-placeholder">This saved coaching used earlier position labels. Run coach to refresh its explanation.</p>}
-      {teaching && !teaching.position_overview && <p className="coach-placeholder">This saved review has no practice hint. Run coach to update it.</p>}
+      {(response?.coach_current === false || response?.classification_current === false) && <p className="coach-placeholder">This saved review uses an earlier coach.</p>}
+      {response?.coach_current !== false && response?.classification_current !== false && response?.sharpness_current === false && <p className="coach-placeholder">This saved coaching uses earlier position labels.</p>}
+      {teaching && !teaching.position_overview && <p className="coach-placeholder">This saved review has no practice summary.</p>}
       {!engineOnly && <>
       <section className="coach-section" aria-labelledby={`${id}-understand-title`}>
         <div className="coach-section-heading">
@@ -107,7 +107,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
             </div>;
           })}
         </div> : <p className="coach-placeholder">{engineOnly ? nextMove ? 'No saved engine analysis for this position.' : 'No recorded move remains.' : positionEvidence?.unclassified_reason === 'terminal_position' ? 'This position has ended.' : response ? 'No candidate moves are included in this saved response.' : 'Candidate moves and player feedback will appear here.'}</p>}
-        {response && !response.played_move && <p className="move-empty-note">{moveFeedback?.explanation ?? (nextMove ? 'Run coach for feedback on the recorded move.' : 'No recorded move is available to evaluate.')}</p>}
+        {response && !response.played_move && <p className="move-empty-note">{moveFeedback?.explanation ?? (nextMove ? 'No saved feedback is available for the recorded move.' : 'No recorded move is available to evaluate.')}</p>}
       </section>}
       <div id={`${id}-move-detail`}>
         {selectedMove && <section className="move-detail" aria-label={`${selectedMove.san} explanation`}>
