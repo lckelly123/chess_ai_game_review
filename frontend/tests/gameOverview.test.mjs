@@ -50,16 +50,35 @@ test('position and next-move facts stay separate and fixed player columns do not
   assert.match(html, /White player.*Black player/);
   assert.match(html, /Selective/);
   assert.match(html, /43<small> \/ 100/);
-  assert.match(html, /Played next<\/span><strong>1\. e4/);
+  assert.match(html, /<h2>Position sharpness<\/h2>/);
+  assert.match(html, /Played<\/span><div class="overview-played-move"><strong>1\. e4<\/strong><span class="move-quality mistake">Mistake<\/span><\/div>/);
   assert.match(html, /12.5s/);
   assert.match(html, /−2.00/); // Played score; graph instead uses +0.50.
   assert.match(html, /Endgame/);
   assert.doesNotMatch(html, /move-list-scroll/);
+  assert.match(html, /<dt>Move evaluation<\/dt>/);
+  assert.doesNotMatch(html, /<small>[^<]*perspective/);
+});
+
+test('Black played-move evaluation uses White perspective while preserving its move grade', () => {
+  const html = render({ply: 1});
+  assert.match(html, /<strong>1… Kh2<\/strong><span class="move-quality good">Good<\/span>/);
+  assert.match(html, /<dt>Move evaluation<\/dt><dd class="favourable" title="Favours White · depth 18">\+0\.80<\/dd>/);
+});
+
+test('missing or stale reviews cannot supply a played classification or evaluation', () => {
+  for (const evidence of [{}, {0: {...reviews[0], fen: 'stale'}}]) {
+    const html = render({reviews: evidence});
+    assert.match(html, /<strong>1\. e4<\/strong>/);
+    assert.doesNotMatch(html, /class="move-quality/);
+    assert.match(html, /<dt>Move evaluation<\/dt><dd class="">—<\/dd>/);
+  }
 });
 
 test('variation and final position cannot retain the next move time or evaluation', () => {
   for (const html of [render({onMainLine: false}), render({ply: 2})]) {
     assert.doesNotMatch(html, /12.5s|−2.00|>1\. e4<|>Selective</);
+    assert.doesNotMatch(html, /class="move-quality/);
   }
   assert.match(render({onMainLine: false}), /Exploring variation/);
   assert.match(render({ply: 2}), /End of game/);
