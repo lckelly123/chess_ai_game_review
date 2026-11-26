@@ -80,6 +80,11 @@ ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS coach_completed INTEGE
 -- Keep engine results when refreshing reviews for a new coaching contract.
 ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS coach_version INTEGER NOT NULL DEFAULT 0;
 
+-- Keep opponent engine evidence separate from the selected player's lesson counts.
+-- NULL total identifies older runs that have not checked opponent coverage yet.
+ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS opponent_total INTEGER CHECK (opponent_total >= 0);
+ALTER TABLE game_engine_analysis ADD COLUMN IF NOT EXISTS opponent_moves JSONB NOT NULL DEFAULT '{}';
+
 -- Cross-game runs are append-only history, independent of position coaching.
 CREATE TABLE IF NOT EXISTS multi_game_analysis (
     id TEXT PRIMARY KEY,

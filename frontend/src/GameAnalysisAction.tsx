@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, LoaderCircle } from 'lucide-react';
 import { api, perspective, readStored } from './types';
 import type { Game, GameAnalysis, GameAnalysisSummary, MoveQuality } from './types';
-import { analysisActive, analysisProgress, coachingPending, qualityLabels } from './engineReview';
+import { analysisActive, analysisProgress, coachingPending, opponentAnalysisPending, qualityLabels } from './engineReview';
 
 const qualities: MoveQuality[] = ['good', 'inaccuracy', 'mistake', 'blunder', 'uncertain'];
 
@@ -16,8 +16,8 @@ export default function GameAnalysisAction({game, username, onUpdate, onOpen}: {
   update.current = onUpdate;
   const analysis = game.analysis;
   const active = analysisActive(analysis);
-  const done = analysis?.status === 'completed' && !coachingPending(analysis);
-  const coachOnly = analysis?.completed === analysis?.total && coachingPending(analysis);
+  const done = analysis?.status === 'completed' && !coachingPending(analysis) && !opponentAnalysisPending(analysis);
+  const coachOnly = analysis?.completed === analysis?.total && !opponentAnalysisPending(analysis) && coachingPending(analysis);
   const opponent = perspective(game, username).opponent;
   const path = `/api/games/${game.id}/analysis`;
 
@@ -62,7 +62,7 @@ export default function GameAnalysisAction({game, username, onUpdate, onOpen}: {
   return <>
     <div className="game-analysis-actions">
       {!done && <button type="button" className="analyze-button" onClick={start} disabled={active || submitting}
-        title="Analyze your moves and coach inaccuracies, mistakes, and blunders."
+        title="Analyze both players’ moves and coach your inaccuracies, mistakes, and blunders."
         aria-label={`${coachOnly ? 'Coach flagged moves in' : analysis ? 'Resume analysis of' : 'Analyze'} game against ${opponent}`}>
         {active || submitting ? <><LoaderCircle size={13} className="spin"/> {analysis?.status === 'queued' ? 'Queued' : coachOnly ? 'Coaching…' : 'Analyzing…'}</> : coachOnly && analysis?.status === 'completed' ? 'Coach flagged moves' : analysis ? 'Resume analysis' : 'Analyze game'}
       </button>}

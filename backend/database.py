@@ -58,7 +58,8 @@ class Database:
         with self.connection() as db:
             rows = db.execute(
                 """SELECT g.metadata, g.pgn, a.game_id, a.player_color, a.pgn_hash, a.status,
-                          a.total, a.completed, a.counts, a.coach_completed, a.coach_version, a.error, a.updated_at
+                          a.total, a.completed, a.counts, a.coach_completed, a.coach_version, a.error, a.updated_at,
+                          a.opponent_total, (SELECT count(*) FROM jsonb_object_keys(a.opponent_moves)) AS opponent_completed
                    FROM games g JOIN profile_games pg ON pg.game_id=g.id
                    LEFT JOIN game_engine_analysis a ON a.game_id=g.id AND a.player_color=
                        CASE WHEN lower(g.metadata->>'white')=%s THEN 'white' ELSE 'black' END
@@ -128,26 +129,35 @@ class Database:
                        error='Analysis paused when the app restarted. Resume to finish the remaining moves.',
                        updated_at=clock_timestamp() WHERE status IN ('queued', 'running')""")
 
-    def begin_game_analysis(self, game_id: str, color: str, fingerprint: str, total: int) -> dict:
+    def begin_game_analysis(self, game_id: str, color: str, fingerprint: str, total: int, opponent_total: int | None = None) -> dict:
         with self.connection() as db:
             # Serialized by the service; the row lock also protects progress.
             row = db.execute("SELECT * FROM game_engine_analysis WHERE game_id=%s AND player_color=%s FOR UPDATE",
                              (game_id, color)).fetchone()
             if row and row["pgn_hash"] == fingerprint:
                 if (row["status"] == "completed" and row["coach_completed"] >= coaching_total(row)
-                        and row["coach_version"] == COACH_CONTRACT_VERSION):
+                        and row["coach_version"] == COACH_CONTRACT_VERSION
+                        and (opponent_total is None or (row["opponent_total"] == opponent_total
+                             and len(row["opponent_moves"]) == opponent_total))):
                     return row
                 return db.execute("""UPDATE game_engine_analysis SET status='queued', error=NULL,
                                   coach_completed=CASE WHEN coach_version=%s THEN coach_completed ELSE 0 END,
-                                  coach_version=%s, updated_at=clock_timestamp()
+                                  coach_version=%s, opponent_total=COALESCE(%s, opponent_total), updated_at=clock_timestamp()
                                   WHERE game_id=%s AND player_color=%s RETURNING *""",
-                                  (COACH_CONTRACT_VERSION, COACH_CONTRACT_VERSION, game_id, color)).fetchone()
-            return db.execute("""INSERT INTO game_engine_analysis (game_id, player_color, pgn_hash, status, total, coach_version)
-                              VALUES (%s, %s, %s, 'queued', %s, %s)
+                                  (COACH_CONTRACT_VERSION, COACH_CONTRACT_VERSION, opponent_total, game_id, color)).fetchone()
+            return db.execute("""INSERT INTO game_engine_analysis (game_id, player_color, pgn_hash, status, total, coach_version, opponent_total)
+                              VALUES (%s, %s, %s, 'queued', %s, %s, %s)
                               ON CONFLICT (game_id, player_color) DO UPDATE SET pgn_hash=excluded.pgn_hash,
                                   status='queued', total=excluded.total, completed=0, counts='{}', moves='{}', coach_completed=0, coach_version=excluded.coach_version,
+                                  opponent_total=excluded.opponent_total, opponent_moves='{}',
                                   error=NULL, updated_at=clock_timestamp() RETURNING *""",
-                              (game_id, color, fingerprint, total, COACH_CONTRACT_VERSION)).fetchone()
+                              (game_id, color, fingerprint, total, COACH_CONTRACT_VERSION, opponent_total)).fetchone()
+
+    def save_game_opponent_move(self, game_id: str, color: str, fingerprint: str, ply: int, result: dict) -> bool:
+        with self.connection() as db:
+            return db.execute("""UPDATE game_engine_analysis SET opponent_moves=opponent_moves || %s::jsonb,
+                              updated_at=clock_timestamp() WHERE game_id=%s AND player_color=%s AND pgn_hash=%s""",
+                              (Jsonb({str(ply): result}), game_id, color, fingerprint)).rowcount > 0
 
     def save_game_analysis_move(self, game_id: str, color: str, fingerprint: str, ply: int, result: dict) -> bool:
         with self.connection() as db:

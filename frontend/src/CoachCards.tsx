@@ -13,7 +13,7 @@ function Prose({ children }: { children: string }) {
 }
 
 const mateQualityDescriptions: Record<string, string> = {
-  mate_created: 'Allows a forced checkmate against you.',
+  mate_created: 'Allows a forced checkmate against the moving side.',
   mate_lost: 'Gives up a forced checkmate.',
   mate_retained: 'Keeps a forced checkmate.',
   already_forced_loss: 'The engine already found a forced loss; no new error is assigned.',
@@ -27,10 +27,11 @@ const mistakeSubcategoryLabels: Record<MistakeClassification['subcategory'], str
   pawn: 'Pawn', knight: 'Knight', bishop: 'Bishop', rook: 'Rook', queen: 'Queen', king: 'King',
 };
 
-export default function CoachCards({ response, engineReview, engineMode = false, nextMove, pending, selectedUci, onSelectCandidate, transitioning, linePly = 0, onSelectLinePly }: {
+export default function CoachCards({ response, engineReview, engineMode = false, opponent = false, nextMove, pending, selectedUci, onSelectCandidate, transitioning, linePly = 0, onSelectLinePly }: {
   response?: CoachResponse; engineReview?: EngineReview; engineMode?: boolean; nextMove?: Move; pending: boolean;
   selectedUci?: string; onSelectCandidate: (uci: string) => void; transitioning: boolean;
   linePly?: number; onSelectLinePly?: (ply: number) => void;
+  opponent?: boolean;
 }) {
   const id = useId();
   const content = useMemo(() => parseCoachContent(response?.text ?? ''), [response?.text]);
@@ -45,8 +46,9 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   const quality = engine?.move_quality?.status ?? 'uncertain';
   const qualityLabel = qualityLabels[quality] ?? qualityLabels.uncertain;
   const qualityLoss = engine?.move_quality?.winning_chances_loss_pp;
+  const playedLabel = opponent ? 'Opponent move' : 'Player move';
   const qualityDescription = qualityLoss != null
-    ? `Winning chances lost: ${qualityLoss.toFixed(2)} percentage points from your perspective. Less than 5: Good; 5 to less than 10: Inaccuracy; 10 to less than 15: Mistake; 15 or more: Blunder.`
+    ? `Winning chances lost: ${qualityLoss.toFixed(2)} percentage points from ${engine?.perspective ?? 'the mover'}’s perspective. Less than 5: Good; 5 to less than 10: Inaccuracy; 10 to less than 15: Mistake; 15 or more: Blunder.`
     : mateQualityDescriptions[engine?.move_quality?.reason ?? ''] ?? 'The available engine scores do not support a reliable comparison.';
   const betterUci = ['inaccuracy', 'mistake', 'blunder'].includes(quality) ? response?.better_candidate_uci : undefined;
   const waiting = pending ? 'Game analysis is in progress.' : 'Analyze this game from the library to prepare coaching for inaccuracies, mistakes, and blunders.';
@@ -100,15 +102,15 @@ export default function CoachCards({ response, engineReview, engineMode = false,
       </>}
       {!inlineMoves && <section className="coach-section coach-moves-section" aria-labelledby={`${id}-moves-title`}>
         <div className="coach-section-heading moves-heading"><h3 id={`${id}-moves-title`}>Moves</h3></div>
-        {rows.length ? <div className="candidate-moves" role="group" aria-label="Candidate moves and player move">
+        {rows.length ? <div className="candidate-moves" role="group" aria-label={`Candidate moves and ${playedLabel.toLowerCase()}`}>
           {rows.map(move => {
             const selected = selectedUci === move.uci;
             const score = move.engineMove ? engineEvaluation(scoreContext, move.engineMove) : null;
             return <div className={`candidate-row${move.isPlayed ? ' player-move-row' : ''}`} key={move.uci} data-uci={move.uci}>
-              <button type="button" className="candidate-move" aria-label={`${selected ? 'Hide' : 'Show'} explanation for ${move.san}${move.isPlayed ? ', player move' : ''}`} aria-expanded={selected} aria-controls={`${id}-move-detail`} aria-pressed={selected} disabled={transitioning} onClick={() => onSelectCandidate(move.uci)}>
+              <button type="button" className="candidate-move" aria-label={`${selected ? 'Hide' : 'Show'} explanation for ${move.san}${move.isPlayed ? `, ${playedLabel.toLowerCase()}` : ''}`} aria-expanded={selected} aria-controls={`${id}-move-detail`} aria-pressed={selected} disabled={transitioning} onClick={() => onSelectCandidate(move.uci)}>
                 <span className="candidate-heading">
                   <span className="move-labels"><strong>{move.san}</strong>
-                    {move.isPlayed && <><span className="player-move-badge">Player move</span><span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{quality === 'good' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span></>}
+                    {move.isPlayed && <><span className="player-move-badge">{playedLabel}</span><span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{quality === 'good' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span></>}
                   </span>
                   <span className="candidate-meta">
                     {score && <span id={`${id}-${move.uci}-score`} className={`engine-score ${score.tone}`} title={`${score.label} · ${score.perspective}'s perspective · depth ${move.engineMove?.depth}`} aria-label={`Evaluation ${score.value}, ${score.label}, ${score.perspective}'s perspective`}>{score.value}</span>}
@@ -125,7 +127,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
         {selectedMove && <section className="move-detail" aria-label={`${selectedMove.san} explanation`}>
           <div className="candidate-heading">
             <h3>{selectedMove.san}{selectedMove.isPlayed && <>
-              <span className="player-move-badge">Player move</span>
+              <span className="player-move-badge">{playedLabel}</span>
               <span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{quality === 'good' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span>
             </>}</h3>
             {selectedScore && <span className={`engine-score ${selectedScore.tone}`} title={`${selectedScore.label} · ${selectedScore.perspective}'s perspective`}>{selectedScore.value}</span>}

@@ -96,17 +96,21 @@ class MemoryDatabase:
         row = self.rows.get((game_id, color))
         return deepcopy(row) if row and row["pgn_hash"] == fingerprint else None
 
-    def begin_game_analysis(self, game_id, color, fingerprint, total):
+    def begin_game_analysis(self, game_id, color, fingerprint, total, opponent_total=None):
         key = (game_id, color)
         row = self.game_analysis(game_id, color, fingerprint)
         if row is None:
             row = {"game_id": game_id, "player_color": color, "pgn_hash": fingerprint, "status": "queued",
                    "total": total, "completed": 0, "counts": {}, "moves": {}, "error": None,
-                   "updated_at": datetime.now(timezone.utc), "coach_completed": 0, "coach_version": COACH_CONTRACT_VERSION}
+                   "updated_at": datetime.now(timezone.utc), "coach_completed": 0, "coach_version": COACH_CONTRACT_VERSION,
+                   "opponent_total": None, "opponent_moves": {}}
         if row.get("coach_version") != COACH_CONTRACT_VERSION:
             row.update(coach_version=COACH_CONTRACT_VERSION, coach_completed=0)
-        if row["status"] != "completed" or row.get('coach_completed', 0) < sum(row['counts'].get(q, 0) for q in ('inaccuracy', 'mistake', 'blunder')):
+        if (row["status"] != "completed" or row.get('coach_completed', 0) < sum(row['counts'].get(q, 0) for q in ('inaccuracy', 'mistake', 'blunder'))
+                or (opponent_total is not None and (row.get('opponent_total') != opponent_total or len(row['opponent_moves']) != opponent_total))):
             row.update(status="queued", error=None)
+        if opponent_total is not None:
+            row['opponent_total'] = opponent_total
         self.rows[key] = row
         return deepcopy(row)
 
@@ -116,6 +120,13 @@ class MemoryDatabase:
             return False
         row["moves"][str(ply)] = deepcopy(result)
         row.update(completed=len(row["moves"]), counts=quality_counts(row["moves"]))
+        return True
+
+    def save_game_opponent_move(self, game_id, color, fingerprint, ply, result):
+        row = self.rows[(game_id, color)]
+        if row['pgn_hash'] != fingerprint:
+            return False
+        row['opponent_moves'][str(ply)] = deepcopy(result)
         return True
 
     def set_game_analysis_status(self, game_id, color, fingerprint, status, error):
@@ -150,7 +161,7 @@ async def finish(service):
 
 
 @pytest.mark.parametrize("username,expected", [("ALICE", [0, 2, 4, 6]), ("bob", [1, 3, 5])])
-def test_only_selected_players_pre_move_positions_are_analyzed_and_saved(username, expected):
+def test_both_sides_are_saved_but_only_selected_player_is_counted_and_coached(username, expected):
     db = MemoryDatabase()
     calls = []
     def engine(review):
@@ -165,6 +176,10 @@ def test_only_selected_players_pre_move_positions_are_analyzed_and_saved(usernam
         assert saved["status"] == "completed"
         assert set(saved["moves"]) == {str(ply) for ply in expected}
         assert saved["completed"] == len(expected) and saved["counts"] == {"blunder": len(expected)}
+        opponents = set(range(7)) - set(expected)
+        assert set(saved['opponent_moves']) == {str(ply) for ply in opponents}
+        assert saved['opponent_total'] == saved['opponent_completed'] == len(opponents)
+        assert len(db.feedback) == len(expected)
         detail = replay(db.record["pgn"])
         for ply, review in zip(expected, calls):
             result = saved["moves"][str(ply)]
@@ -172,7 +187,7 @@ def test_only_selected_players_pre_move_positions_are_analyzed_and_saved(usernam
             assert result["played_move"] == detail["moves"][ply]["uci"]
             assert result["stockfish"]["move_quality"] == assess_player_move(
                 result["stockfish"]["top_moves"][0], result["stockfish"]["played_move"])
-        assert not service.tasks and len(calls) == len(expected)  # Completed work is reused.
+        assert not service.tasks and len(calls) == 7  # Both sides' completed work is reused.
     asyncio.run(run())
 
 
@@ -195,7 +210,7 @@ def test_failure_keeps_progress_and_resume_skips_saved_moves():
         await finish(service)
         assert row["moves"]["0"]["played_move"] == "e2e4"
         assert db.rows[(db.record["id"], "white")]["status"] == "completed"
-        assert calls == ["e2e4", "g1f3", "g1f3", "f1c4", "e1g1"]
+        assert calls == ["e2e4", "g1f3", "g1f3", "f1c4", "e1g1", "e7e5", "b8c6", "g8f6"]
     asyncio.run(run())
 
 
@@ -234,6 +249,7 @@ def test_custom_black_start_uses_move_colors_not_even_odd_indices():
         await finish(service)
         row = db.rows[(db.record["id"], "black")]
         assert set(row["moves"]) == {"0", "2"} and row["total"] == 2
+        assert set(row['opponent_moves']) == {'1', '3'}
     asyncio.run(run())
 
 
@@ -334,7 +350,9 @@ def test_changed_pgn_discards_stale_analysis_and_reanalyzes_new_game():
         await finish(service)
         row = db.rows[(db.record["id"], "white")]
         assert row["completed"] == 2 and set(row["moves"]) == {"0", "2"}
-        assert row["moves"]["0"]["played_move"] == "d2d4" and len(calls) == 6
+        assert row["moves"]["0"]["played_move"] == "d2d4" and len(calls) == 10
+        assert set(row['opponent_moves']) == {'1'}
+        assert row['opponent_moves']['1']['played_move'] == 'd7d5'
     asyncio.run(run())
 
 
@@ -379,7 +397,7 @@ def test_http_job_saves_coaching_and_reuses_it_after_navigation_and_restart(monk
     with TestClient(create_app("unused", game_engine=engine, coach_factory=factory)) as restarted:
         assert restarted.get(f'/api/games/{game_id}/analysis?username=alice').json() == saved
         assert restarted.post(f'/api/games/{game_id}/analysis', json={"username": "alice"}).json() == saved
-        assert len(calls) == 4
+        assert len(calls) == 7
         assert coach_calls == ['gpt-6-astra'] * 4
 
 
@@ -431,7 +449,7 @@ def test_postgres_progress_persists_and_completed_game_restores(test_db_url):
         assert client.get(f'/api/games/{game["id"]}').json()["engine_analyses"]["white"] == saved
         assert client.get('/api/games?username=alice').json()[0]["analysis"]["counts"] == {"blunder": 4}
         client.post(f'/api/games/{game["id"]}/analysis', json={"username": "alice"})
-        assert len(calls) == 4
+        assert len(calls) == 7
 
 
 def test_postgres_resume_keeps_saved_moves_and_separates_colors(test_db_url):
@@ -444,12 +462,62 @@ def test_postgres_resume_keeps_saved_moves_and_separates_colors(test_db_url):
     first = {"fen": review.position.fen, "played_move": review.played_move_uci, "stockfish": evidence(review)}
     assert db.save_game_analysis_move(game["id"], "white", fingerprint, 0, first)
     assert not db.save_game_analysis_move(game["id"], "white", "stale", 2, first)
+    assert not db.save_game_opponent_move(game['id'], 'white', 'stale', 1, first)
     with TestClient(create_app(test_db_url, game_engine=evidence)) as client:
         partial = client.get(f'/api/games/{game["id"]}/analysis?username=alice').json()
         assert partial["status"] == "interrupted" and partial["completed"] == 1
         client.post(f'/api/games/{game["id"]}/analysis', json={"username": "alice"})
         assert wait_completed(client, game["id"])["moves"]["0"] == first
         assert client.get(f'/api/games/{game["id"]}/analysis?username=bob').json() is None
+
+
+def test_completed_legacy_run_adds_opponents_without_repeating_player_engine_or_coach():
+    db = MemoryDatabase()
+    async def run():
+        service = GameAnalysisService(db, set(), evidence)
+        await service.start(db.record['id'], 'alice')
+        await finish(service)
+        row = db.rows[(db.record['id'], 'white')]
+        player_evidence, coaching = deepcopy(row['moves']), deepcopy(db.feedback)
+        row.update(opponent_total=None, opponent_moves={})  # Pre-upgrade completed run.
+        calls = []
+        def opponent_engine(review):
+            assert review.position.side_to_move == 'Black'
+            calls.append(review.played_move_uci)
+            return evidence(review)
+        service.analyzer = opponent_engine
+        started = await service.start(db.record['id'], 'alice')
+        assert started['status'] == 'queued' and started['opponent_total'] == 3
+        await finish(service)
+        saved = await service.saved(db.record['id'], 'alice')
+        assert saved['status'] == 'completed' and saved['opponent_completed'] == 3
+        assert saved['moves'] == player_evidence and db.feedback == coaching
+        assert calls == ['e7e5', 'b8c6', 'g8f6']
+    asyncio.run(run())
+
+
+def test_opponent_failure_is_resumable_and_does_not_inflate_player_counts():
+    db = MemoryDatabase()
+    calls = []
+    def engine(review):
+        calls.append(review.played_move_uci)
+        if len(calls) == 6:
+            raise StockfishTimeoutError('private')
+        return evidence(review)
+    async def run():
+        service = GameAnalysisService(db, set(), engine)
+        await service.start(db.record['id'], 'alice')
+        await finish(service)
+        partial = await service.saved(db.record['id'], 'alice')
+        assert partial['status'] == 'failed' and partial['opponent_completed'] == 1
+        assert partial['completed'] == partial['total'] == 4 and partial['counts'] == {'blunder': 4}
+        await service.start(db.record['id'], 'alice')
+        await finish(service)
+        saved = await service.saved(db.record['id'], 'alice')
+        assert saved['status'] == 'completed' and saved['opponent_completed'] == 3
+        assert saved['counts'] == {'blunder': 4} and len(db.feedback) == 4
+        assert calls == ['e2e4', 'g1f3', 'f1c4', 'e1g1', 'e7e5', 'b8c6', 'b8c6', 'g8f6']
+    asyncio.run(run())
 
 
 def test_automatic_coach_selects_only_three_error_grades_and_reuses_exact_evidence():
@@ -460,12 +528,12 @@ def test_automatic_coach_selects_only_three_error_grades_and_reuses_exact_eviden
     def engine(review):
         engine_calls.append(review.played_move_uci)
         result = evidence(review)
-        result['played_move']['score']['cp'] = scores[review.played_move_uci]
+        result['played_move']['score']['cp'] = scores.get(review.played_move_uci, -200)
         result['position_evidence'] = position_evidence(review.position.fen)
         return result
     @asynccontextmanager
     async def factory(settings, **options):
-        assert len(engine_calls) == 5  # Classification finishes before coaching.
+        assert len(engine_calls) == 9  # Both sides finish before coaching.
         class Coach(FakeCoach):
             async def analyze(self, fen, *, played_move=None, previous_move=None):
                 coach_calls.append((played_move, settings.model))
@@ -517,7 +585,7 @@ def test_coach_failure_keeps_all_engine_results_and_resume_skips_saved_reviews()
         row = await service.saved(db.record['id'], 'alice')
         assert row['status'] == 'completed' and row['coach_completed'] == 4
         assert all(db.feedback[key] == saved for key, saved in first.items())
-        assert engine_calls == ['e2e4', 'g1f3', 'f1c4', 'e1g1']
+        assert engine_calls == ['e2e4', 'g1f3', 'f1c4', 'e1g1', 'e7e5', 'b8c6', 'g8f6']
         assert coach_calls == ['e2e4', 'g1f3', 'g1f3', 'f1c4', 'e1g1']
     asyncio.run(run())
 
@@ -543,7 +611,10 @@ def test_legacy_completed_engine_job_can_add_coaching_and_reuse_manual_feedback(
     async def run():
         first = MoveReview.from_game(db.record['pgn'], 0)
         db.save_coach_feedback(await FakeCoach().analyze(first.position.fen, played_move=first.played_move_uci))
-        service = GameAnalysisService(db, set(), lambda _: pytest.fail('Saved engine results must be reused'), coach_factory=factory)
+        def opponent_engine(review):
+            assert review.position.side_to_move == 'Black', 'Saved player results must be reused'
+            return evidence(review)
+        service = GameAnalysisService(db, set(), opponent_engine, coach_factory=factory)
         started = await service.start(game_id, 'alice')
         assert started['status'] == 'queued' and started['coach_total'] == 4
         await finish(service)

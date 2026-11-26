@@ -41,10 +41,11 @@ export type GameAnalysisSummary = {
   game_id: string; player_color: 'white' | 'black';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted';
   total: number; completed: number; counts: Partial<Record<MoveQuality, number>>;
+  opponent_total?: number | null; opponent_completed?: number;
   coach_total: number; coach_completed: number;
   error: string | null; updated_at: string;
 };
-export type GameAnalysis = GameAnalysisSummary & { moves: Record<string, EngineReview> };
+export type GameAnalysis = GameAnalysisSummary & { moves: Record<string, EngineReview>; opponent_moves?: Record<string, EngineReview> };
 export type PieceType = 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king';
 export type MistakeClassification =
   | { category: 'tactical_miss' | 'tactical_allowed'; subcategory: 'hanging_piece' | 'fork' | 'pin_skewer' | 'discovered_attack' }

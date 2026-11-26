@@ -1,15 +1,16 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ArrowDownUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Info, Pause, Play } from 'lucide-react';
 import Board from './Board';
+import MoveList from './MoveList';
 import CoachCards from './CoachCards';
 import PracticeCard from './PracticeCard';
 import { needsPractice } from './reviewPractice';
 import { useReviewPractice } from './useReviewPractice';
-import type { CoachResponse, GameAnalysis, GameDetail } from './types';
+import type { CoachResponse, EngineReview, GameAnalysis, GameDetail } from './types';
 import { api, perspective, readStored, store } from './types';
-import { AUTOPLAY_TURN_MS, BETWEEN_TURNS_MS, playerTurnStops, replayNavigation, restoreReplay } from './replayNavigation';
+import { AUTOPLAY_TURN_MS, replayStops, replayNavigation, restoreReplay } from './replayNavigation';
 import { visibleCandidate, type CandidateSelection } from './boardAnnotations';
-import { analysisActive, analysisProgress, engineMoves, engineSelectionId, errorMarkers, mergeCoachResponses, visibleEngineCandidate } from './engineReview';
+import { analysisActive, analysisProgress, coachedErrorPlies, engineMoves, engineSelectionId, errorMarkers, matchingReview, mergeCoachResponses, opponentAnalysisPending, visibleEngineCandidate } from './engineReview';
 
 const COACH_MODELS = [
   { value: 'gpt-6-astra', label: 'GPT-6 Astra' },
@@ -22,28 +23,43 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const color = player.isWhite ? 'white' : 'black';
   const [analysis, setAnalysis] = useState<GameAnalysis | null>(() => game.engine_analyses?.[color] ?? null);
   const [analysisError, setAnalysisError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [revealedPly, setRevealedPly] = useState<number | null>(null);
   const [navigation, dispatch] = useReducer(replayNavigation, undefined, () =>
-    restoreReplay(playerTurnStops(game.positions, player.isWhite), Number(readStored(`position:${game.id}`))));
-  const { ply, transition, playing, stops } = navigation;
-  const controlPly = transition?.to ?? ply;
-  const boardPosition = game.positions[transition?.via ?? ply];
+    restoreReplay(replayStops(game.positions), Number(readStored(`position:${game.id}`))));
+  const { ply, playing, stops } = navigation;
+  const boardPosition = game.positions[ply];
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [flipped, setFlipped] = useState(!player.isWhite);
   const [coachResponses, setCoachResponses] = useState<Record<string, CoachResponse>>(() => game.coach_responses ?? {});
   const position = game.positions[ply];
-  const coachResponse = coachResponses[String(ply)];
-  const prepared = analysis?.moves[String(ply)];
-  const engineReview = prepared?.fen === position.fen && prepared.played_move === game.moves[ply]?.uci ? prepared : undefined;
   const nextMove = game.moves[ply];
-  const practiceEligible = needsPractice(nextMove, color, position.fen, engineReview, coachResponse);
-  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, transition !== null);
+  const opponentTurn = !!nextMove && nextMove.color !== color;
+  const savedResponse = coachResponses[String(ply)];
+  const coachResponse = !opponentTurn && savedResponse?.fen === position.fen
+    && savedResponse.played_move === (nextMove?.uci ?? null) ? savedResponse : undefined;
+  const reviews = useMemo(() => {
+    const result: Record<string, EngineReview> = {};
+    for (const saved of Object.values(game.engine_analyses ?? {})) Object.assign(result, saved?.opponent_moves, saved?.moves);
+    Object.assign(result, analysis?.opponent_moves, analysis?.moves);
+    for (const [key, response] of Object.entries(coachResponses)) {
+      if (!result[key] && response.stockfish && response.played_move) result[key] = {fen: response.fen, played_move: response.played_move, stockfish: response.stockfish};
+    }
+    return result;
+  }, [game.engine_analyses, analysis, coachResponses]);
+  const engineReview = matchingReview(nextMove, position, reviews[String(ply)]);
+  const practiceEligible = revealedPly !== ply && needsPractice(nextMove, color, position.fen, engineReview, coachResponse);
+  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, false);
   const hideReview = practice.active || !!practice.shownMove;
-  const markers = errorMarkers(game.moves, game.positions, stops, analysis?.moves ?? {}, color);
+  const markers = errorMarkers(game.moves, game.positions, stops, reviews, color);
+  const reviewPlies = coachedErrorPlies(game.moves, game.positions, reviews, coachResponses, color);
+  const previousReview = reviewPlies.filter(value => value < ply).at(-1);
+  const nextReview = reviewPlies.find(value => value > ply);
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null);
   const [lineStep, setLineStep] = useState<{uci: string; ply: number} | null>(null);
   const boardColumn = useRef<HTMLDivElement>(null);
-  const candidate = hideReview ? undefined : coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, transition !== null)
-    : visibleEngineCandidate(candidateSelection, engineReview, position.fen, transition !== null);
+  const candidate = hideReview ? undefined : coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, false)
+    : visibleEngineCandidate(candidateSelection, engineReview, position.fen, false);
   const candidateName = candidate ? coachResponse?.candidate_san?.[candidate.uci]
     ?? (coachResponse?.stockfish?.played_move.uci === candidate.uci ? coachResponse.stockfish.played_move.san
       : engineMoves(engineReview).find(move => move.uci === candidate.uci)?.san ?? candidate.uci) : undefined;
@@ -54,25 +70,39 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const coachDetails = coachResponse ? `${positionLabel} · ${coachModelLabel(coachResponse.model)} · Saved ${savedAt}` : positionLabel;
   const line = candidate ? coachResponse?.move_lines?.[candidate.uci] : undefined;
   const linePly = candidate && lineStep?.uci === candidate.uci && line?.positions[lineStep.ply] ? lineStep.ply : 0;
-  const shownPosition = !transition && practice.shownMove ? practice.shownMove.position : line?.positions[linePly] && linePly > 0 ? line.positions[linePly] : boardPosition;
+  const shownPosition = practice.shownMove ? practice.shownMove.position : line?.positions[linePly] && linePly > 0 ? line.positions[linePly] : boardPosition;
   const turn = shownPosition.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
-  const seek = (value: number) => dispatch({ type: 'seek', ply: value });
-  const step = (direction: 1 | -1) => dispatch({ type: 'step', direction, animate: !reducedMotion });
+  const seek = (value: number) => { setRevealedPly(null); setCandidateSelection(null); setLineStep(null); dispatch({ type: 'seek', ply: value }); };
+  const step = (direction: 1 | -1) => { setRevealedPly(null); dispatch({ type: 'step', direction }); };
+  const jumpReview = (value: number) => { setRevealedPly(value); dispatch({ type: 'seek', ply: value }); };
 
-  useEffect(() => { setCandidateSelection(null); setLineStep(null); }, [ply, transition, coachResponse?.response_id]);
+  useEffect(() => {
+    setCandidateSelection(revealedPly === ply && coachResponse?.played_move
+      ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move} : null);
+    setLineStep(null);
+  }, [ply, revealedPly, coachResponse?.response_id]);
   useEffect(() => { if (practice.active) dispatch({type: 'pause'}); }, [practice.active, ply]);
-  const originalMove = practice.active && !transition && !practice.shownMove ? nextMove : undefined;
+  const originalMove = practice.active && !practice.shownMove ? nextMove : undefined;
 
   function selectCandidate(uci: string) {
-    if ((!coachResponse && !engineReview) || transition || hideReview) return;
+    if ((!coachResponse && !engineReview) || hideReview) return;
     setLineStep(null);
     dispatch({ type: 'pause' });
     setCandidateSelection(candidate?.uci === uci ? null : { fen: position.fen, responseId: coachResponse?.response_id ?? engineSelectionId(engineReview!), uci });
   }
 
   const analyzing = analysisActive(analysis);
+  async function resumeAnalysis() {
+    if (submitting || analyzing) return;
+    setSubmitting(true); setAnalysisError('');
+    try {
+      setAnalysis(await api<GameAnalysis>(`/api/games/${game.id}/analysis`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username, model: readStored('coach-model') === 'gpt-6.1-terra' ? 'gpt-6.1-terra' : 'gpt-6-astra'})}));
+    } catch (err) { setAnalysisError(err instanceof Error ? err.message : 'Could not resume analysis.'); }
+    finally { setSubmitting(false); }
+  }
   useEffect(() => {
     if (!analyzing) return;
     const controller = new AbortController();
@@ -106,19 +136,14 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     preference.addEventListener('change', update);
     return () => preference.removeEventListener('change', update);
   }, []);
-  useEffect(() => {
-    if (!transition) return;
-    const timer = window.setTimeout(() => dispatch({ type: 'settle', transition }), reducedMotion ? 0 : BETWEEN_TURNS_MS);
-    return () => window.clearTimeout(timer);
-  }, [transition, reducedMotion]);
 
   useEffect(() => { store(`position:${game.id}`, String(ply)); }, [game.id, ply]);
   useEffect(() => {
-    if (!playing || transition || practice.active) return;
+    if (!playing || practice.active) return;
     if (ply >= game.moves.length) { dispatch({ type: 'pause' }); return; }
-    const timer = window.setTimeout(() => dispatch({ type: 'step', direction: 1, animate: !reducedMotion, automatic: true }), AUTOPLAY_TURN_MS);
+    const timer = window.setTimeout(() => dispatch({ type: 'step', direction: 1, automatic: true }), AUTOPLAY_TURN_MS);
     return () => window.clearTimeout(timer);
-  }, [playing, ply, transition, reducedMotion, game.moves.length, practice.active]);
+  }, [playing, ply, game.moves.length, practice.active]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -128,13 +153,14 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       if (event.key === ' ' && target.closest('button, a')) return;
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', ' '].includes(event.key)) return;
       event.preventDefault();
+      if (event.key !== ' ') { setRevealedPly(null); setCandidateSelection(null); setLineStep(null); }
       if (event.key === ' ') { if (!practice.active) dispatch({ type: 'toggle-play' }); }
       else if (event.key === 'Home' || event.key === 'End') dispatch({ type: 'seek', ply: event.key === 'Home' ? 0 : game.moves.length });
-      else dispatch({ type: 'step', direction: event.key === 'ArrowRight' ? 1 : -1, animate: !reducedMotion });
+      else dispatch({ type: 'step', direction: event.key === 'ArrowRight' ? 1 : -1 });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [reducedMotion, game.moves.length, practice.active]);
+  }, [game.moves.length, practice.active]);
 
   const playerBar = (color: 'white' | 'black') => <div className="player-bar">
     <span className={`color-token ${color}`} aria-label={`${color} pieces`}/>
@@ -147,6 +173,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     </div>
     <div className="replay-columns">
       <div className="board-column" ref={boardColumn}>
+        <MoveList moves={game.moves} positions={game.positions} reviews={reviews} ply={ply} onSelect={seek}/>
         {playerBar(top)}
         <Board position={shownPosition} flipped={flipped}
           candidate={linePly === 0 ? candidate : undefined} candidateName={candidateName} originalMove={originalMove}
@@ -156,16 +183,16 @@ export default function Replay({ game, username }: { game: GameDetail; username:
         <div className="board-controls">
           <button className="icon-button" onClick={() => setFlipped(f => !f)} title="Flip board" aria-label="Flip board"><ArrowDownUp size={19}/></button>
           <div className="transport">
-            <button className="icon-button" disabled={controlPly === 0} onClick={() => seek(0)} title="First position (Home)" aria-label="First position"><ChevronsLeft size={21}/></button>
-            <button className="icon-button" disabled={controlPly === 0} onClick={() => step(-1)} title="Previous turn (left arrow)" aria-label="Previous turn"><ChevronLeft size={22}/></button>
-            <button className="play-button" disabled={practice.active} onClick={() => dispatch({ type: 'toggle-play' })} title="Autoplay your turns (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
-            <button className="icon-button" disabled={controlPly === game.moves.length} onClick={() => step(1)} title="Next turn (right arrow)" aria-label="Next turn"><ChevronRight size={22}/></button>
-            <button className="icon-button" disabled={controlPly === game.moves.length} onClick={() => seek(game.moves.length)} title="Final position (End)" aria-label="Final position"><ChevronsRight size={21}/></button>
+            <button className="icon-button" disabled={ply === 0} onClick={() => seek(0)} title="First position (Home)" aria-label="First position"><ChevronsLeft size={21}/></button>
+            <button className="icon-button" disabled={ply === 0} onClick={() => step(-1)} title="Previous move (left arrow)" aria-label="Previous move"><ChevronLeft size={22}/></button>
+            <button className="play-button" disabled={practice.active} onClick={() => dispatch({ type: 'toggle-play' })} title="Autoplay moves (space)" aria-label={playing ? 'Pause replay' : 'Play replay'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
+            <button className="icon-button" disabled={ply === game.moves.length} onClick={() => step(1)} title="Next move (right arrow)" aria-label="Next move"><ChevronRight size={22}/></button>
+            <button className="icon-button" disabled={ply === game.moves.length} onClick={() => seek(game.moves.length)} title="Final position (End)" aria-label="Final position"><ChevronsRight size={21}/></button>
           </div>
           <span className="position-count">{ply} / {game.moves.length}</span>
         </div>
         <div className="position-timeline">
-          <input className="position-slider" type="range" min={0} max={stops.length - 1} value={stops.indexOf(controlPly)} onChange={e => seek(stops[Number(e.target.value)])} aria-label="Replay position" aria-valuetext={controlPly === 0 ? 'Starting position' : `After ${game.moves[controlPly - 1].san}, half-move ${controlPly}`}/>
+          <input className="position-slider" type="range" min={0} max={stops.length - 1} value={ply} onChange={e => seek(Number(e.target.value))} aria-label="Replay position" aria-valuetext={ply === 0 ? 'Starting position' : `After ${game.moves[ply - 1].san}, half-move ${ply}`}/>
           {markers.length > 0 && <div className="timeline-markers" role="group" aria-label="Moves to review">
             {markers.map(marker => <button key={marker.ply} type="button" className={`timeline-marker ${marker.status}`} style={{left: `${marker.percent}%`}}
               data-edge={marker.percent < 20 ? 'start' : marker.percent > 80 ? 'end' : undefined}
@@ -179,22 +206,30 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       </div>
       <aside className="coach-panel" aria-labelledby="coach-title">
         <div className="coach-heading">
-          <div className="coach-title-group"><h2 id="coach-title">Coach</h2>
+          <div className="coach-title-group"><h2 id="coach-title">{opponentTurn ? 'Opponent’s moves' : 'Coach'}</h2>
             <span className="coach-details" tabIndex={0} role="note" aria-label={coachDetails}>
               <Info size={14} aria-hidden="true"/><span className="coach-tooltip" aria-hidden="true">{coachDetails}</span>
             </span>
           </div>
         </div>
         {analysis && analyzing && <p className="engine-analysis-progress" role="status">{analysisProgress(analysis)}</p>}
+        {opponentAnalysisPending(analysis) && !analyzing && <p className="engine-analysis-progress">Opponent evaluations are not complete.{' '}
+          <button type="button" className="text-button" disabled={submitting} onClick={() => void resumeAnalysis()}>{submitting ? 'Starting…' : 'Analyze remaining moves'}</button></p>}
         {(analysisError || analysis?.error) && <p className="coach-error" role="alert">{analysisError || analysis?.error} Return to the library to resume.</p>}
         <div className="coach-result" aria-busy={analyzing && !coachResponse}>
           {practiceEligible && <PracticeCard practice={practice} original={nextMove} overview={coachResponse?.teaching?.position_overview}/>}
-          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis} nextMove={nextMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={transition !== null}
+          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis || opponentTurn} opponent={opponentTurn} nextMove={nextMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={false}
             linePly={linePly} onSelectLinePly={step => {
               if (!candidate || !line?.positions[step]) return;
               dispatch({type: 'pause'}); setLineStep({uci: candidate.uci, ply: step});
               if (boardColumn.current && boardColumn.current.getBoundingClientRect().bottom < 0) boardColumn.current.scrollIntoView({behavior: reducedMotion ? 'instant' : 'smooth', block: 'start'});
             }}/>}
+          {reviewPlies.length > 0 && <nav className="coach-review-navigation" aria-label="Navigate saved coach reviews">
+            <button type="button" disabled={previousReview === undefined} onClick={() => previousReview !== undefined && jumpReview(previousReview)}
+              aria-label="Previous coached inaccuracy, mistake or blunder"><ChevronLeft size={22} aria-hidden="true"/><span>Previous review</span></button>
+            <button type="button" disabled={nextReview === undefined} onClick={() => nextReview !== undefined && jumpReview(nextReview)}
+              aria-label="Next coached inaccuracy, mistake or blunder"><span>Next review</span><ChevronRight size={22} aria-hidden="true"/></button>
+          </nav>}
         </div>
       </aside>
     </div>

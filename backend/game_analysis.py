@@ -1,4 +1,4 @@
-"""Resumable engine analysis and coaching of one player's flagged moves."""
+"""Resumable engine analysis of both sides and coaching of one player's errors."""
 
 import asyncio
 from collections import Counter
@@ -44,6 +44,8 @@ def analysis_summary(row: dict | None) -> dict | None:
     if row is None:
         return None
     return {**{key: row[key] for key in ("game_id", "player_color", "status", "total", "completed", "counts", "error", "updated_at")},
+            "opponent_total": row.get("opponent_total"),
+            "opponent_completed": row.get("opponent_completed", len(row.get("opponent_moves", {}))),
             "coach_total": coaching_total(row),
             "coach_completed": row.get("coach_completed", 0) if row.get("coach_version") == COACH_CONTRACT_VERSION else 0}
 
@@ -53,7 +55,7 @@ def analysis_result(row: dict | None) -> dict | None:
         return None
     moves = {ply: {**move, **({"position_evidence": with_position_sharpness(move["position_evidence"], expected_fen=move["fen"])}
                             if move.get("position_evidence") else {})} for ply, move in row["moves"].items()}
-    return {**analysis_summary(row), "moves": moves}
+    return {**analysis_summary(row), "moves": moves, "opponent_moves": row.get("opponent_moves", {})}
 
 
 def quality_counts(moves: dict) -> dict:
@@ -104,11 +106,14 @@ class GameAnalysisService:
                 raise HTTPException(422, str(exc)) from exc
             targets = [(ply, detail["positions"][ply]["fen"], move["uci"])
                        for ply, move in enumerate(detail["moves"]) if move["color"] == color]
-            row = await run_in_threadpool(self.db.begin_game_analysis, game_id, color, fingerprint, len(targets))
+            opponents = [(ply, detail["positions"][ply]["fen"], move["uci"])
+                         for ply, move in enumerate(detail["moves"]) if move["color"] != color]
+            row = await run_in_threadpool(self.db.begin_game_analysis, game_id, color, fingerprint, len(targets), len(opponents))
             if (row["status"] == "completed" and row.get("coach_completed", 0) >= coaching_total(row)
                     and row.get("coach_version") == COACH_CONTRACT_VERSION):
                 return analysis_result(row)
-            task = asyncio.create_task(self._run(game_id, color, fingerprint, targets, row["moves"], model))
+            task = asyncio.create_task(self._run(game_id, color, fingerprint, targets, row["moves"], model,
+                                                 opponents, row.get("opponent_moves", {})))
             self.active[key] = task
             self.tasks.add(task)
             task.add_done_callback(self.tasks.discard)
@@ -169,7 +174,7 @@ class GameAnalysisService:
                     return False
         return True
 
-    async def _run(self, game_id, color, fingerprint, targets, saved, model):
+    async def _run(self, game_id, color, fingerprint, targets, saved, model, opponents, saved_opponents):
         async def status(value, error=None):
             await run_in_threadpool(self.db.set_game_analysis_status, game_id, color, fingerprint, value, error)
         phase = "engine"
@@ -178,9 +183,21 @@ class GameAnalysisService:
             # usage when multiple games are submitted. Queued work is durable.
             async with self.engine_lock:
                 await status("running")
-                for ply, fen, uci in targets:
-                    existing = saved.get(str(ply))
+                other = await run_in_threadpool(self.db.game_analysis, game_id,
+                                               "black" if color == "white" else "white", fingerprint)
+                reusable = {**(other or {}).get("moves", {}), **(other or {}).get("opponent_moves", {})}
+                player_plies = {ply for ply, _, _ in targets}
+                for ply, fen, uci in targets + opponents:
+                    destination = saved if ply in player_plies else saved_opponents
+                    save = self.db.save_game_analysis_move if ply in player_plies else self.db.save_game_opponent_move
+                    existing = destination.get(str(ply))
                     if existing and existing["fen"] == fen and existing["played_move"] == uci:
+                        continue
+                    cached = reusable.get(str(ply))
+                    if cached and cached["fen"] == fen and cached["played_move"] == uci:
+                        if not await run_in_threadpool(save, game_id, color, fingerprint, ply, cached):
+                            return
+                        destination[str(ply)] = cached
                         continue
                     review = MoveReview.from_fen(fen, uci)
                     evidence = await run_in_threadpool(self.analyzer, review)
@@ -194,10 +211,10 @@ class GameAnalysisService:
                                                                      if key != "position_evidence"})}
                     if evidence.get("position_evidence"):
                         result["position_evidence"] = evidence["position_evidence"]
-                    persisted = await run_in_threadpool(self.db.save_game_analysis_move, game_id, color, fingerprint, ply, result)
+                    persisted = await run_in_threadpool(save, game_id, color, fingerprint, ply, result)
                     if not persisted:
                         return  # The PGN was replaced; never write stale results.
-                    saved[str(ply)] = result
+                    destination[str(ply)] = result
             phase = "coach"
             if await self._coach_moves(game_id, color, fingerprint, targets, saved, model):
                 await status("completed")
