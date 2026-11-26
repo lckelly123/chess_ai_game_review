@@ -9,6 +9,7 @@ import chess.engine
 
 from .move_review import MoveReview
 from .player_move_quality import PLAYER_QUALITY_POLICY, assess_player_move
+from .position_classification import compare_candidate_moves
 from .sharpness import with_position_sharpness
 from .stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError, StockfishUnavailableError, _candidate
 
@@ -87,6 +88,26 @@ def _played_candidate(board: chess.Board, info: dict) -> dict:
     return played
 
 
+def _comparison_position(evidence: dict, candidates: list[dict], engine: str, settings: StockfishSettings) -> dict:
+    """Replace the position's ranked evidence with the verified top five."""
+    best = candidates[0]
+    best_cp, best_e = best["score"]["cp"], expectation(best)
+    for move in candidates:
+        cp = move["score"]["cp"]
+        move["relative_quality"] = {
+            "cp_loss_from_best": best_cp - cp if best_cp is not None and cp is not None else None,
+            "expected_score_loss_pp": float(100 * (best_e - expectation(move))),
+        }
+    second = candidates[1]["relative_quality"] if len(candidates) > 1 else {}
+    return prepare_position_evidence({
+        **evidence, "engine": engine, "top_moves": candidates,
+        "delta_cp": second.get("cp_loss_from_best"), "delta_e_pp": second.get("expected_score_loss_pp"),
+        "position_outlook": {key: best[key] for key in ("score", "wdl", "probabilities", "expected_score")},
+        "limits": {"depth": settings.depth, "seconds_per_search": settings.time_limit},
+        "threads": settings.threads, "hash_mb": settings.hash_mb,
+    })
+
+
 def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishSettings | None = None) -> dict:
     """Grade the move without running the disabled Lichess motif detectors."""
     review = MoveReview.from_fen(review.position.fen, review.played_move_uci)
@@ -121,7 +142,22 @@ def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishS
             raise StockfishAnalysisError("Stockfish could not evaluate the played move.") from exc
     if played["uci"] != review.played_move_uci:
         raise StockfishAnalysisError("Stockfish evaluated a different played move.")
-    played = {**played, "quality": assess_player_move(candidates[0], played)}
+    quality = assess_player_move(candidates[0], played)
+    verified_position = None
+    if not in_top and quality["reason"] == "conflicting_order":
+        # Separate searches can disagree even at the same depth. Compare all
+        # original candidates and the player together; never sort mixed scores
+        # or turn a negative loss into an automatic Good grade.
+        engine_name, compared = compare_candidate_moves(
+            review.position.fen, [move["uci"] for move in candidates] + [played["uci"]], settings)
+        played = next(move for move in compared if move["uci"] == review.played_move_uci)
+        candidates = compared[:len(candidates)]
+        verified_position = _comparison_position(evidence, candidates, engine_name, settings)
+        candidates = verified_position["top_moves"]
+        in_top = any(move["uci"] == played["uci"] for move in candidates)
+        quality = assess_player_move(candidates[0], played)
+    played = {**played, "quality": quality}
     return {"fen": review.position.fen, "engine": engine_name, "perspective": review.position.side_to_move,
             "top_moves": candidates, "played_move": played, "played_move_in_top": in_top,
-            "move_quality": played["quality"], "move_quality_policy": PLAYER_QUALITY_POLICY.copy()}
+            "move_quality": played["quality"], "move_quality_policy": PLAYER_QUALITY_POLICY.copy(),
+            **({"position_evidence": verified_position} if verified_position is not None else {})}

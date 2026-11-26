@@ -178,8 +178,6 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .board-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; color: #994619; }
 .candidate-square { stroke: #994619; stroke-width: .055; fill: #f4c36a; fill-opacity: .24; }
 .candidate-arrow { stroke: currentColor; stroke-width: .12; stroke-linecap: round; }
-.board-annotations.original-move-annotations { color: #9565df; opacity: .95; }
-.original-move-arrow { stroke: currentColor; stroke-width: .055; stroke-linecap: round; }
 .square { position: relative; display: grid; place-items: center; aspect-ratio: 1; background-image: url('/assets/chess/icy-sea.png'); background-size: 800% 800%; }
 .square.light { background-color: #d6e4e9; color: #7399ad; }
 .square.dark { background-color: #7399ad; color: #d6e4e9; }

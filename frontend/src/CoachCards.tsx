@@ -28,8 +28,8 @@ const mistakeSubcategoryLabels: Record<MistakeClassification['subcategory'], str
   pawn: 'Pawn', knight: 'Knight', bishop: 'Bishop', rook: 'Rook', queen: 'Queen', king: 'King',
 };
 
-export default function CoachCards({ response, engineReview, engineMode = false, opponent = false, nextMove, pending, selectedUci, onSelectCandidate, transitioning, activeSequenceId, onPlaySequence, speechId, reducedMotion = false }: {
-  response?: CoachResponse; engineReview?: EngineReview; engineMode?: boolean; nextMove?: Move; pending: boolean;
+export default function CoachCards({ response, engineReview, engineMode = false, opponent = false, reviewedMove, pending, selectedUci, onSelectCandidate, transitioning, activeSequenceId, onPlaySequence, speechId, reducedMotion = false }: {
+  response?: CoachResponse; engineReview?: EngineReview; engineMode?: boolean; reviewedMove?: Move; pending: boolean;
   selectedUci?: string; onSelectCandidate: (uci: string) => void; transitioning: boolean;
   activeSequenceId?: string; onPlaySequence?: (sequence: PvSequence) => void;
   opponent?: boolean;
@@ -140,8 +140,8 @@ export default function CoachCards({ response, engineReview, engineMode = false,
               </button>
             </div>;
           })}
-        </div> : <p className="coach-placeholder">{engineOnly ? nextMove ? 'No saved engine analysis for this position.' : 'No recorded move remains.' : positionEvidence?.unclassified_reason === 'terminal_position' ? 'This position has ended.' : response ? 'No candidate moves are included in this saved response.' : 'Candidate moves and player feedback will appear here.'}</p>}
-        {response && !response.played_move && <p className="move-empty-note">{moveFeedback?.explanation ?? (nextMove ? 'No saved feedback is available for the recorded move.' : 'No recorded move is available to evaluate.')}</p>}
+        </div> : <p className="coach-placeholder">{engineOnly ? reviewedMove ? 'No saved engine analysis for this move.' : 'No recorded move is selected.' : positionEvidence?.unclassified_reason === 'terminal_position' ? 'This position has ended.' : response ? 'No candidate moves are included in this saved response.' : 'Candidate moves and player feedback will appear here.'}</p>}
+        {response && !response.played_move && <p className="move-empty-note">{moveFeedback?.explanation ?? (reviewedMove ? 'No saved feedback is available for the recorded move.' : 'No recorded move is available to evaluate.')}</p>}
       </section>}
       <div id={`${id}-move-detail`}>
         {selectedMove && positionSpeech.complete && <div key={selectedMove.uci} className={moveSpeech.speaking ? 'coach-move-reveal' : undefined}><div>

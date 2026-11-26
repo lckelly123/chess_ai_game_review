@@ -59,9 +59,11 @@ export default function GameOverview({ game, reviews, statistics, ply, onSelect,
 }) {
   const timeline = useMemo(() => overviewTimeline(game, reviews, statistics), [game, reviews, statistics]);
   const counts = useMemo(() => overviewCounts(game, reviews), [game, reviews]);
-  const move = onMainLine ? game.moves[ply] : undefined;
-  const review = onMainLine ? matchingReview(move, game.positions[ply], reviews[String(ply)]) : undefined;
-  const evidence = onMainLine ? review?.position_evidence ?? response?.position_evidence ?? timeline[ply]?.position_evidence : undefined;
+  const move = onMainLine ? game.moves[ply - 1] : undefined;
+  const review = onMainLine ? matchingReview(move, game.positions[ply - 1], reviews[String(ply - 1)]) : undefined;
+  const currentReview = matchingReview(game.moves[ply], game.positions[ply], reviews[String(ply)]);
+  const evidence = onMainLine ? currentReview?.position_evidence
+    ?? (response?.fen === game.positions[ply].fen ? response?.position_evidence : undefined) ?? timeline[ply]?.position_evidence : undefined;
   const decision = positionDecision(evidence);
   const sharpness = !decision || decision.className === 'unclassified' ? null : evidence?.sharpness?.score;
   const score = review ? engineEvaluation(review.stockfish, review.stockfish.played_move, 'White') : null;
@@ -91,7 +93,7 @@ export default function GameOverview({ game, reviews, statistics, ply, onSelect,
         <span className={`decision-tag ${decision?.className ?? 'unclassified'}`} tabIndex={0} aria-label={decision ? `${decision.label}: ${decision.tooltip}` : undefined}>{decision?.label ?? (onMainLine ? timeline[ply]?.status === 'terminal' ? 'Game over' : 'Not analysed' : 'Variation')}</span>
         <span className="sharpness-value">{sharpness == null ? '—' : sharpness.toFixed(0)}<small> / 100</small></span>
       </div>
-      <div className="overview-move"><span>Played</span><div className="overview-played-move"><strong>{move ? `${move.number}${move.color === 'white' ? '.' : '…'} ${move.san}` : onMainLine ? 'End of game' : 'Exploring variation'}</strong>{quality && <span className={`move-quality ${quality}`}>{qualityLabels[quality]}</span>}</div></div>
+      <div className="overview-move"><span>Played</span><div className="overview-played-move"><strong>{move ? `${move.number}${move.color === 'white' ? '.' : '…'} ${move.san}` : onMainLine ? 'Starting position' : 'Exploring variation'}</strong>{quality && <span className={`move-quality ${quality}`}>{qualityLabels[quality]}</span>}</div></div>
       <dl className="overview-move-data"><div><dt>Time taken</dt><dd title={move?.elapsed_seconds == null ? 'No recorded move timing available' : undefined}>{move ? moveTime(move.elapsed_seconds) : '—'}</dd></div>
         <div><dt>Move evaluation</dt><dd className={score?.tone ?? ''} title={score ? `${score.label} · depth ${review?.stockfish.played_move.depth}` : undefined}>{move ? score?.value ?? '—' : '—'}</dd></div></dl>
     </section>

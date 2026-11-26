@@ -48,23 +48,23 @@ test('engine board previews reject stale positions, transitions and undisplayed 
   assert.equal(visibleEngineCandidate({...selection, responseId: 'old-coach'}, review, review.fen, false), undefined);
 });
 
-test('timeline markers target pre-move player stops, skip Good/Uncertain and reject stale evidence', () => {
+test('timeline markers target the played position, skip Good/Uncertain and reject stale evidence', () => {
   const positions = Array.from({length: 11}, (_, ply) => ({fen: `${ply} ${ply % 2 ? 'b' : 'w'} - - 0 1`}));
   const moves = positions.slice(0, -1).map((_, ply) => ({uci: `uci-${ply}`, color: ply % 2 ? 'black' : 'white', san: `san-${ply}`, number: Math.floor(ply / 2) + 1}));
   const reviews = Object.fromEntries(moves.map((move, ply) => [ply, {fen: positions[ply].fen, played_move: move.uci,
     stockfish: {move_quality: {status: ['good', 'inaccuracy', 'mistake', 'blunder', 'uncertain'][Math.floor(ply / 2)]}}}]));
-  for (const [isWhite, color, expected] of [[true, 'white', [2, 4, 6]], [false, 'black', [3, 5, 7]]]) {
+  for (const [isWhite, color, expected] of [[true, 'white', [3, 5, 7]], [false, 'black', [4, 6, 8]]]) {
     const stops = replayStops(positions, isWhite);
     const markers = errorMarkers(moves, positions, stops, reviews, color);
     assert.deepEqual(markers.map(marker => marker.ply), expected);
     for (const marker of markers) {
       assert.equal(marker.percent, stops.indexOf(marker.ply) * 100 / (stops.length - 1));
       assert.equal(replayNavigation(restoreReplay(stops, 0), {type: 'seek', ply: marker.ply}).ply, marker.ply);
-      assert(marker.label.includes(moves[marker.ply].san));
+      assert(marker.label.includes(moves[marker.ply - 1].san));
     }
   }
   reviews['2'].fen = 'outdated'; reviews['4'].played_move = 'different';
-  assert.deepEqual(errorMarkers(moves, positions, replayStops(positions, true), reviews, 'white').map(marker => marker.ply), [6]);
+  assert.deepEqual(errorMarkers(moves, positions, replayStops(positions, true), reviews, 'white').map(marker => marker.ply), [7]);
 });
 
 test('custom Black-to-move start and short games use the actual stop index', () => {
@@ -72,7 +72,8 @@ test('custom Black-to-move start and short games use the actual stop index', () 
   const moves = [{uci: 'e8g8', san: 'O-O', number: 30, color: 'black'}];
   const reviews = {'0': {fen: positions[0].fen, played_move: 'e8g8', stockfish: {move_quality: {status: 'mistake'}}}};
   const markers = errorMarkers(moves, positions, replayStops(positions, false), reviews, 'black');
-  assert.equal(markers[0].percent, 0);
+  assert.equal(markers[0].ply, 1);
+  assert.equal(markers[0].percent, 100);
   assert.equal(markers[0].label, '30… O-O — Mistake');
   assert.equal(analysisProgress({status: 'running', completed: 18, total: 42}), 'Analyzing 18/42 moves');
 });
@@ -105,8 +106,8 @@ test('review arrows select only matching player errors with a saved full respons
     stockfish: {move_quality: {status: ['good', 'inaccuracy', 'mistake', 'blunder', 'uncertain', 'blunder'][Math.floor(ply / 2)]}}}]));
   const responses = Object.fromEntries(moves.map((move, ply) => [ply, {...reviews[ply], teaching: {position_explanation: 'Full review.'}}]));
   delete responses[10]; // Engine result exists, but coaching has not finished.
-  assert.deepEqual(coachedErrorPlies(moves, positions, reviews, responses, 'white'), [2, 4, 6]);
-  assert.deepEqual(coachedErrorPlies(moves, positions, reviews, responses, 'black'), [3, 5, 7, 11]);
+  assert.deepEqual(coachedErrorPlies(moves, positions, reviews, responses, 'white'), [3, 5, 7]);
+  assert.deepEqual(coachedErrorPlies(moves, positions, reviews, responses, 'black'), [4, 6, 8, 12]);
   responses[2].fen = 'stale'; responses[4].played_move = 'other'; responses[6].teaching.position_explanation = '';
   assert.deepEqual(coachedErrorPlies(moves, positions, reviews, responses, 'white'), []);
 });
