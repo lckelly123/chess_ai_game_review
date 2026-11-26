@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS games (
     end_time BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS games_date ON games(end_time DESC);
+-- A reset advances the cache identity without changing the source game.
+ALTER TABLE games ADD COLUMN IF NOT EXISTS analysis_revision BIGINT NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS profiles (
     username TEXT PRIMARY KEY,
     last_synced BIGINT NOT NULL
@@ -41,6 +43,8 @@ CREATE INDEX IF NOT EXISTS coach_feedback_move ON coach_feedback(fen, played_mov
 -- Previous-move history changes the instructional context, not the engine position.
 ALTER TABLE coach_feedback ADD COLUMN IF NOT EXISTS context_key VARCHAR(64) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS coach_feedback_context ON coach_feedback(fen, played_move, context_key, created_at DESC, id DESC);
+ALTER TABLE coach_feedback ADD COLUMN IF NOT EXISTS game_id TEXT REFERENCES games(id);
+CREATE INDEX IF NOT EXISTS coach_feedback_game ON coach_feedback(game_id);
 CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()

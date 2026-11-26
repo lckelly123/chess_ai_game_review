@@ -18,6 +18,7 @@ from .coach.routes import AnalyzePositionResponse, create_coach_router
 from .coach.preparation_routes import create_preparation_router
 from .coach.service import open_coach
 from .database import Database
+from .dev import create_dev_router
 from .importer import ChessComImporter
 from .game_analysis import GameAnalysisService, analyze_game_move, create_game_analysis_router
 from .lessons import lesson_analytics
@@ -72,6 +73,7 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
     app.include_router(create_game_analysis_router())
     app.include_router(create_practice_router())
     app.include_router(create_multi_game_router())
+    app.include_router(create_dev_router(coach_lock))
 
     @app.exception_handler(psycopg.Error)
     async def database_error(request, exc):
@@ -104,7 +106,7 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
         reviews = [(position["fen"], detail["moves"][ply]["uci"] if ply < len(detail["moves"]) else None,
                     context_key(previous_move_from_replay(detail, ply)))
                    for ply, position in enumerate(detail["positions"])]
-        feedback = app.state.db.coach_feedback_for_reviews(reviews + [(fen, None, history) for fen, _, history in reviews])
+        feedback = app.state.db.coach_feedback_for_reviews(reviews + [(fen, None, history) for fen, _, history in reviews], game_id=game_id)
         # Legacy position-only answers remain visible until a move review exists.
         return {**record, **detail, "engine_analyses": app.state.db.game_analyses(game_id, record["pgn"]), "coach_responses": {
             str(ply): AnalyzePositionResponse(**answer).model_dump(mode="json")

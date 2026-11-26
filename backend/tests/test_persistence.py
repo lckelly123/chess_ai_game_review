@@ -43,7 +43,7 @@ def test_sqlite_migration_is_complete_read_only_and_idempotent(test_db_url, tmp_
     before = hashlib.sha256(source.read_bytes()).hexdigest()
     db = Database(test_db_url)
     assert migrate_sqlite(db, source) == {"profiles": 1, "games": 1, "profile_games": 1, "http_cache": 1}
-    assert db.game(game["id"]) == game
+    assert db.game(game["id"]) == {**game, "analysis_revision": 0}
     assert db.profiles() == [{"username": "alice", "last_synced": 123, "game_count": 1}]
     assert db.cache("https://api.chess.com/pub/player/alice")["etag"] == '"etag"'
     db.save_import("alice", [game], 456)
