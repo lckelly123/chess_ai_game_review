@@ -30,7 +30,8 @@ test('selecting Qb4+ shows the queen on b4 and that move’s saved review withou
   const html = render(1);
   assert.match(html, /Last move Qb4\+: from b8 to b4/);
   assert.match(html, /Black queen b4/);
-  assert.match(html, /Last move<\/span><strong>12… Qb4\+/);
+  assert.match(html, /Played<\/span><div class="overview-played-move"><strong>12… Qb4\+<\/strong><span class="move-quality mistake">Mistake<\/span>/);
+  assert.match(html, /<dt>Move evaluation<\/dt><dd class="unfavourable" title="Favours Black · depth 18">−5.00<\/dd>/);
   assert.match(html, /Review of Qb4\+/);
   assert.doesNotMatch(html, /Black queen b8|Review of Qb2|Find a better move|candidate-arrow|original-move-arrow/);
   assert.match(html, /aria-label="Replay position" aria-valuetext="After Qb4\+, half-move 1"/);

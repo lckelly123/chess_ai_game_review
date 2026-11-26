@@ -66,7 +66,8 @@ export default function GameOverview({ game, reviews, statistics, ply, onSelect,
     ?? (response?.fen === game.positions[ply].fen ? response?.position_evidence : undefined) ?? timeline[ply]?.position_evidence : undefined;
   const decision = positionDecision(evidence);
   const sharpness = !decision || decision.className === 'unclassified' ? null : evidence?.sharpness?.score;
-  const score = review ? engineEvaluation(review.stockfish, review.stockfish.played_move) : null;
+  const score = review ? engineEvaluation(review.stockfish, review.stockfish.played_move, 'White') : null;
+  const quality = review?.stockfish.move_quality?.status;
   const ready = statisticsReady(game, statistics);
   const analysed = counts.white.analysed + counts.black.analysed;
   const uncertain = counts.white.uncertain + counts.black.uncertain;
@@ -87,14 +88,14 @@ export default function GameOverview({ game, reviews, statistics, ply, onSelect,
       {(!ready || uncertain > 0) && <p className="overview-status" role="status">{analyzing ? `Analysing ${analysed}/${game.moves.length} moves…` : !ready ? <button className="text-button" type="button" disabled={submitting} onClick={onComplete}>{submitting ? 'Starting…' : analysed ? 'Complete game statistics' : 'Analyse game'}</button> : null}{uncertain > 0 && <span>{uncertain} ungraded {uncertain === 1 ? 'move' : 'moves'}</span>}</p>}
     </section>
     <section className="overview-position" aria-label="Current position and recorded move">
-      <div className="overview-section-heading"><h2>Position</h2><span>{phase ? {opening: 'Opening', middlegame: 'Middlegame', endgame: 'Endgame'}[phase] : '—'}</span></div>
+      <div className="overview-section-heading"><h2>Position sharpness</h2><span>{phase ? {opening: 'Opening', middlegame: 'Middlegame', endgame: 'Endgame'}[phase] : '—'}</span></div>
       <div className="overview-sharpness" title={decision?.tooltip}>
         <span className={`decision-tag ${decision?.className ?? 'unclassified'}`} tabIndex={0} aria-label={decision ? `${decision.label}: ${decision.tooltip}` : undefined}>{decision?.label ?? (onMainLine ? timeline[ply]?.status === 'terminal' ? 'Game over' : 'Not analysed' : 'Variation')}</span>
         <span className="sharpness-value">{sharpness == null ? '—' : sharpness.toFixed(0)}<small> / 100</small></span>
       </div>
-      <div className="overview-move"><span>Last move</span><strong>{move ? `${move.number}${move.color === 'white' ? '.' : '…'} ${move.san}` : onMainLine ? 'Starting position' : 'Exploring variation'}</strong></div>
+      <div className="overview-move"><span>Played</span><div className="overview-played-move"><strong>{move ? `${move.number}${move.color === 'white' ? '.' : '…'} ${move.san}` : onMainLine ? 'Starting position' : 'Exploring variation'}</strong>{quality && <span className={`move-quality ${quality}`}>{qualityLabels[quality]}</span>}</div></div>
       <dl className="overview-move-data"><div><dt>Time taken</dt><dd title={move?.elapsed_seconds == null ? 'No recorded move timing available' : undefined}>{move ? moveTime(move.elapsed_seconds) : '—'}</dd></div>
-        <div><dt>Move evaluation{score && <small>{score.perspective}’s perspective</small>}</dt><dd className={score?.tone ?? ''} title={score ? `${score.label} · depth ${review?.stockfish.played_move.depth}` : undefined}>{move ? score?.value ?? '—' : '—'}</dd></div></dl>
+        <div><dt>Move evaluation</dt><dd className={score?.tone ?? ''} title={score ? `${score.label} · depth ${review?.stockfish.played_move.depth}` : undefined}>{move ? score?.value ?? '—' : '—'}</dd></div></dl>
     </section>
   </aside>;
 }

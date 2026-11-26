@@ -71,20 +71,24 @@ export function parseCoachContent(markdown: string) {
   };
 }
 
-export function engineEvaluation(engine?: (Pick<EngineAnalysis, 'perspective'> & Partial<Pick<EngineAnalysis, 'played_move'>>) | null, move: EngineMove | undefined = engine?.played_move) {
+export function engineEvaluation(engine?: (Pick<EngineAnalysis, 'perspective'> & Partial<Pick<EngineAnalysis, 'played_move'>>) | null, move: EngineMove | undefined = engine?.played_move, displayPerspective?: EngineAnalysis['perspective']) {
   const score = move?.score;
   if (!engine || !score || !['White', 'Black'].includes(engine.perspective)) return null;
   const mate = typeof score.mate === 'number' && Number.isFinite(score.mate) ? score.mate : null;
   const cp = typeof score.cp === 'number' && Number.isFinite(score.cp) ? score.cp : null;
   if (mate === null && cp === null) return null;
-  const bounded = score.bound === 'lower' || score.bound === 'upper';
-  const sign = mate !== null ? (mate > 0 ? 1 : -1) : Math.sign(cp!);
-  const winner = sign > 0 ? engine.perspective : engine.perspective === 'White' ? 'Black' : 'White';
+  const perspective = displayPerspective ?? engine.perspective;
+  const flipped = perspective !== engine.perspective;
+  const bound = flipped ? score.bound === 'lower' ? 'upper' : score.bound === 'upper' ? 'lower' : score.bound : score.bound;
+  const bounded = bound === 'lower' || bound === 'upper';
+  const sourceSign = mate !== null ? (mate > 0 ? 1 : -1) : Math.sign(cp!);
+  const sign = sourceSign * (flipped ? -1 : 1);
+  const winner = sourceSign > 0 ? engine.perspective : engine.perspective === 'White' ? 'Black' : 'White';
   const level = mate === null && Math.abs(cp!) <= 20;
   const tone = bounded || level ? 'neutral' : sign > 0 ? 'favourable' : 'unfavourable';
-  const value = mate !== null ? `${mate > 0 ? '+' : '−'}M${Math.abs(mate)}` : `${cp! > 0 ? '+' : cp! < 0 ? '−' : ''}${(Math.abs(cp!) / 100).toFixed(2)}`;
-  const label = bounded ? `${score.bound === 'lower' ? 'Lower' : 'Upper'} bound`
+  const value = mate !== null ? `${sign > 0 ? '+' : '−'}M${Math.abs(mate)}` : `${sign > 0 ? '+' : sign < 0 ? '−' : ''}${(Math.abs(cp!) / 100).toFixed(2)}`;
+  const label = bounded ? `${bound === 'lower' ? 'Lower' : 'Upper'} bound`
     : mate !== null ? (mate === 0 ? `${engine.perspective} is checkmated` : `${winner} has mate in ${Math.abs(mate)}`)
       : level ? 'Approximately level' : `Favours ${winner}`;
-  return { value: `${score.bound === 'lower' ? '≥ ' : score.bound === 'upper' ? '≤ ' : ''}${value}`, tone, label, perspective: engine.perspective };
+  return { value: `${bound === 'lower' ? '≥ ' : bound === 'upper' ? '≤ ' : ''}${value}`, tone, label, perspective };
 }

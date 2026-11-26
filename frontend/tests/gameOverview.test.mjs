@@ -49,23 +49,42 @@ test('position facts describe the displayed board while move facts describe the 
   const html = render({ply: 1});
   assert.match(html, /White player.*Black player/);
   assert.doesNotMatch(html, /Selective|43<small> \/ 100/); // That evidence belongs to the previous position.
-  assert.match(html, /Last move<\/span><strong>1\. e4/);
+  assert.match(html, /<h2>Position sharpness<\/h2>/);
+  assert.match(html, /Played<\/span><div class="overview-played-move"><strong>1\. e4<\/strong><span class="move-quality mistake">Mistake<\/span><\/div>/);
   assert.match(html, /12.5s/);
-  assert.match(html, /−2.00/); // Played score; graph instead uses +0.50.
+  assert.match(html, /−2.00/); // Played score; graph instead uses +0.80.
   assert.match(html, /Endgame/);
   assert.doesNotMatch(html, /move-list-scroll/);
+  assert.match(html, /<dt>Move evaluation<\/dt>/);
+  assert.doesNotMatch(html, /<small>[^<]*perspective/);
+});
+
+test('Black played-move evaluation uses White perspective while preserving its move grade', () => {
+  const html = render({ply: 2});
+  assert.match(html, /<strong>1… Kh2<\/strong><span class="move-quality good">Good<\/span>/);
+  assert.match(html, /<dt>Move evaluation<\/dt><dd class="favourable" title="Favours White · depth 18">\+0\.80<\/dd>/);
+});
+
+test('missing or stale reviews cannot supply a played classification or evaluation', () => {
+  for (const evidence of [{}, {0: {...reviews[0], fen: 'stale'}}]) {
+    const html = render({reviews: evidence, ply: 1});
+    assert.match(html, /<strong>1\. e4<\/strong>/);
+    assert.doesNotMatch(html, /class="move-quality/);
+    assert.match(html, /<dt>Move evaluation<\/dt><dd class="">—<\/dd>/);
+  }
 });
 
 test('starting position and variations omit played-move facts; the final move remains reviewable', () => {
   for (const html of [render({onMainLine: false}), render()]) {
     assert.doesNotMatch(html, /12.5s|−2.00|>1\. e4</);
+    assert.doesNotMatch(html, /class="move-quality/);
   }
   assert.match(render({onMainLine: false}), /Exploring variation/);
   assert.match(render(), /Starting position/);
   assert.match(render(), /Selective/);
   assert.match(render(), /43<small> \/ 100/);
-  assert.match(render({ply: 2}), /Last move<\/span><strong>1… Kh2/);
-  assert.match(render({ply: 2}), /−0.80/);
+  assert.match(render({ply: 2}), /Played<\/span><div class="overview-played-move"><strong>1… Kh2/);
+  assert.match(render({ply: 2}), /\+0.80/);
 });
 
 test('accuracy only appears for a complete, matching versioned timeline', () => {

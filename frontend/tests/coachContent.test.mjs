@@ -137,6 +137,25 @@ test('missing engine evidence is not presented as a zero evaluation', () => {
   assert.equal(engineEvaluation(engine(NaN)), null);
 });
 
+test('White display perspective converts Black centipawns, mates and bounds without changing source scores', () => {
+  const evidence = engine(-80);
+  const before = structuredClone(evidence);
+  assert.deepEqual(engineEvaluation(evidence, undefined, 'White'), {value: '+0.80', tone: 'favourable', label: 'Favours White', perspective: 'White'});
+  assert.deepEqual(evidence, before);
+  assert.equal(engineEvaluation(engine(80), undefined, 'White').value, '−0.80');
+  assert.equal(engineEvaluation(engine(80), undefined, 'White').tone, 'unfavourable');
+  assert.equal(engineEvaluation(engine(80, 'White'), undefined, 'White').value, '+0.80');
+  assert.equal(engineEvaluation(engine(0), undefined, 'White').value, '0.00');
+  assert.equal(engineEvaluation(engine(20), undefined, 'White').tone, 'neutral');
+  assert.deepEqual(engineEvaluation(engine(null, 'Black', 3), undefined, 'White'), {value: '−M3', tone: 'unfavourable', label: 'Black has mate in 3', perspective: 'White'});
+  assert.equal(engineEvaluation(engine(null, 'Black', -2), undefined, 'White').value, '+M2');
+  assert.deepEqual(engineEvaluation(engine(null, 'Black', 0), undefined, 'White'), {value: '+M0', tone: 'favourable', label: 'Black is checkmated', perspective: 'White'});
+  assert.deepEqual(engineEvaluation(engine(150, 'Black', null, 'lower'), undefined, 'White'), {value: '≤ −1.50', tone: 'neutral', label: 'Upper bound', perspective: 'White'});
+  assert.equal(engineEvaluation(engine(-150, 'Black', null, 'upper'), undefined, 'White').value, '≥ +1.50');
+  assert.equal(engineEvaluation(engine(null, 'Black', 2, 'lower'), undefined, 'White').value, '≤ −M2');
+  assert.equal(engineEvaluation(engine(null), undefined, 'White'), null);
+});
+
 test('candidate evaluations use their own scores while retaining the played-move score and perspective', () => {
   const evidence = engine(-73);
   const candidate = { ...evidence.played_move, uci: 'd6d5', san: 'd5', rank: 1, score: { cp: 4, mate: null, bound: 'exact' } };
