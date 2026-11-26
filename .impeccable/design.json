@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-26T00:39:14.610293+00:00",
+  "generatedAt": "2026-11-26T10:14:30.991583+00:00",
   "title": "Design System: Chess study",
   "extensions": {
     "colorMeta": {
@@ -496,7 +496,7 @@
       {
         "name": "replay-step",
         "value": "850ms",
-        "purpose": "Autoplay rest at each player decision, followed by the existing turn transition."
+        "purpose": "Autoplay rest at each half-move, including opponent turns; no intermediate turn transition."
       }
     ],
     "breakpoints": [
@@ -512,7 +512,7 @@
       },
       {
         "name": "stack-replay",
-        "value": "900px",
+        "value": "760px",
         "query": "max-width"
       },
       {
@@ -528,6 +528,16 @@
       {
         "name": "narrow-phone",
         "value": "370px",
+        "query": "max-width"
+      },
+      {
+        "name": "compact-replay",
+        "value": "1300px",
+        "query": "max-width"
+      },
+      {
+        "name": "stack-replay-coach",
+        "value": "1120px",
         "query": "max-width"
       }
     ]
@@ -593,7 +603,7 @@
       "name": "Replay navigation",
       "kind": "nav",
       "refersTo": "button-play",
-      "description": "Orientation and transport controls below the board.",
+      "description": "Orientation and transport controls below the board. Each step visits one half-move, including opponent turns; autoplay uses the same sequence.",
       "html": "<nav class=\"ds-transport\" aria-label=\"Replay controls\"><button class=\"ds-icon\" aria-label=\"Previous move\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m15 18-6-6 6-6\"/></svg></button><button class=\"ds-play\" aria-label=\"Play replay\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 3 14 9-14 9V3z\"/></svg></button><button class=\"ds-icon\" aria-label=\"Next move\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg></button></nav>",
       "css": ".ds-transport{display:flex;align-items:center;gap:4px}.ds-icon,.ds-play{font-family:'DM Sans Variable',sans-serif;border:0;cursor:pointer;transition:background-color 140ms,color 140ms;display:inline-grid;place-items:center;width:36px;height:36px;border-radius:8px;flex-shrink:0;background:transparent;color:#a5adb8}.ds-play{width:38px;background:var(--hover,#202329);color:var(--ink,#f1f2f4);margin:0 5px}.ds-icon:hover:not(:disabled){background:#202329}.ds-play:hover{background:#2b2e34}.ds-icon:focus-visible,.ds-play:focus-visible{outline:2px solid #91b4d3;outline-offset:4px;}.ds-icon:disabled{opacity:.42;cursor:default}@media(prefers-reduced-motion:reduce){button{transition:none;animation:none}}"
     },
@@ -617,7 +627,7 @@
       "name": "Coach response and move exploration",
       "kind": "card",
       "refersTo": "coach-card",
-      "description": "The exercise keeps its short position overview before attempts and after completion. View review reveals inline SAN buttons and the original move control; detail stays hidden until selection. This illustrative preview shows one selected reason and saved engine steps. Selection annotates the root board; continuation steps change it. Legacy move rows remain collapsed; taxonomy is internal analytics.",
+      "description": "The exercise keeps its short position overview before attempts and after completion. View review reveals inline SAN buttons and the original move control; detail stays hidden until selection, except a saved-error navigation jump reveals the played-move assessment directly. This illustrative preview shows one selected reason and saved engine steps. Selection annotates the root board; continuation steps change it. Legacy move rows remain collapsed; taxonomy is internal analytics.",
       "html": "<article class=\"ds-coach\"><section class=\"ds-section\"><h3>Understand the position</h3><p>Activity and king safety guide the plan. <button type=\"button\" class=\"ds-inline-move\" aria-expanded=\"true\" aria-controls=\"ds-move-detail\" aria-label=\"Hide explanation for Nf3\">Nf3</button> develops the knight and supports the center before castling.</p></section><section class=\"ds-section\"><h3>Your move</h3><div class=\"ds-player-row\"><button type=\"button\" class=\"ds-candidate\" aria-pressed=\"false\" aria-expanded=\"false\" aria-controls=\"ds-move-detail\" aria-label=\"Show explanation for Nc3, player move\"><span class=\"ds-candidate-heading\"><span class=\"ds-labels\"><strong>Nc3</strong><span class=\"ds-player-badge\">Player move</span></span><span class=\"ds-meta\"><span class=\"ds-score\" aria-label=\"Evaluation +0.3, White perspective\">+0.3</span><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M7 17 17 7M7 7h10v10\"/></svg></span></span></button></div></section><section class=\"ds-move-detail\" id=\"ds-move-detail\" aria-label=\"Nf3 explanation\"><div class=\"ds-candidate-heading\"><h3>Nf3</h3><span class=\"ds-score\" aria-label=\"Evaluation +0.4, White perspective\">+0.4</span></div><p class=\"ds-reason\">Develop the knight and support the center while preparing to castle.</p><div class=\"ds-engine-line\" role=\"group\" aria-label=\"Explore engine continuation\"><p>Engine continuation</p><div class=\"ds-line-moves\"><button type=\"button\" aria-pressed=\"true\">Position</button><button type=\"button\" aria-pressed=\"false\" aria-label=\"Show Nf3, step 1\">Nf3</button><button type=\"button\" aria-pressed=\"false\" aria-label=\"Show Nc6, step 2\">Nc6</button></div></div></section></article>",
       "css": ".ds-coach{font-family:'DM Sans Variable',sans-serif;background:var(--surface,#000000);color:var(--ink,#f1f2f4);border:1px solid var(--line,#2b2e34);border-radius:12px;padding:24px;font-size:16px;line-height:1.65;overflow-wrap:anywhere}.ds-section h3{margin:0 0 10px;font-size:17px;font-weight:600;line-height:1.4;letter-spacing:-.015em}.ds-section p{margin:0;color:#d6d9df;max-width:72ch}.ds-section+.ds-section{margin-top:24px;padding-top:20px;border-top:1px solid var(--line,#2b2e34)}.ds-player-row{background:var(--selected,#1d2b38)}.ds-candidate{font-family:inherit;display:block;width:100%;min-height:54px;padding:14px 12px;border:0;background:transparent;color:inherit;text-align:left;line-height:1.6;cursor:pointer;transition:background-color 140ms,color 140ms}.ds-candidate:hover{background:var(--hover,#202329)}.ds-candidate[aria-pressed=true]{background:var(--selected,#1d2b38);outline:1px solid var(--accent,#91b4d3);outline-offset:-1px;border-radius:8px}.ds-candidate:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:-3px}.ds-candidate-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin-bottom:4px}.ds-labels{display:flex;flex-wrap:wrap;align-items:center;gap:4px 9px}.ds-labels strong{min-width:32px;font-size:16px;font-weight:650}.ds-player-badge{padding:2px 6px;border-radius:4px;background:var(--selection-badge,#2b4257);color:var(--accent,#91b4d3);font-size:11px;font-weight:600;white-space:nowrap}.ds-meta{display:inline-flex;align-items:center;justify-content:flex-end;gap:12px;color:var(--accent,#91b4d3)}.ds-score{min-width:50px;padding:3px 7px;border-radius:6px;background:var(--positive-surface,#1d3328);color:var(--positive,#9bd5b0);font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;text-align:center;white-space:nowrap}.ds-reason{display:block;font-size:14px;color:#d6d9df}@media(max-width:700px){.ds-coach{padding:18px}}@media(max-width:370px){.ds-coach{padding:14px}.ds-candidate{padding:12px 8px}.ds-meta{gap:8px}}@media(prefers-reduced-motion:reduce){.ds-candidate{transition:none}}.ds-inline-move{display:inline;padding:1px 3px;border:0;border-radius:4px;background:transparent;color:var(--accent,#91b4d3);font:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;white-space:nowrap;cursor:pointer}.ds-inline-move:hover,.ds-inline-move[aria-expanded=true]{background:var(--selected,#1d2b38);color:var(--accent-hover,#c3daed)}.ds-inline-move:focus-visible,.ds-line-moves button:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}.ds-move-detail{border-top:1px solid var(--line,#2b2e34);margin-top:20px;padding-top:20px}.ds-move-detail h3{margin:0;font-size:17px}.ds-move-detail p{margin:10px 0 0}.ds-engine-line{margin-top:16px}.ds-engine-line>p{color:var(--muted,#a5adb8);font-size:12px}.ds-line-moves{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}.ds-line-moves button{font-family:inherit;min-width:36px;min-height:36px;padding:6px 8px;border:0;border-radius:4px;background:transparent;color:var(--accent,#91b4d3);font-size:14px;cursor:pointer;transition:background-color 140ms,color 140ms}.ds-line-moves button:hover,.ds-line-moves button[aria-pressed=true]{background:var(--selected,#1d2b38);color:var(--ink,#f1f2f4)}@media(prefers-reduced-motion:reduce){.ds-line-moves button{transition:none}}"
     },
@@ -635,6 +645,22 @@
       "description": "A failed background sync leaves saved games usable and offers retry or account settings, separated by fine rules.",
       "html": "<div class=\"ds-sync-notice\" role=\"alert\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 8v4m0 4h.01\"/></svg><div><p>Could not check for new games. Please try again.</p><p class=\"ds-sync-hint\">Your saved games are still available.</p><div class=\"ds-sync-actions\"><button>Try again</button><button>Account settings</button></div></div></div>",
       "css": ".ds-sync-notice{font-family:\"DM Sans Variable\",sans-serif;display:flex;align-items:flex-start;gap:10px;padding:16px 0;margin-bottom:18px;border-top:1px solid var(--line,#2b2e34);border-bottom:1px solid var(--line,#2b2e34);font-size:13px;line-height:1.6;color:var(--ink,#f1f2f4);background:var(--canvas,#000000)}.ds-sync-notice>svg{flex-shrink:0;color:var(--warning,#e6c389);margin-top:2px}.ds-sync-notice p{margin:0}.ds-sync-notice .ds-sync-hint{color:var(--muted,#a5adb8);margin-top:3px}.ds-sync-actions{display:flex;gap:20px;flex-wrap:wrap}.ds-sync-actions button{font:inherit;font-size:12px;font-weight:600;min-height:36px;border:0;padding:0;background:transparent;color:var(--accent,#91b4d3);cursor:pointer}.ds-sync-actions button:hover{text-decoration:underline}.ds-sync-actions button:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}"
+    },
+    {
+      "name": "Replay move list",
+      "kind": "custom",
+      "refersTo": "replay-move-list",
+      "description": "Illustrative numbered White/Black SAN table. Each button opens the position before its move; scores use the mover perspective. The panel matches board height on desktop and sits below it on mobile.",
+      "html": "<aside class=\"ds-moves\"><header><strong>Moves</strong><span>Eval for mover</span></header><table><thead><tr><th></th><th>White</th><th>Black</th></tr></thead><tbody><tr><th>1.</th><td><button aria-current=\"step\"><b>e4</b><span class=\"positive\">+0.30</span></button></td><td><button><b>e5</b><span class=\"negative\">−0.25</span></button></td></tr><tr><th>2.</th><td><button><b>Nf3</b><span>—</span></button></td><td></td></tr></tbody></table></aside>",
+      "css": ".ds-moves{max-width:280px;background:var(--surface,#000);color:var(--ink,#f1f2f4);border:1px solid var(--line,#2b2e34);border-radius:12px;overflow:hidden;font-family:inherit}.ds-moves header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:14px 12px 10px;font-size:14px}.ds-moves header span,.ds-moves th,.ds-moves button span{font-size:11px;color:var(--muted,#a5adb8)}.ds-moves table{width:100%;table-layout:fixed;border-collapse:collapse;font-variant-numeric:tabular-nums}.ds-moves th{height:32px;font-weight:500}.ds-moves th:first-child{width:32px}.ds-moves td{padding:2px}.ds-moves button{display:flex;align-items:center;justify-content:space-between;gap:3px;width:100%;min-height:36px;padding:7px 6px;border:0;border-radius:4px;color:inherit;background:transparent;cursor:pointer;font-family:inherit}.ds-moves b{font-size:12px;font-weight:550}.ds-moves button .positive{color:var(--positive,#9bd5b0)}.ds-moves button .negative{color:var(--negative,#f0ad9f)}.ds-moves button:hover{background:var(--hover,#202329)}.ds-moves button[aria-current]{background:var(--selected,#1d2b38);outline:1px solid var(--accent,#91b4d3);outline-offset:-1px}.ds-moves button:focus-visible{outline:2px solid var(--accent-hover,#c3daed);outline-offset:-2px}"
+    },
+    {
+      "name": "Saved coach review navigation",
+      "kind": "nav",
+      "refersTo": "coach-review-navigation",
+      "description": "Previous and next selected-player errors with saved coaching. Green arrows reveal the complete response and played-move assessment directly; endpoints disable unavailable directions.",
+      "html": "<nav class=\"ds-review-nav\" aria-label=\"Saved coach reviews\"><button disabled><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m15 18-6-6 6-6\"/></svg>Previous review</button><button>Next review<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg></button></nav>",
+      "css": ".ds-review-nav{display:flex;justify-content:space-between;gap:8px;padding-top:16px;margin-top:16px;border-top:1px solid var(--line,#2b2e34);font-family:inherit}.ds-review-nav button{display:flex;align-items:center;justify-content:center;gap:4px;min-height:44px;padding:6px;border:0;border-radius:8px;background:transparent;color:var(--positive,#9bd5b0);font:inherit;font-size:12px;cursor:pointer}.ds-review-nav button:hover:not(:disabled){background:var(--positive-surface,#1d3328)}.ds-review-nav button:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}.ds-review-nav button:disabled{opacity:.42;cursor:default}.ds-review-nav svg{flex-shrink:0}"
     }
   ],
   "narrative": {
@@ -655,7 +681,7 @@
     ],
     "dos": [
       "**Do** preserve the approved pure-black workspace and panels, blue-grey board, and compact library.",
-      "**Do** keep the settled board, slider, accessible position announcement, and coaching synchronized to the actual PGN half-move; only the board previews the intervening position during a turn transition.",
+      "**Do** keep the board, move list, slider, accessible position announcement, and coaching synchronized to the actual PGN half-move, including opponent turns.",
       "**Do** use text alongside result and status colors.",
       "**Do** preserve visible keyboard focus and the implemented reduced-motion behavior.",
       "**Do** retain the locally bundled DM Sans, reference-matched board assets, and original header icon."

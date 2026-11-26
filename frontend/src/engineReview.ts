@@ -5,18 +5,37 @@ import type { CoachResponse, EngineReview, GameAnalysisSummary, Move, MoveQualit
 export const qualityLabels: Record<MoveQuality, string> = {good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder', uncertain: 'Quality uncertain'};
 export const analysisActive = (analysis?: GameAnalysisSummary | null) => analysis?.status === 'queued' || analysis?.status === 'running';
 export const coachingPending = (analysis?: GameAnalysisSummary | null) => (analysis?.coach_completed ?? 0) < (analysis?.coach_total ?? 0);
+export const opponentAnalysisPending = (analysis?: GameAnalysisSummary | null) => !!analysis &&
+  (analysis.opponent_total === null || (analysis.opponent_completed ?? 0) < (analysis.opponent_total ?? 0));
 
 export function analysisProgress(analysis: GameAnalysisSummary) {
-  if (analysis.status === 'queued') return `Queued · ${analysis.completed}/${analysis.total} moves`;
-  if (analysis.completed === analysis.total && coachingPending(analysis)) {
+  const completed = analysis.completed + (analysis.opponent_completed ?? 0);
+  const total = analysis.total + (analysis.opponent_total ?? 0);
+  if (analysis.status === 'queued') return `Queued · ${completed}/${total} moves`;
+  if (analysis.completed === analysis.total && !opponentAnalysisPending(analysis) && coachingPending(analysis)) {
     const progress = `${analysis.coach_completed}/${analysis.coach_total} flagged moves`;
     if (analysis.status === 'running') return `Coaching ${progress}`;
-    if (analysis.status === 'completed') return `${analysis.completed} moves analyzed · Coach reviews pending`;
+    if (analysis.status === 'completed') return `${completed} moves analyzed · Coach reviews pending`;
     return `Coaching paused · ${progress}`;
   }
-  if (analysis.status === 'running') return `Analyzing ${analysis.completed}/${analysis.total} moves`;
-  if (analysis.status === 'completed') return `${analysis.completed} moves analyzed${analysis.coach_completed ? ` · ${analysis.coach_completed} coach reviews saved` : ''}`;
-  return `Paused · ${analysis.completed}/${analysis.total} moves`;
+  if (analysis.status === 'running') return `Analyzing ${completed}/${total} moves`;
+  if (analysis.status === 'completed') return `${completed} moves analyzed${opponentAnalysisPending(analysis) ? ' · Opponent analysis pending' : analysis.coach_completed ? ` · ${analysis.coach_completed} coach reviews saved` : ''}`;
+  return `Paused · ${completed}/${total} moves`;
+}
+
+export function matchingReview(move: Move | undefined, position: Position | undefined, review?: EngineReview) {
+  return move && position && review?.fen === position.fen && review.played_move === move.uci ? review : undefined;
+}
+
+export function coachedErrorPlies(moves: Move[], positions: Position[], reviews: Record<string, EngineReview>, responses: Record<string, CoachResponse>, color: string) {
+  return moves.flatMap((move, ply) => {
+    const response = responses[String(ply)];
+    const review = matchingReview(move, positions[ply], reviews[String(ply)]);
+    const status = review?.stockfish.move_quality?.status ?? response?.stockfish?.move_quality?.status;
+    const explanation = response?.teaching?.position_explanation ?? response?.teaching?.positional_thesis ?? response?.text;
+    return move.color === color && response?.fen === positions[ply]?.fen && response.played_move === move.uci
+      && !!explanation?.trim() && ['inaccuracy', 'mistake', 'blunder'].includes(status ?? '') ? [ply] : [];
+  });
 }
 
 export function mergeCoachResponses(current: Record<string, CoachResponse>, incoming: Record<string, CoachResponse>) {

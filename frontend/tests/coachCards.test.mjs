@@ -10,10 +10,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 const directory = new URL('../node_modules/.cache/', import.meta.url);
 await mkdir(directory, {recursive: true});
 const output = new URL(`coach-cards-${process.pid}.mjs`, directory);
-await build({stdin: {contents: "export {default as CoachCards} from './CoachCards'; export {default as PracticeCard} from './PracticeCard';",
+await build({stdin: {contents: "export {default as CoachCards} from './CoachCards'; export {default as PracticeCard} from './PracticeCard'; export {default as MoveList} from './MoveList';",
   resolveDir: fileURLToPath(new URL('../src/', import.meta.url)), loader: 'tsx'},
   bundle: true, platform: 'node', format: 'esm', packages: 'external', jsx: 'automatic', outfile: fileURLToPath(output)});
-const {CoachCards, PracticeCard} = await import(pathToFileURL(fileURLToPath(output)).href);
+const {CoachCards, PracticeCard, MoveList} = await import(pathToFileURL(fileURLToPath(output)).href);
 await unlink(output);
 
 const response = {
@@ -142,4 +142,30 @@ test('the practice card shows only the overview both during and after the exerci
     assert.equal(html.includes('View review'), complete);
     assert.doesNotMatch(html, /Good move|You found an alternative|Try another move|class="practice-feedback"/);
   }
+});
+
+test('move list pairs actual move numbers, handles Black starts, missing evals and mate', () => {
+  const moves = [{number: 23, color: 'black', san: 'O-O', uci: 'e8g8'}, {number: 24, color: 'white', san: 'a8=Q+', uci: 'a7a8q'},
+    {number: 24, color: 'black', san: 'Qh2#', uci: 'h4h2'}];
+  const positions = moves.map((_, index) => ({fen: `fen-${index}`}));
+  const reviews = {'0': {fen: 'fen-0', played_move: 'e8g8', stockfish: {perspective: 'Black', played_move: {score: {cp: 105, mate: null, bound: 'exact'}}}},
+    '2': {fen: 'fen-2', played_move: 'h4h2', stockfish: {perspective: 'Black', played_move: {score: {cp: null, mate: 1, bound: 'exact'}}}}};
+  const html = renderToStaticMarkup(React.createElement(MoveList, {moves, positions, reviews, ply: 0, onSelect() {}}));
+  assert.match(html, />White<.*>Black</);
+  assert.match(html, />23\.</); assert.match(html, />24\.</);
+  assert.match(html, /Review 23… O-O, evaluation \+1.05 from Black/);
+  assert.match(html, /Review 24. a8=Q\+, evaluation not available/);
+  assert.match(html, /\+M1/);
+  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
+  assert.equal((html.match(/<button/g) ?? []).length, 3);
+});
+
+test('opponent engine-only panel renders top three and the fourth played move with scores', () => {
+  const top_moves = ['e7e5', 'c7c5', 'e7e6'].map((uci, index) => ({uci, san: ['e5', 'c5', 'e6'][index], depth: 12, score: {cp: 30 - index * 10, mate: null, bound: 'exact'}}));
+  const played_move = {uci: 'a7a5', san: 'a5', depth: 12, score: {cp: -90, mate: null, bound: 'exact'}};
+  const html = render({response: undefined, engineMode: true, opponent: true, engineReview: {fen: 'opponent', played_move: 'a7a5', stockfish: {perspective: 'Black', top_moves, played_move}}});
+  assert.equal((html.match(/class="candidate-row/g) ?? []).length, 4);
+  for (const value of ['+0.30', '+0.20', '+0.10', '−0.90']) assert.ok(html.includes(value));
+  assert.doesNotMatch(html, /Understand the position/);
+  assert.match(html, /Opponent move/);
 });

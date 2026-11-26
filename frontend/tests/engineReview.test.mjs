@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { engineMoves, engineSelectionId, visibleEngineCandidate, errorMarkers, analysisProgress, coachingPending, mergeCoachResponses } from '../src/engineReview.ts';
-import { playerTurnStops, replayNavigation, restoreReplay } from '../src/replayNavigation.ts';
+import { engineMoves, engineSelectionId, visibleEngineCandidate, errorMarkers, analysisProgress, coachingPending, coachedErrorPlies, mergeCoachResponses } from '../src/engineReview.ts';
+import { replayStops, replayNavigation, restoreReplay } from '../src/replayNavigation.ts';
 
 const engineMove = (uci, san, cp, rank) => ({uci, san, rank, depth: 12, score: {cp, mate: null, bound: 'exact'}});
 const top = [engineMove('e2e4', 'e4', 50, 1), engineMove('d2d4', 'd4', 40, 2), engineMove('g1f3', 'Nf3', 35, 3), engineMove('c2c4', 'c4', 20, 4)];
@@ -54,7 +54,7 @@ test('timeline markers target pre-move player stops, skip Good/Uncertain and rej
   const reviews = Object.fromEntries(moves.map((move, ply) => [ply, {fen: positions[ply].fen, played_move: move.uci,
     stockfish: {move_quality: {status: ['good', 'inaccuracy', 'mistake', 'blunder', 'uncertain'][Math.floor(ply / 2)]}}}]));
   for (const [isWhite, color, expected] of [[true, 'white', [2, 4, 6]], [false, 'black', [3, 5, 7]]]) {
-    const stops = playerTurnStops(positions, isWhite);
+    const stops = replayStops(positions, isWhite);
     const markers = errorMarkers(moves, positions, stops, reviews, color);
     assert.deepEqual(markers.map(marker => marker.ply), expected);
     for (const marker of markers) {
@@ -64,14 +64,14 @@ test('timeline markers target pre-move player stops, skip Good/Uncertain and rej
     }
   }
   reviews['2'].fen = 'outdated'; reviews['4'].played_move = 'different';
-  assert.deepEqual(errorMarkers(moves, positions, playerTurnStops(positions, true), reviews, 'white').map(marker => marker.ply), [6]);
+  assert.deepEqual(errorMarkers(moves, positions, replayStops(positions, true), reviews, 'white').map(marker => marker.ply), [6]);
 });
 
 test('custom Black-to-move start and short games use the actual stop index', () => {
   const positions = [{fen: 'start b - - 0 30'}, {fen: 'after w - - 1 31'}];
   const moves = [{uci: 'e8g8', san: 'O-O', number: 30, color: 'black'}];
   const reviews = {'0': {fen: positions[0].fen, played_move: 'e8g8', stockfish: {move_quality: {status: 'mistake'}}}};
-  const markers = errorMarkers(moves, positions, playerTurnStops(positions, false), reviews, 'black');
+  const markers = errorMarkers(moves, positions, replayStops(positions, false), reviews, 'black');
   assert.equal(markers[0].percent, 0);
   assert.equal(markers[0].label, '30… O-O — Mistake');
   assert.equal(analysisProgress({status: 'running', completed: 18, total: 42}), 'Analyzing 18/42 moves');
@@ -96,4 +96,24 @@ test('live automatic reviews merge without replacing a newer manual response', (
   assert.deepEqual(mergeCoachResponses(before, {'2': old, '4': automatic}), {'2': current, '4': automatic});
   assert.deepEqual(mergeCoachResponses(before, {'2': automatic}), {'2': automatic});
   assert.deepEqual(before, {'2': current});
+});
+
+test('review arrows select only matching player errors with a saved full response', () => {
+  const positions = Array.from({length: 13}, (_, ply) => ({fen: `position-${ply}`}));
+  const moves = positions.slice(0, -1).map((_, ply) => ({uci: `move-${ply}`, color: ply % 2 ? 'black' : 'white'}));
+  const reviews = Object.fromEntries(moves.map((move, ply) => [ply, {fen: positions[ply].fen, played_move: move.uci,
+    stockfish: {move_quality: {status: ['good', 'inaccuracy', 'mistake', 'blunder', 'uncertain', 'blunder'][Math.floor(ply / 2)]}}}]));
+  const responses = Object.fromEntries(moves.map((move, ply) => [ply, {...reviews[ply], teaching: {position_explanation: 'Full review.'}}]));
+  delete responses[10]; // Engine result exists, but coaching has not finished.
+  assert.deepEqual(coachedErrorPlies(moves, positions, reviews, responses, 'white'), [2, 4, 6]);
+  assert.deepEqual(coachedErrorPlies(moves, positions, reviews, responses, 'black'), [3, 5, 7, 11]);
+  responses[2].fen = 'stale'; responses[4].played_move = 'other'; responses[6].teaching.position_explanation = '';
+  assert.deepEqual(coachedErrorPlies(moves, positions, reviews, responses, 'white'), []);
+});
+
+test('engine progress includes opponent searches before entering the coaching phase', () => {
+  const analysis = {status: 'running', total: 20, completed: 20, opponent_total: 19, opponent_completed: 5, coach_total: 3, coach_completed: 0};
+  assert.equal(analysisProgress(analysis), 'Analyzing 25/39 moves');
+  assert.equal(analysisProgress({...analysis, opponent_completed: 19}), 'Coaching 0/3 flagged moves');
+  assert.equal(analysisProgress({...analysis, status: 'completed', opponent_total: null, opponent_completed: 0}), '20 moves analyzed · Opponent analysis pending');
 });
