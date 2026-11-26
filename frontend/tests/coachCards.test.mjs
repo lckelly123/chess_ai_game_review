@@ -143,7 +143,7 @@ test('legacy thesis stays readable with collapsed move explanations', () => {
   assert.doesNotMatch(html, /Unique candidate detail|Unique original move assessment/);
 });
 
-test('the practice card shows only the overview both during and after the exercise', () => {
+test('the practice card keeps the hint spoiler-free and acknowledges success without a manual review step', () => {
   for (const complete of [false, true]) {
     const html = renderToStaticMarkup(React.createElement(PracticeCard, {
       overview: response.teaching.position_overview, original: {san: 'd4'},
@@ -151,8 +151,9 @@ test('the practice card shows only the overview both during and after the exerci
     }));
     assert.match(html, /The center needs attention/);
     assert.doesNotMatch(html, /Control the center with|Unique candidate detail|Unique original move assessment/);
-    assert.equal(html.includes('View review'), complete);
-    assert.doesNotMatch(html, /Good move|You found an alternative|Try another move|class="practice-feedback"/);
+    assert.doesNotMatch(html, /View review|Control the center with|Try another move/);
+    assert.equal(html.includes('Good move. Let’s look at why.'), complete);
+    assert.equal(html.includes('class="practice-feedback"'), complete);
   }
 });
 

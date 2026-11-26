@@ -52,8 +52,9 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   }, [game.engine_analyses, analysis, coachResponses]);
   const engineReview = matchingReview(nextMove, position, reviews[String(ply)]);
   const practiceEligible = revealedPly !== ply && needsPractice(nextMove, color, position.fen, engineReview, coachResponse);
-  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, false);
+  const practice = useReviewPractice(game.id, color, ply, position.fen, nextMove?.uci ?? '', practiceEligible, false, reducedMotion);
   const hideReview = practice.active || !!practice.shownMove;
+  const speechId = `${game.id}:${ply}:${coachResponse?.response_id ?? position.fen}`;
   const markers = errorMarkers(game.moves, game.positions, stops, reviews, color);
   const reviewPlies = coachedErrorPlies(game.moves, game.positions, reviews, coachResponses, color);
   const previousReview = reviewPlies.filter(value => value < ply).at(-1);
@@ -83,10 +84,10 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const toggleGamePlayback = () => { setVariation(null); dispatch({type: 'toggle-play'}); };
 
   useEffect(() => {
-    setCandidateSelection(revealedPly === ply && coachResponse?.played_move
+    setCandidateSelection((revealedPly === ply || practice.complete) && coachResponse?.played_move
       ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move} : null);
     setVariation(null);
-  }, [ply, revealedPly, coachResponse?.response_id]);
+  }, [ply, revealedPly, coachResponse?.response_id, practice.complete]);
   useEffect(() => { if (practice.active) dispatch({type: 'pause'}); }, [practice.active, ply]);
   const originalMove = practice.active && !practice.shownMove ? nextMove : undefined;
 
@@ -251,9 +252,13 @@ export default function Replay({ game, username }: { game: GameDetail; username:
           <button type="button" className="text-button" disabled={submitting} onClick={() => void resumeAnalysis()}>{submitting ? 'Starting…' : 'Analyze remaining moves'}</button></p>}
         {(analysisError || analysis?.error) && <p className="coach-error" role="alert">{analysisError || analysis?.error} Return to the library to resume.</p>}
         <div className="coach-result" aria-busy={analyzing && !coachResponse}>
-          {practiceEligible && <PracticeCard practice={practice} original={nextMove} overview={coachResponse?.teaching?.position_overview}/>}
-          {!hideReview && <CoachCards key={`${position.fen}:${coachResponse?.response_id ?? ''}`} response={coachResponse} engineReview={engineReview} engineMode={!!analysis || opponentTurn} opponent={opponentTurn} nextMove={nextMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={false}
-            activeSequenceId={playback?.sequence.id} onPlaySequence={playSequence}/>}
+          {practiceEligible && hideReview && <div className={`practice-stage${practice.complete && !practice.checking ? ' practice-stage-complete' : ''}`}>
+            <div><PracticeCard practice={practice} original={nextMove} overview={coachResponse?.teaching?.position_overview} speechId={speechId} reducedMotion={reducedMotion}/></div>
+          </div>}
+          {!hideReview && <div key={speechId} className={practice.justCompleted ? 'coach-review-reveal' : undefined}><div>
+            <CoachCards response={coachResponse} engineReview={engineReview} engineMode={!!analysis || opponentTurn} opponent={opponentTurn} nextMove={nextMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={false}
+              speechId={speechId} reducedMotion={reducedMotion} activeSequenceId={playback?.sequence.id} onPlaySequence={playSequence}/>
+          </div></div>}
           {reviewPlies.length > 0 && <nav className="coach-review-navigation" aria-label="Navigate saved coach reviews">
             <button type="button" disabled={previousReview === undefined} onClick={() => previousReview !== undefined && jumpReview(previousReview)}
               aria-label="Previous coached inaccuracy, mistake or blunder"><ChevronLeft size={22} aria-hidden="true"/><span>Previous review</span></button>
