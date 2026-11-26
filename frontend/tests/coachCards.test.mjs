@@ -63,18 +63,21 @@ test('an outdated coach contract is identified even when its taxonomy is current
   assert.doesNotMatch(render({response: {...response, coach_current: true, classification_current: true}}), /uses an earlier coach/);
 });
 
-test('saved tactic findings coexist with staged move details and continuation playback', () => {
+test('saved tactic findings stay hidden while move details and continuation playback work', () => {
   const tactic_classification = {version: 1, fen: response.fen, played_move: response.played_move,
     status: 'classified', lines: [{direction: 'missed', motifs: ['fork'], coverage: 'bounded'},
       {direction: 'allowed', motifs: ['hanging_piece'], coverage: 'bounded'}]};
-  const engineReview = {fen: response.fen, played_move: response.played_move, stockfish: {tactic_classification}};
-  for (const selectedUci of [undefined, 'e2e4']) {
-    const html = render({engineReview, selectedUci});
-    assert.match(html, /Tactic classification:/);
-    assert.match(html, /Missed: fork · Allowed: hanging piece/);
-    assert.equal(html.includes('Unique candidate detail'), !!selectedUci);
-    assert.equal(html.includes('Engine continuation'), !!selectedUci);
-    assert.doesNotMatch(html, /Unique original move assessment/);
+  const stockfish = {tactic_classification, perspective: 'White',
+    played_move: {uci: 'd2d4', san: 'd4', depth: 12, score: {cp: -200, mate: null, bound: 'exact'}}};
+  const engineReview = {fen: response.fen, played_move: response.played_move, stockfish};
+  for (const currentResponse of [response, {...response, stockfish}, undefined]) {
+    for (const selectedUci of [undefined, 'e2e4']) {
+      const html = render({response: currentResponse, engineReview, selectedUci});
+      assert.doesNotMatch(html, /tactic-classification|Tactic classification:|Missed: fork|Allowed: hanging piece|Not yet analysed/);
+      assert.equal(html.includes('Unique candidate detail'), !!currentResponse && !!selectedUci);
+      assert.equal(html.includes('Engine continuation'), !!currentResponse && !!selectedUci);
+      assert.doesNotMatch(html, /Unique original move assessment/);
+    }
   }
 });
 
@@ -90,10 +93,11 @@ test('the practice card shows only the overview both during and after the exerci
   for (const complete of [false, true]) {
     const html = renderToStaticMarkup(React.createElement(PracticeCard, {
       overview: response.teaching.position_overview, original: {san: 'd4'},
-      practice: {complete, attempts: [], shownMove: complete ? {san: 'e4'} : undefined, showReview() {}},
+      practice: {complete, attempts: complete ? [{quality: 'good'}] : [], shownMove: complete ? {san: 'e4'} : undefined, showReview() {}},
     }));
     assert.match(html, /The center needs attention/);
     assert.doesNotMatch(html, /Control the center with|Unique candidate detail|Unique original move assessment/);
     assert.equal(html.includes('View review'), complete);
+    assert.doesNotMatch(html, /Good move|You found an alternative|Try another move|class="practice-feedback"/);
   }
 });

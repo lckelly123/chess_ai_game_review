@@ -410,25 +410,22 @@ def test_real_stockfish_game_move_reuses_shared_search_and_grading(monkeypatch):
         assert result["fen"] == review.position.fen and result["perspective"] == review.position.side_to_move
         assert len(result["top_moves"]) == 5 and result["played_move"]["uci"] == review.played_move_uci
         assert result["move_quality"] == assess_player_move(result["top_moves"][0], result["played_move"])
-        assert result["tactic_classification"]["version"] == 1
-        assert result["tactic_classification"]["played_move"] == review.played_move_uci
+        assert "tactic_classification" not in result
 
 
 def test_postgres_progress_persists_and_completed_game_restores(test_db_url):
-    from backend.tactics import with_tactic_classification
     db = Database(test_db_url)
     game = normalize_game(raw_game(), "alice")
     db.save_import("alice", [game], 1)
     calls = []
     def engine(review):
         calls.append(review.played_move_uci)
-        return with_tactic_classification(review.position.fen, review.played_move_uci,
-                                          evidence(review), allow_engine=False)
+        return evidence(review)
     with TestClient(create_app(test_db_url, game_engine=engine)) as client:
         client.post(f'/api/games/{game["id"]}/analysis', json={"username": "alice"})
         saved = wait_completed(client, game["id"])
         assert saved["counts"] == {"blunder": 4}
-        assert all(move["stockfish"]["tactic_classification"]["version"] == 1
+        assert all("tactic_classification" not in move["stockfish"]
                    for move in saved["moves"].values())
     with TestClient(create_app(test_db_url, game_engine=engine)) as client:
         assert client.get(f'/api/games/{game["id"]}').json()["engine_analyses"]["white"] == saved
