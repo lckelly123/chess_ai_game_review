@@ -33,10 +33,10 @@ export default function MoveList({ moves, positions, reviews, ply, onSelect }: {
             const index = row[color], move = index === undefined ? undefined : moves[index];
             const review = move && index !== undefined ? matchingReview(move, positions[index], reviews[String(index)]) : undefined;
             const score = engineEvaluation(review?.stockfish);
-            return <td key={color}>{move && index !== undefined && <button type="button" ref={ply === index ? selected : undefined}
-              aria-current={ply === index ? 'step' : undefined} onClick={() => onSelect(index)}
+            return <td key={color}>{move && index !== undefined && <button type="button" ref={ply === index + 1 ? selected : undefined}
+              aria-current={ply === index + 1 ? 'step' : undefined} onClick={() => onSelect(index + 1)}
               aria-label={`Review ${number}${color === 'white' ? '.' : '…'} ${move.san}, ${score ? `evaluation ${score.value} from ${score.perspective}’s perspective` : 'evaluation not available'}`}
-              title={`Position before ${number}${color === 'white' ? '.' : '…'} ${move.san}${score ? ` · ${score.label}` : ''}`}>
+              title={`Position after ${number}${color === 'white' ? '.' : '…'} ${move.san}${score ? ` · ${score.label}` : ''}`}>
               <span className="move-list-san">{move.san}</span>
               {score ? <span className={`move-list-eval ${score.tone}`}>{score.value}</span> : <span className="move-list-eval missing" aria-hidden="true">—</span>}
             </button>}</td>;

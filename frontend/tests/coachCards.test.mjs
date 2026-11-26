@@ -163,7 +163,8 @@ test('move list pairs actual move numbers, handles Black starts, missing evals a
   const positions = moves.map((_, index) => ({fen: `fen-${index}`}));
   const reviews = {'0': {fen: 'fen-0', played_move: 'e8g8', stockfish: {perspective: 'Black', played_move: {score: {cp: 105, mate: null, bound: 'exact'}}}},
     '2': {fen: 'fen-2', played_move: 'h4h2', stockfish: {perspective: 'Black', played_move: {score: {cp: null, mate: 1, bound: 'exact'}}}}};
-  const html = renderToStaticMarkup(React.createElement(MoveList, {moves, positions, reviews, ply: 0, onSelect() {}}));
+  const list = ply => renderToStaticMarkup(React.createElement(MoveList, {moves, positions, reviews, ply, onSelect() {}}));
+  const html = list(1);
   assert.match(html, />White<.*>Black</);
   assert.match(html, />23\.</); assert.match(html, />24\.</);
   assert.match(html, /Review 23… O-O, evaluation \+1.05 from Black/);
@@ -171,6 +172,9 @@ test('move list pairs actual move numbers, handles Black starts, missing evals a
   assert.match(html, /\+M1/);
   assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
   assert.equal((html.match(/<button/g) ?? []).length, 3);
+  assert.match(html, /aria-current="step"[^>]*title="Position after 23… O-O/);
+  assert.doesNotMatch(list(0), /aria-current="step"/);
+  assert.match(list(3), /aria-current="step"[^>]*title="Position after 24… Qh2#/);
 });
 
 test('opponent engine-only panel renders top three and the fourth played move with scores', () => {

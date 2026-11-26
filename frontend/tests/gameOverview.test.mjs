@@ -15,9 +15,9 @@ const {GameOverview, Board} = await import(output.href);
 await unlink(output);
 
 const game = {white: 'White player', black: 'Black player', positions: [
-  {fen: '8/8/8/8/8/8/4P3/4K2k w - - 0 1', phase: 'endgame'},
-  {fen: '8/8/8/8/4P3/8/8/4K2k b - - 0 1', phase: 'endgame'},
-  {fen: '8/8/8/8/4P3/8/7k/4K3 w - - 1 2', phase: 'endgame'},
+  {fen: '8/8/8/8/8/8/4P3/4K2k w - - 0 1', phase: 'endgame', last_move: null},
+  {fen: '8/8/8/8/4P3/8/8/4K2k b - - 0 1', phase: 'endgame', last_move: ['e2', 'e4']},
+  {fen: '8/8/8/8/4P3/8/7k/4K3 w - - 1 2', phase: 'endgame', last_move: ['h1', 'h2']},
 ], moves: [{number: 1, color: 'white', san: 'e4', uci: 'e2e4', ply: 1, elapsed_seconds: 12.5}, {number: 1, color: 'black', san: 'Kh2', uci: 'h1h2', ply: 2}]};
 const candidate = (cp, uci = 'e2e4') => ({uci, san: uci === 'e2e4' ? 'e4' : 'Kh2', depth: 18, score: {cp, mate: null, bound: 'exact'}});
 const reviews = {
@@ -45,24 +45,27 @@ test('counts include both players and do not classify missing or uncertain moves
   assert.equal(overviewCounts(game, {}) .white.analysed, 0);
 });
 
-test('position and next-move facts stay separate and fixed player columns do not depend on board orientation', () => {
-  const html = render();
+test('position facts describe the displayed board while move facts describe the move just played', () => {
+  const html = render({ply: 1});
   assert.match(html, /White player.*Black player/);
-  assert.match(html, /Selective/);
-  assert.match(html, /43<small> \/ 100/);
-  assert.match(html, /Played next<\/span><strong>1\. e4/);
+  assert.doesNotMatch(html, /Selective|43<small> \/ 100/); // That evidence belongs to the previous position.
+  assert.match(html, /Last move<\/span><strong>1\. e4/);
   assert.match(html, /12.5s/);
   assert.match(html, /−2.00/); // Played score; graph instead uses +0.50.
   assert.match(html, /Endgame/);
   assert.doesNotMatch(html, /move-list-scroll/);
 });
 
-test('variation and final position cannot retain the next move time or evaluation', () => {
-  for (const html of [render({onMainLine: false}), render({ply: 2})]) {
-    assert.doesNotMatch(html, /12.5s|−2.00|>1\. e4<|>Selective</);
+test('starting position and variations omit played-move facts; the final move remains reviewable', () => {
+  for (const html of [render({onMainLine: false}), render()]) {
+    assert.doesNotMatch(html, /12.5s|−2.00|>1\. e4</);
   }
   assert.match(render({onMainLine: false}), /Exploring variation/);
-  assert.match(render({ply: 2}), /End of game/);
+  assert.match(render(), /Starting position/);
+  assert.match(render(), /Selective/);
+  assert.match(render(), /43<small> \/ 100/);
+  assert.match(render({ply: 2}), /Last move<\/span><strong>1… Kh2/);
+  assert.match(render({ply: 2}), /−0.80/);
 });
 
 test('accuracy only appears for a complete, matching versioned timeline', () => {
@@ -75,13 +78,27 @@ test('accuracy only appears for a complete, matching versioned timeline', () => 
   assert.doesNotMatch(render({statistics: stale}), /88.1%|76.4%/);
 });
 
-test('purple recorded-move arrow follows board flip and does not recolour any squares', () => {
-  const board = extra => renderToStaticMarkup(React.createElement(Board, {position: game.positions[0], flipped: false, originalMove: game.moves[0], ...extra}));
-  assert.match(board(), /purple arrow from e2 to e4/);
-  assert.match(board(), /x1="4.5" y1="6.5" x2="4.5" y2="4.5"/);
-  assert.match(board({flipped: true}), /x1="3.5" y1="1.5" x2="3.5" y2="3.5"/);
-  assert.doesNotMatch(board(), /class="square[^\"]*original-move/);
-  assert.doesNotMatch(board({originalMove: undefined}), /original-move-arrow|Recorded move played next/);
+test('Qb4+ is already played, highlights b8 and b4, and has no default arrow in either orientation', () => {
+  const position = {fen: '4k3/8/8/8/1q6/8/8/4K3 w - - 1 2', last_move: ['b8', 'b4'], check_square: 'e1'};
+  for (const flipped of [false, true]) {
+    const html = renderToStaticMarkup(React.createElement(Board, {position, flipped, playedMove: {uci: 'b8b4', san: 'Qb4+'}}));
+    assert.match(html, /Last move Qb4\+: from b8 to b4; both squares highlighted/);
+    assert.match(html, /Black queen b4/);
+    assert.doesNotMatch(html, /Black queen b8|<svg|purple arrow/);
+    const highlighted = [...html.matchAll(/data-square="([a-h][1-8])"[^>]*class="[^"]*last-move/g)].map(match => match[1]);
+    assert.deepEqual(highlighted.sort(), ['b4', 'b8']);
+    assert.match(html, /data-square="e1"[^>]*class="[^"]*in-check/);
+  }
+  const initial = renderToStaticMarkup(React.createElement(Board, {position: game.positions[0], flipped: false}));
+  assert.doesNotMatch(initial, /last-move|Last move|<svg/);
+});
+
+test('explicit candidate arrows remain available in either orientation', () => {
+  const board = flipped => renderToStaticMarkup(React.createElement(Board, {position: game.positions[0], flipped,
+    candidate: {uci: 'e2e4', highlight_squares: ['e2', 'e4'], reason: 'Control the center.'}}));
+  assert.match(board(false), /class="candidate-arrow"/);
+  assert.match(board(false), /x1="4.5" y1="6.5" x2="4.5" y2="4.5"/);
+  assert.match(board(true), /x1="3.5" y1="1.5" x2="3.5" y2="3.5"/);
 });
 
 test('timing preserves zero and fractional seconds and displays unknown honestly', () => {

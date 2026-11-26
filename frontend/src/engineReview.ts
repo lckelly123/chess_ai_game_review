@@ -34,7 +34,7 @@ export function coachedErrorPlies(moves: Move[], positions: Position[], reviews:
     const status = review?.stockfish.move_quality?.status ?? response?.stockfish?.move_quality?.status;
     const explanation = response?.teaching?.position_explanation ?? response?.teaching?.positional_thesis ?? response?.text;
     return move.color === color && response?.fen === positions[ply]?.fen && response.played_move === move.uci
-      && !!explanation?.trim() && ['inaccuracy', 'mistake', 'blunder'].includes(status ?? '') ? [ply] : [];
+      && !!explanation?.trim() && ['inaccuracy', 'mistake', 'blunder'].includes(status ?? '') ? [ply + 1] : [];
   });
 }
 
@@ -68,10 +68,10 @@ export function errorMarkers(moves: Move[], positions: Position[], stops: number
   return moves.flatMap((move, ply) => {
     const review = reviews[String(ply)];
     const status = review?.stockfish.move_quality?.status;
-    const index = stops.indexOf(ply);
+    const index = stops.indexOf(ply + 1);
     if (move.color !== color || !review || review.fen !== positions[ply]?.fen || review.played_move !== move.uci
         || !status || !['inaccuracy', 'mistake', 'blunder'].includes(status) || index < 0) return [];
-    return [{ply, status, percent: stops.length > 1 ? index * 100 / (stops.length - 1) : 0,
+    return [{ply: ply + 1, status, percent: stops.length > 1 ? index * 100 / (stops.length - 1) : 0,
       label: `${move.number}${move.color === 'white' ? '.' : '…'} ${move.san} — ${qualityLabels[status]}`}];
   });
 }

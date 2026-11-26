@@ -26,6 +26,7 @@ The Dev link beside account settings opens `#dev`, where players can search all 
 User approved replacing the light workspace with a focused charcoal theme: near-black canvas, dark panels, soft white text and primary actions, muted blue selection, and DM Sans for the working interface. On November 26, 2026, the user approved Times New Roman in Coach, incremental text narration, and an automatic animated handoff from the solved challenge to position and move explanations. Retain the blue-grey board and compact game list. On November 15, 2026, the user supplied a specific board reference and requested matching artwork: Icy Sea texture and Classic black-and-white pieces. These assets remain unchanged; no implied affiliation with Chess.com.
 
 ## Product Principles
+- Replay selects a move already played, highlights its origin and destination, and opens its saved review directly. Normal navigation advances one half-move without a default arrow or automatic practice exercise; arrows belong to explicit candidate and coaching annotations.
 - Make the selected position and side to move unambiguous.
 - Preserve source games and make repeated imports safe.
 - Keep interactions responsive during external requests.
