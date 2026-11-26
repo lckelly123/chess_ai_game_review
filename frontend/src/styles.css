@@ -178,12 +178,15 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .board-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; color: #994619; }
 .candidate-square { stroke: #994619; stroke-width: .055; fill: #f4c36a; fill-opacity: .24; }
 .candidate-arrow { stroke: currentColor; stroke-width: .12; stroke-linecap: round; }
+.original-move-annotation { color: #a92323; }
+.original-move-arrow { stroke: currentColor; stroke-width: .075; stroke-linecap: round; }
 .square { position: relative; display: grid; place-items: center; aspect-ratio: 1; background-image: url('/assets/chess/icy-sea.png'); background-size: 800% 800%; }
 .square.light { background-color: #d6e4e9; color: #7399ad; }
 .square.dark { background-color: #7399ad; color: #d6e4e9; }
-.square.last-move::before, .square.in-check::before { content: ''; position: absolute; inset: 0; pointer-events: none; }
+.square.last-move::before, .square.in-check::before, .square.error-move::before { content: ''; position: absolute; inset: 0; pointer-events: none; }
 .square.last-move::before { background: #d4d57088; }
 .square.in-check::before { background: #d3978cb0; }
+.square.error-move::before { background: #d934345c; box-shadow: inset 0 0 0 2px #a92323; }
 .board button.square { padding: 0; border-radius: 0; }
 .board button.square:disabled { opacity: 1; }
 .board button.square:focus-visible { outline: 3px dashed #13202b; outline-offset: -7px; z-index: 1; }

@@ -59,6 +59,15 @@ test('position facts describe the displayed board while move facts describe the 
   assert.doesNotMatch(html, /<small>[^<]*perspective/);
 });
 
+test('practice shows sharpness for the pre-error board while retaining the recorded move facts', () => {
+  const html = render({ply: 1, positionPly: 0});
+  assert.match(html, /Selective/);
+  assert.match(html, /43<small> \/ 100/);
+  assert.match(html, /<strong>1\. e4<\/strong>/);
+  assert.match(html, /12.5s/);
+  assert.match(html, /−2.00/);
+});
+
 test('Black played-move evaluation uses White perspective while preserving its move grade', () => {
   const html = render({ply: 2});
   assert.match(html, /<strong>1… Kh2<\/strong><span class="move-quality good">Good<\/span>/);
