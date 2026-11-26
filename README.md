@@ -10,7 +10,9 @@ Start Docker Desktop with Linux containers. For a fresh checkout, copy `.env.exa
 docker compose up --build -d
 ```
 
-Open **http://localhost:8000**. Enter a Chess.com username and import the latest 20, 50, or 100 games. No Chess.com password or API key is needed. The username is a public lookup, not verified ownership or account linking.
+Open **http://localhost:8000**. Use **Account** in the top-right corner to enter your Chess.com username. The first sync adds up to 50 recent completed standard-chess games. Each subsequent page load or reload checks for new games automatically, while saved games remain available. Account settings also let you change username or switch to a saved account. No Chess.com password or API key is needed. The username is a public lookup, not verified ownership or account linking.
+
+Automatic sync revalidates cached Chess.com responses using conditional requests. It catches up across all archive months since the newest saved game, revisits the preceding month for delayed publication, and deduplicates games without imposing the initial 50-game limit. Games older than the existing library's history boundary are not backfilled. For a previously empty account, catch-up starts around its last successful check. Failed syncs preserve saved games and offer **Try again**. Chess.com's own publication/cache delay can still delay recently completed games. Syncing does not start engine or coach analysis.
 
 The same command also starts the **Studio graph server** on http://127.0.0.1:2024. Open [LangSmith Studio](https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024) and select **chess_coach** to visualize and run the graph. The `app` and `studio` services use the same image, including Python, graph dependencies, and Stockfish; no local `.venv` or additional startup command is needed. Both services can also be started from the existing Compose stack in Docker Desktop after the first build. See [Studio inputs and tracing setup](backend/coach/README.md#run-in-langsmith-studio).
 

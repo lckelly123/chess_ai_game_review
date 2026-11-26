@@ -46,6 +46,14 @@ class Database:
         with self.connection() as db:
             return db.execute("SELECT p.username, p.last_synced, COUNT(pg.game_id) AS game_count FROM profiles p LEFT JOIN profile_games pg USING(username) GROUP BY p.username ORDER BY p.last_synced DESC").fetchall()
 
+    def game_sync_window(self, username: str) -> dict:
+        with self.connection() as db:
+            return db.execute("""SELECT MIN(g.end_time) AS oldest, MAX(g.end_time) AS newest, p.last_synced
+                                 FROM profiles p LEFT JOIN profile_games pg USING(username)
+                                 LEFT JOIN games g ON pg.game_id=g.id
+                                 WHERE p.username=%s GROUP BY p.last_synced""", (username,)).fetchone() or {
+                                     "oldest": None, "newest": None, "last_synced": None}
+
     def games(self, username: str) -> list[dict]:
         with self.connection() as db:
             rows = db.execute(

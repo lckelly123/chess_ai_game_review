@@ -1,5 +1,6 @@
 import asyncio
 import time
+from datetime import datetime, timezone
 
 import chess
 import httpx
@@ -22,7 +23,7 @@ def raw_game(number=1, **overrides):
 
 
 def wait_job(client, job):
-    for _ in range(100):
+    for _ in range(500):
         current = client.get(f'/api/imports/{job["id"]}').json()
         if current["status"] in {"completed", "failed"}:
             return current
@@ -197,3 +198,115 @@ def test_concurrent_imports_are_coordinated(test_db_url):
         assert duplicate['id'] == first['id']
         assert client.post('/api/imports', json={"username": "bob"}).status_code == 409
         assert wait_job(client, first)['status'] == 'completed'
+
+
+def timestamp(year, month, day):
+    return int(datetime(year, month, day, tzinfo=timezone.utc).timestamp())
+
+
+def test_sync_starts_with_50_and_revalidates_recent_cache_without_duplicates(test_db_url):
+    calls = []
+    published = [raw_game(i, end_time=timestamp(2026, 11, 1) + i) for i in range(1, 81)]
+    def upstream(request):
+        calls.append(request)
+        if request.url.path.endswith('/archives'):
+            return httpx.Response(200, json={"archives": ["https://api.chess.com/pub/player/alice/games/2026/11"]})
+        if request.url.path.endswith('/2026/11'):
+            return httpx.Response(200, json={"games": published}, headers={"ETag": '"games"'})
+        return httpx.Response(200, json={"username": "alice"})
+
+    with TestClient(create_app(test_db_url, httpx.MockTransport(upstream))) as client:
+        def sync():
+            return wait_job(client, client.post('/api/imports', json={"username": "alice", "sync": True}).json())
+        assert sync()['added'] == 50
+        assert len(client.get('/api/games?username=alice').json()) == 50
+        published.append(raw_game(81, end_time=timestamp(2026, 11, 1) + 81))
+        assert sync()['added'] == 1  # Does not silently serve the 15-minute cache.
+        assert calls[-1].headers['If-None-Match'] == '"games"'
+        assert sync()['added'] == 0
+        assert len(client.get('/api/games?username=alice').json()) == 51  # No older-history backfill.
+
+
+def test_sync_catches_more_than_100_games_and_new_archive_months(test_db_url):
+    from backend.chess_games import normalize_game
+    db = Database(test_db_url)
+    first = raw_game(1, end_time=timestamp(2024, 1, 15))
+    db.save_import('alice', [normalize_game(first, 'alice')], timestamp(2026, 11, 1))
+    # A stale archive index must not hide months that appeared since the last visit.
+    index = 'https://api.chess.com/pub/player/alice/games/archives'
+    db.save_cache(index, {"archives": [index.replace('/archives', '/2024/01')]}, '"old"', None, time.time())
+    paths = []
+    def upstream(request):
+        paths.append(request.url.path)
+        if request.url.path.endswith('/archives'):
+            assert request.headers['If-None-Match'] == '"old"'
+            return httpx.Response(200, json={"archives": [
+                index.replace('/archives', f'/{year}/{month:02d}')
+                for year in range(2024, 2027) for month in range(1, 13)]})
+        if '/games/' in request.url.path:
+            year, month = map(int, request.url.path.rsplit('/', 2)[-2:])
+            number = year * 1000 + month * 10
+            return httpx.Response(200, json={"games": [raw_game(number + i, end_time=timestamp(year, month, 16) + i) for i in range(4)]})
+        return httpx.Response(200, json={})
+    with TestClient(create_app(test_db_url, httpx.MockTransport(upstream))) as client:
+        job = wait_job(client, client.post('/api/imports', json={"username": "alice", "sync": True}).json())
+        assert job['status'] == 'completed' and job['added'] == 144
+        assert len(client.get('/api/games?username=alice').json()) == 145
+        assert any(path.endswith('/2024/01') for path in paths)  # No 24-month catch-up cutoff.
+
+
+def test_sync_revisits_previous_month_for_delayed_games(test_db_url):
+    from backend.chess_games import normalize_game
+    db = Database(test_db_url)
+    db.save_import('alice', [normalize_game(raw_game(1, end_time=timestamp(2026, 10, 29)), 'alice'),
+                             normalize_game(raw_game(3, end_time=timestamp(2026, 11, 1)), 'alice')], 1)
+    def upstream(request):
+        if request.url.path.endswith('/archives'):
+            return httpx.Response(200, json={"archives": [f'https://api.chess.com/pub/player/alice/games/2026/{month}' for month in ['10', '11']]})
+        if request.url.path.endswith('/2026/10'):
+            return httpx.Response(200, json={"games": [raw_game(2, end_time=timestamp(2026, 10, 31))]})
+        if request.url.path.endswith('/2026/11'):
+            return httpx.Response(200, json={"games": [raw_game(4, end_time=timestamp(2026, 11, 1))]})
+        return httpx.Response(200, json={})
+    with TestClient(create_app(test_db_url, httpx.MockTransport(upstream))) as client:
+        job = wait_job(client, client.post('/api/imports', json={"username": "alice", "sync": True}).json())
+        assert job['added'] == 2  # Includes another game with the same completion time.
+
+
+def test_failed_sync_preserves_library_and_last_success(test_db_url):
+    from backend.chess_games import normalize_game
+    db = Database(test_db_url)
+    db.save_import('alice', [normalize_game(raw_game(), 'alice')], 123)
+    transport = httpx.MockTransport(lambda request: httpx.Response(429, headers={"Retry-After": "120"}))
+    with TestClient(create_app(test_db_url, transport)) as client:
+        job = wait_job(client, client.post('/api/imports', json={"username": "alice", "sync": True}).json())
+        assert job['status'] == 'failed'
+        assert len(client.get('/api/games?username=alice').json()) == 1
+        assert client.get('/api/profiles').json()[0]['last_synced'] == 123
+
+
+def test_account_switch_queues_sync_and_coalesces_reloads(test_db_url):
+    async def upstream(request):
+        await asyncio.sleep(.05)
+        return httpx.Response(200, json={"archives": []})
+    with TestClient(create_app(test_db_url, httpx.MockTransport(upstream))) as client:
+        first = client.post('/api/imports', json={"username": "alice", "sync": True}).json()
+        second = client.post('/api/imports', json={"username": "bob", "sync": True})
+        assert second.status_code == 202
+        repeated = client.post('/api/imports', json={"username": "bob", "sync": True}).json()
+        assert repeated['id'] == second.json()['id']
+        assert wait_job(client, first)['status'] == 'completed'
+        assert wait_job(client, repeated)['status'] == 'completed'
+
+
+def test_previously_empty_account_catches_all_new_games(test_db_url):
+    Database(test_db_url).save_import('alice', [], timestamp(2026, 10, 1))
+    def upstream(request):
+        if request.url.path.endswith('/archives'):
+            return httpx.Response(200, json={"archives": ['https://api.chess.com/pub/player/alice/games/2026/11']})
+        if request.url.path.endswith('/2026/11'):
+            return httpx.Response(200, json={"games": [raw_game(i, end_time=timestamp(2026, 11, 1) + i) for i in range(120)]})
+        return httpx.Response(200, json={})
+    with TestClient(create_app(test_db_url, httpx.MockTransport(upstream))) as client:
+        job = wait_job(client, client.post('/api/imports', json={"username": "alice", "sync": True}).json())
+        assert job['added'] == 120

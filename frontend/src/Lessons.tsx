@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, ChevronRight, CircleAlert, RefreshCw } from 'lucide-react';
 import { api } from './types';
-import type { Profile } from './types';
 import { filteredLessonRows, lessonCoverage, lessonGroupCounts, lessonSeverities, severitySummary } from './lessonsData';
 import type { ErrorCounts, LessonAnalytics, LessonFilter, LessonGroup } from './lessonsData';
 import './lessons.css';
@@ -104,8 +103,8 @@ function LessonExplorer({data}: {data: LessonAnalytics}) {
   </>;
 }
 
-export default function Lessons({profiles, username, onSelectPlayer, profilesLoading, profileError, onRetryProfiles, multiGameOpen = false}: {
-  profiles: Profile[]; username: string; onSelectPlayer: (username: string) => void;
+export default function Lessons({username, profilesLoading, profileError, onRetryProfiles, multiGameOpen = false}: {
+  username: string;
   profilesLoading: boolean; profileError: string; onRetryProfiles: () => void;
   multiGameOpen?: boolean;
 }) {
@@ -125,7 +124,7 @@ export default function Lessons({profiles, username, onSelectPlayer, profilesLoa
   const busy = loading || profilesLoading;
   const failure = profileError || error;
 
-  if (multiGameOpen) return <MultiGameAnalysis username={username} profiles={profiles} onSelectPlayer={onSelectPlayer}
+  if (multiGameOpen) return <MultiGameAnalysis username={username}
     summary={data} summaryLoading={busy} summaryError={failure}
     onRefreshSummary={() => profileError ? onRetryProfiles() : setRevision(value => value + 1)}/>;
 
@@ -134,11 +133,7 @@ export default function Lessons({profiles, username, onSelectPlayer, profilesLoa
       <div><h1>Lessons</h1><p>Missed tactics, allowed tactics, and positional choices.</p></div>
       <div className="profile-row lessons-controls">
         <a className="secondary-button" href="#lessons/multi-game">Multi-game analysis <ArrowRight size={16}/></a>
-        {profiles.length > 0 && <>
-        <label className="visually-hidden" htmlFor="lessons-player">Player for lesson analytics</label>
-        <select id="lessons-player" value={username} onChange={event => onSelectPlayer(event.target.value)}>
-          {profiles.map(profile => <option key={profile.username} value={profile.username}>{profile.username}</option>)}
-        </select>
+        {username && <>
         <button className="icon-button" aria-label="Refresh lessons" title="Refresh lessons" disabled={busy}
           onClick={() => setRevision(value => value + 1)}><RefreshCw size={16}/></button>
         </>}
