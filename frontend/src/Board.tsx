@@ -1,7 +1,8 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CandidateMove, Move, Position } from './types';
 import { squareCenter } from './boardAnnotations';
 import { useBoardSound } from './useBoardSound';
+import { BOARD_MOVE_MS, pieceMotions, piecesAt } from './boardAnimation';
 
 const names: Record<string, string> = { p: 'pawn', r: 'rook', n: 'knight', b: 'bishop', q: 'queen', k: 'king' };
 
@@ -21,12 +22,34 @@ export function BrandKnight() {
   </svg>;
 }
 
-export default function Board({ position, flipped, candidate, candidateName, playedMove, legalMoves, onMove, inputDisabled = false }: {
+export default function Board({ position, flipped, candidate, candidateName, playedMove, errorMove, showErrorArrow = false, animation, reducedMotion = false, legalMoves, onMove, inputDisabled = false }: {
   position: Position; flipped: boolean; candidate?: CandidateMove; candidateName?: string; playedMove?: Move;
   legalMoves?: string[]; onMove?: (uci: string) => void; inputDisabled?: boolean;
+  errorMove?: Move; showErrorArrow?: boolean; animation?: {uci: string; reverse: boolean}; reducedMotion?: boolean;
 }) {
   useBoardSound(position.fen);
+  const board = useRef<HTMLDivElement>(null);
+  const previousFen = useRef(position.fen);
+  useLayoutEffect(() => {
+    const before = previousFen.current;
+    previousFen.current = position.fen;
+    if (!animation || reducedMotion || !board.current) return;
+    const size = board.current.getBoundingClientRect().width / 8;
+    const running = pieceMotions(before, position.fen, animation.uci, animation.reverse).flatMap(({from, to}) => {
+      const square = board.current?.querySelector<HTMLElement>(`[data-square="${to}"]`);
+      const piece = square?.querySelector<HTMLElement>('.piece');
+      if (!square || !piece?.animate) return [];
+      const [x1, y1] = squareCenter(from, flipped), [x2, y2] = squareCenter(to, flipped);
+      square.style.zIndex = '2';
+      const movement = piece.animate([{transform: `translate(${(x1 - x2) * size}px, ${(y1 - y2) * size}px)`}, {transform: 'translate(0, 0)'}],
+        {duration: BOARD_MOVE_MS, easing: 'cubic-bezier(0.16, 1, 0.3, 1)'});
+      movement.onfinish = () => { square.style.zIndex = ''; };
+      return [{movement, square}];
+    });
+    return () => running.forEach(({movement, square}) => { movement.cancel(); square.style.zIndex = ''; });
+  }, [position.fen, flipped, animation?.uci, animation?.reverse, reducedMotion]);
   const arrowId = useId();
+  const errorArrowId = useId();
   const [selected, setSelected] = useState<string | null>(null);
   const [promotion, setPromotion] = useState<string[]>([]);
   useEffect(() => { setSelected(null); setPromotion([]); }, [position.fen, inputDisabled]);
@@ -40,33 +63,33 @@ export default function Board({ position, flipped, candidate, candidateName, pla
   }
   const origin = candidate ? squareCenter(candidate.uci.slice(0, 2), flipped) : null;
   const destination = candidate ? squareCenter(candidate.uci.slice(2, 4), flipped) : null;
+  const errorFrom = errorMove?.uci.slice(0, 2), errorTo = errorMove?.uci.slice(2, 4);
+  const errorOrigin = errorFrom ? squareCenter(errorFrom, flipped) : null;
+  const errorDestination = errorTo ? squareCenter(errorTo, flipped) : null;
   const [lastFrom, lastTo] = position.last_move ?? [];
-  const squares: Record<string, string> = {};
-  position.fen.split(' ')[0].split('/').forEach((rank, y) => {
-    let x = 0;
-    for (const piece of rank) {
-      if (/\d/.test(piece)) x += Number(piece);
-      else squares[`${'abcdefgh'[x++]}${8 - y}`] = piece;
-    }
-  });
+  const squares = piecesAt(position.fen);
   const files = (flipped ? 'hgfedcba' : 'abcdefgh').split('');
   const ranks = flipped ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
   const summary = Object.entries(squares).map(([square, p]) => `${p === p.toUpperCase() ? 'White' : 'Black'} ${names[p.toLowerCase()]} ${square}`).join(', ');
-  return <><div className="board" role={onMove ? 'group' : 'img'} aria-label={`Chessboard. ${flipped ? 'Black' : 'White'} at bottom. ${lastFrom && lastTo ? `Last move${playedMove ? ` ${playedMove.san}` : ''}: from ${lastFrom} to ${lastTo}; both squares highlighted. ` : ''}${candidate ? `Candidate ${candidateName ?? candidate.uci}: arrow from ${candidate.uci.slice(0, 2)} to ${candidate.uci.slice(2, 4)}; highlights ${candidate.highlight_squares.join(' and ')}. ${candidate.reason} ` : ''}${onMove ? 'Select a piece, then its destination.' : summary}`}>
+  return <><div ref={board} className="board" role={onMove ? 'group' : 'img'} aria-label={`Chessboard. ${flipped ? 'Black' : 'White'} at bottom. ${errorMove ? `Original move ${errorMove.san}: from ${errorFrom} to ${errorTo}; both squares highlighted in red. ${showErrorArrow ? 'Red arrow marks the original move. ' : ''}` : lastFrom && lastTo ? `Last move${playedMove ? ` ${playedMove.san}` : ''}: from ${lastFrom} to ${lastTo}; both squares highlighted. ` : ''}${candidate ? `Candidate ${candidateName ?? candidate.uci}: arrow from ${candidate.uci.slice(0, 2)} to ${candidate.uci.slice(2, 4)}; highlights ${candidate.highlight_squares.join(' and ')}. ${candidate.reason} ` : ''}${onMove ? 'Select a piece, then its destination.' : summary}`}>
     {ranks.flatMap((rank, y) => files.map((file, x) => {
       const square = `${file}${rank}`;
       const Square = onMove ? 'button' : 'div';
       const piece = squares[square];
       const target = targets.some(move => move.slice(2, 4) === square);
       return <Square key={square} data-square={square} type={onMove ? 'button' : undefined} disabled={onMove ? inputDisabled : undefined}
-        aria-label={onMove ? `${square}${piece ? `, ${piece === piece.toUpperCase() ? 'White' : 'Black'} ${names[piece.toLowerCase()]}` : ', empty'}${square === lastFrom ? ', last move origin' : square === lastTo ? ', last move destination' : ''}${target ? ', legal destination' : ''}` : undefined}
+        aria-label={onMove ? `${square}${piece ? `, ${piece === piece.toUpperCase() ? 'White' : 'Black'} ${names[piece.toLowerCase()]}` : ', empty'}${square === errorFrom ? ', original move origin' : square === errorTo ? ', original move destination' : ''}${target ? ', legal destination' : ''}` : undefined}
         aria-pressed={onMove ? selected === square : undefined} onClick={onMove ? () => chooseSquare(square) : undefined}
-        style={{ backgroundPosition: `${x * 100 / 7}% ${y * 100 / 7}%` }} className={`square ${(x + y) % 2 ? 'dark' : 'light'} ${position.last_move?.includes(square) ? 'last-move' : ''} ${position.check_square === square ? 'in-check' : ''} ${selected === square ? 'selected-square' : ''} ${target ? 'legal-target' : ''}`}>
+        style={{ backgroundPosition: `${x * 100 / 7}% ${y * 100 / 7}%` }} className={`square ${(x + y) % 2 ? 'dark' : 'light'} ${!errorMove && position.last_move?.includes(square) ? 'last-move' : ''} ${position.check_square === square ? 'in-check' : ''} ${square === errorFrom || square === errorTo ? 'error-move' : ''} ${selected === square ? 'selected-square' : ''} ${target ? 'legal-target' : ''}`}>
         {x === 0 && <span className="rank-label">{rank}</span>}
         {y === 7 && <span className="file-label">{file}</span>}
         {squares[square] && <Piece piece={squares[square]}/>}
       </Square>;
     }))}
+    {showErrorArrow && errorOrigin && errorDestination && <svg className="board-annotations original-move-annotation" viewBox="0 0 8 8" aria-hidden="true">
+      <defs><marker id={errorArrowId} markerWidth=".3" markerHeight=".3" refX=".25" refY=".15" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L.3 .15 L0 .3 Z" fill="currentColor"/></marker></defs>
+      <line x1={errorOrigin[0]} y1={errorOrigin[1]} x2={errorDestination[0]} y2={errorDestination[1]} className="original-move-arrow" markerEnd={`url(#${errorArrowId})`}/>
+    </svg>}
     {candidate && origin && destination && <svg className="board-annotations" viewBox="0 0 8 8" aria-hidden="true">
       <defs><marker id={arrowId} markerWidth=".48" markerHeight=".48" refX=".39" refY=".24" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L.48 .24 L0 .48 Z" fill="currentColor"/></marker></defs>
       {candidate.highlight_squares.map(square => {

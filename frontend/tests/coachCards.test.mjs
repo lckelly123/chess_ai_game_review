@@ -186,3 +186,24 @@ test('opponent engine-only panel renders top three and the fourth played move wi
   assert.doesNotMatch(html, /Understand the position/);
   assert.match(html, /Opponent move/);
 });
+
+test('selected player and opponent engine moves display their move, badge and evaluation only once', () => {
+  const played_move = {uci: 'a7a5', san: 'a5', depth: 12, score: {cp: -90, mate: null, bound: 'exact'}};
+  for (const opponent of [false, true]) {
+    const html = render({response: undefined, engineMode: true, opponent, selectedUci: 'a7a5',
+      engineReview: {fen: 'position', played_move: 'a7a5', stockfish: {perspective: 'Black', top_moves: [played_move], played_move}}});
+    assert.equal((html.match(/>a5</g) ?? []).length, 1);
+    assert.equal((html.match(/>−0.90</g) ?? []).length, 1);
+    assert.equal((html.match(/class="player-move-badge"/g) ?? []).length, 1);
+    assert.doesNotMatch(html, /class="move-detail"/);
+  }
+});
+
+test('legacy move lists retain the selected explanation without duplicating its row heading', () => {
+  const html = render({selectedUci: 'd2d4', response: {...response,
+    teaching: {...response.teaching, position_overview: null, position_explanation: undefined, positional_thesis: 'A saved thesis.'}}});
+  assert.equal((html.match(/>d4</g) ?? []).length, 1);
+  assert.equal((html.match(/class="player-move-badge"/g) ?? []).length, 1);
+  assert.match(html, /Unique original move assessment/);
+  assert.match(html, /Error classification:/);
+});

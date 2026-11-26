@@ -144,15 +144,15 @@ export default function CoachCards({ response, engineReview, engineMode = false,
         {response && !response.played_move && <p className="move-empty-note">{moveFeedback?.explanation ?? (reviewedMove ? 'No saved feedback is available for the recorded move.' : 'No recorded move is available to evaluate.')}</p>}
       </section>}
       <div id={`${id}-move-detail`}>
-        {selectedMove && positionSpeech.complete && <div key={selectedMove.uci} className={moveSpeech.speaking ? 'coach-move-reveal' : undefined}><div>
+        {selectedMove && positionSpeech.complete && (inlineMoves || selectedMove.reason || selectedMove.feedback || mistake) && <div key={selectedMove.uci} className={moveSpeech.speaking ? 'coach-move-reveal' : undefined}><div>
         <section className="move-detail" aria-label={`${selectedMove.san} explanation`}>
-          <div className="candidate-heading">
+          {inlineMoves && <div className="candidate-heading">
             <h3>{selectedMove.san}{selectedMove.isPlayed && <>
               <span className="player-move-badge">{playedLabel}</span>
               <span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{quality === 'good' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span>
             </>}</h3>
             {selectedScore && <span className={`engine-score ${selectedScore.tone}`} title={`${selectedScore.label} · ${selectedScore.perspective}'s perspective`}>{selectedScore.value}</span>}
-          </div>
+          </div>}
           {moveSpeech.content}
           {mistake && moveSpeech.complete && <p className="mistake-classification">
             <span>Error classification:</span>

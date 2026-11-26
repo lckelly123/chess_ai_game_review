@@ -53,17 +53,17 @@ function EvaluationGraph({ timeline, game, reviews, ply, onSelect }: {
   </section>;
 }
 
-export default function GameOverview({ game, reviews, statistics, ply, onSelect, response, onMainLine, analyzing, submitting, onComplete }: {
+export default function GameOverview({ game, reviews, statistics, ply, positionPly = ply, onSelect, response, onMainLine, analyzing, submitting, onComplete }: {
   game: GameDetail; reviews: Record<string, EngineReview>; statistics?: GameStatistics | null; ply: number; onSelect: (ply: number) => void;
-  response?: CoachResponse; onMainLine: boolean; analyzing: boolean; submitting: boolean; onComplete: () => void;
+  response?: CoachResponse; positionPly?: number; onMainLine: boolean; analyzing: boolean; submitting: boolean; onComplete: () => void;
 }) {
   const timeline = useMemo(() => overviewTimeline(game, reviews, statistics), [game, reviews, statistics]);
   const counts = useMemo(() => overviewCounts(game, reviews), [game, reviews]);
   const move = onMainLine ? game.moves[ply - 1] : undefined;
   const review = onMainLine ? matchingReview(move, game.positions[ply - 1], reviews[String(ply - 1)]) : undefined;
-  const currentReview = matchingReview(game.moves[ply], game.positions[ply], reviews[String(ply)]);
+  const currentReview = matchingReview(game.moves[positionPly], game.positions[positionPly], reviews[String(positionPly)]);
   const evidence = onMainLine ? currentReview?.position_evidence
-    ?? (response?.fen === game.positions[ply].fen ? response?.position_evidence : undefined) ?? timeline[ply]?.position_evidence : undefined;
+    ?? (response?.fen === game.positions[positionPly].fen ? response?.position_evidence : undefined) ?? timeline[positionPly]?.position_evidence : undefined;
   const decision = positionDecision(evidence);
   const sharpness = !decision || decision.className === 'unclassified' ? null : evidence?.sharpness?.score;
   const score = review ? engineEvaluation(review.stockfish, review.stockfish.played_move, 'White') : null;
@@ -71,7 +71,7 @@ export default function GameOverview({ game, reviews, statistics, ply, onSelect,
   const ready = statisticsReady(game, statistics);
   const analysed = counts.white.analysed + counts.black.analysed;
   const uncertain = counts.white.uncertain + counts.black.uncertain;
-  const phase = onMainLine ? game.positions[ply].phase : undefined;
+  const phase = onMainLine ? game.positions[positionPly].phase : undefined;
   return <aside className="game-overview" aria-label="Game overview">
     <EvaluationGraph timeline={timeline} game={game} reviews={reviews} ply={ply} onSelect={onSelect}/>
     <section className="overview-summary" aria-label="Overall game summary">
@@ -90,7 +90,7 @@ export default function GameOverview({ game, reviews, statistics, ply, onSelect,
     <section className="overview-position" aria-label="Current position and recorded move">
       <div className="overview-section-heading"><h2>Position sharpness</h2><span>{phase ? {opening: 'Opening', middlegame: 'Middlegame', endgame: 'Endgame'}[phase] : '—'}</span></div>
       <div className="overview-sharpness" title={decision?.tooltip}>
-        <span className={`decision-tag ${decision?.className ?? 'unclassified'}`} tabIndex={0} aria-label={decision ? `${decision.label}: ${decision.tooltip}` : undefined}>{decision?.label ?? (onMainLine ? timeline[ply]?.status === 'terminal' ? 'Game over' : 'Not analysed' : 'Variation')}</span>
+        <span className={`decision-tag ${decision?.className ?? 'unclassified'}`} tabIndex={0} aria-label={decision ? `${decision.label}: ${decision.tooltip}` : undefined}>{decision?.label ?? (onMainLine ? timeline[positionPly]?.status === 'terminal' ? 'Game over' : 'Not analysed' : 'Variation')}</span>
         <span className="sharpness-value">{sharpness == null ? '—' : sharpness.toFixed(0)}<small> / 100</small></span>
       </div>
       <div className="overview-move"><span>Played</span><div className="overview-played-move"><strong>{move ? `${move.number}${move.color === 'white' ? '.' : '…'} ${move.san}` : onMainLine ? 'Starting position' : 'Exploring variation'}</strong>{quality && <span className={`move-quality ${quality}`}>{qualityLabels[quality]}</span>}</div></div>

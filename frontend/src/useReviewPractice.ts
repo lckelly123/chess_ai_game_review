@@ -4,6 +4,8 @@ import { practiceComplete, practiceKey, restoreAttempts, resultMatches } from '.
 import type { PracticeAttempt, PracticeContext, PracticeMove, PracticeResult } from './reviewPractice';
 import { analysisResetEvent } from './analysisReset';
 
+type Preview = {key: string; move: PracticeMove; phase: 'checking' | 'retry' | 'accepted' | 'reverting' | 'replaying'};
+
 export function useReviewPractice(gameId: string, color: string, ply: number, fen: string, original: string, eligible: boolean, transitioning: boolean, reducedMotion = false, analysisRevision = 0) {
   const key = practiceKey(gameId, color, ply, fen, original, analysisRevision);
   const [sessions, setSessions] = useState<Record<string, PracticeAttempt[]>>({});
@@ -13,19 +15,32 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
   const [context, setContext] = useState<{key: string; data: PracticeContext} | null>(null);
   const [error, setError] = useState<{key: string; message: string} | null>(null);
   const [revision, setRevision] = useState(0);
-  const [preview, setPreview] = useState<{key: string; move: PracticeMove} | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
-  const resetTimer = useRef<number | undefined>(undefined);
   const endpoint = `/api/games/${encodeURIComponent(gameId)}/practice/${ply}`;
 
   useEffect(() => {
     setPreview(null);
     setRevealedKey(null);
-    window.clearTimeout(resetTimer.current);
+    setPendingKey(null);
+    return () => { request.current?.abort(); request.current = null; };
   }, [key]);
-  useEffect(() => () => { request.current?.abort(); window.clearTimeout(resetTimer.current); }, []);
+
+  const currentPreview = preview?.key === key ? preview : null;
+  useEffect(() => {
+    if (!currentPreview || currentPreview.phase === 'checking') return;
+    const {phase} = currentPreview;
+    const delay = phase === 'retry' ? 650 : phase === 'accepted' ? reducedMotion ? 300 : 750 : reducedMotion ? 200 : 420;
+    const timer = window.setTimeout(() => {
+      setPreview(current => current !== currentPreview ? current
+        : phase === 'accepted' ? {...current, phase: 'reverting'}
+          : phase === 'reverting' ? {...current, phase: 'replaying'} : null);
+      if (phase === 'replaying') setRevealedKey(key);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [currentPreview, key, reducedMotion]);
 
   useEffect(() => {
     if (!active || transitioning) return;
@@ -42,8 +57,9 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
   }, [active, transitioning, endpoint, key, fen, original, revision]);
 
   const legalMoves = context?.key === key ? context.data.legal_moves : [];
-  const shownMove = preview?.key === key ? preview.move : undefined;
-  const busy = pendingKey === key || !!shownMove;
+  const phase = currentPreview?.phase;
+  const shownMove = currentPreview && phase !== 'reverting' && phase !== 'replaying' ? currentPreview.move : undefined;
+  const busy = pendingKey === key || !!currentPreview;
 
   async function attemptMove(uci: string) {
     if (!active || transitioning || busy || request.current) return;
@@ -51,7 +67,7 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
     if (!move) return;
     const controller = new AbortController();
     request.current = controller;
-    setPendingKey(key); setPreview({key, move}); setError(null);
+    setPendingKey(key); setPreview({key, move, phase: 'checking'}); setError(null);
     const entry: PracticeAttempt = {uci, san: move.san, at: new Date().toISOString(), quality: null, lossPp: null, status: 'checking'};
     const updated = [...attempts, entry];
     const resetToken = readStored(analysisResetEvent);
@@ -76,16 +92,15 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
     } finally {
       if (!controller.signal.aborted) {
         request.current = null; setPendingKey(null);
-        resetTimer.current = window.setTimeout(() => {
-          setPreview(current => current?.key === key ? null : current);
-          if (accepted) setRevealedKey(key);
-        }, accepted ? reducedMotion ? 300 : 1000 : 650);
+        setPreview({key, move, phase: accepted ? 'accepted' : 'retry'});
       }
     }
   }
 
-  return {active, complete, attempts, legalMoves, shownMove, busy, checking: pendingKey === key, justCompleted: revealedKey === key,
+  return {active, complete, attempts, legalMoves, shownMove, busy, phase, inPractice: eligible && (active || !!currentPreview),
+    animation: currentPreview ? {uci: phase === 'replaying' ? original : currentPreview.move.uci, reverse: phase === 'reverting'} : undefined,
+    checking: pendingKey === key, justCompleted: revealedKey === key,
     inputDisabled: !active || transitioning || busy || pendingKey !== null || !legalMoves.length,
     error: error?.key === key ? error.message : '', loading: active && context?.key !== key,
-    retry: () => setRevision(value => value + 1), attemptMove, showReview: () => setPreview(null)};
+    retry: () => setRevision(value => value + 1), attemptMove};
 }
