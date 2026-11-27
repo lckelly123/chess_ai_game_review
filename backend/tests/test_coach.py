@@ -27,8 +27,7 @@ def teaching_output(fen=chess.STARTING_FEN, *, candidate_ucis=None):
         "position_overview": "Test position hint.",
         "position_explanation": "Test analysis with " + ", ".join(f"[[{move.uci()}]]" for move in moves) + "." if moves else "Play has ended.",
         "move_evaluation": {"explanation": "Test move feedback.", "mistake_classification": None},
-        "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning.",
-                             "highlight_squares": [chess.square_name(move.from_square), chess.square_name(move.to_square)]} for move in moves],
+        "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning."} for move in moves],
     }
 
 

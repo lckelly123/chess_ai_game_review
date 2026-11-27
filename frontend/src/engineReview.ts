@@ -53,7 +53,6 @@ export function engineMoves(review?: EngineReview): CoachMove[] {
   return moves.map(move => ({
     uci: move.uci, san: move.san, reason: '', isPlayed: move.uci === review.played_move,
     engineMove: move.uci === review.played_move ? review.stockfish.played_move : move,
-    highlight_squares: [move.uci.slice(0, 2), move.uci.slice(2, 4)],
   }));
 }
 

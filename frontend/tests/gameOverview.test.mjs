@@ -121,12 +121,11 @@ test('Qb4+ is already played, highlights b8 and b4, and has no default arrow in 
   assert.doesNotMatch(initial, /last-move|Last move|<svg/);
 });
 
-test('explicit candidate arrows remain available in either orientation', () => {
-  const board = flipped => renderToStaticMarkup(React.createElement(Board, {position: game.positions[0], flipped,
-    candidate: {uci: 'e2e4', highlight_squares: ['e2', 'e4'], reason: 'Control the center.'}}));
-  assert.match(board(false), /class="candidate-arrow"/);
-  assert.match(board(false), /x1="4.5" y1="6.5" x2="4.5" y2="4.5"/);
-  assert.match(board(true), /x1="3.5" y1="1.5" x2="3.5" y2="3.5"/);
+test('alternative previews have no arrows or square annotations in either orientation', () => {
+  for (const flipped of [false, true]) {
+    const html = renderToStaticMarkup(React.createElement(Board, {position: game.positions[1], flipped, showLastMove: false}));
+    assert.doesNotMatch(html, /candidate-arrow|candidate-square|last-move|Last move|<svg/);
+  }
 });
 
 test('timing preserves zero and fractional seconds and displays unknown honestly', () => {

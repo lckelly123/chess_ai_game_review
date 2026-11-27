@@ -3,6 +3,12 @@
 import chess
 
 
+def candidate_positions(fen: str, ucis) -> dict:
+    """Apply legal candidate roots locally, even when old reviews have no PV."""
+    return {uci: line["positions"][1] for uci, line in move_lines(
+        fen, {uci: {"pv_uci": [uci]} for uci in ucis}).items()}
+
+
 def move_lines(fen: str, moves: dict[str, dict]) -> dict:
     lines = {}
     for uci, evidence in moves.items():

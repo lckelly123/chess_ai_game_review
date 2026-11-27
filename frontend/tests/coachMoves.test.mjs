@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { coachMoves } from '../src/coachMoves.ts';
 import { visibleCandidate } from '../src/boardAnnotations.ts';
 
-const candidate = {uci: 'e2e4', reason: 'Control the center.', highlight_squares: ['e4', 'd5']};
+const candidate = {uci: 'e2e4', reason: 'Control the center.'};
 const engineMove = (uci, san, cp) => ({uci, san, depth: 12, score: {cp, mate: null, bound: 'exact'}});
 const response = {
   fen: 'current-fen', response_id: 'new', played_move: 'd2d4',
@@ -24,7 +24,7 @@ test('played move joins the move list with its own score and explanation without
   assert.deepEqual(response, before);
 });
 
-test('recommended player move appears once, retaining its instructional highlights', () => {
+test('recommended player move appears once, retaining its explanation', () => {
   const matching = {...response, played_move: 'e2e4', stockfish: {...response.stockfish, played_move: engineMove('e2e4', 'e4', 45)},
     teaching: {...response.teaching, move_evaluation: {explanation: null}}};
   const rows = coachMoves(matching);
@@ -33,7 +33,6 @@ test('recommended player move appears once, retaining its instructional highligh
   assert.equal(rows[0].reason, candidate.reason);
   assert.equal(rows[0].feedback, undefined);
   assert.equal(rows[0].engineMove.score.cp, 45);
-  assert.deepEqual(rows[0].highlight_squares, ['e4', 'd5']);
 });
 
 test('missing candidate evidence never borrows the played move score', () => {
@@ -49,7 +48,6 @@ test('player move board previews support promotion and obey position and run gua
   const selection = {fen: promoted.fen, responseId: promoted.response_id, uci: promoted.played_move};
   const annotation = visibleCandidate(selection, promoted, promoted.fen, false);
   assert.equal(annotation.uci, 'a7a8q');
-  assert.deepEqual(annotation.highlight_squares, ['a7', 'a8']);
   assert.equal(visibleCandidate(selection, promoted, promoted.fen, true), undefined);
   assert.equal(visibleCandidate(selection, promoted, 'other-fen', false), undefined);
   assert.equal(visibleCandidate({...selection, responseId: 'old'}, promoted, promoted.fen, false), undefined);

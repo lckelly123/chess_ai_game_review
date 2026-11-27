@@ -5,6 +5,7 @@ import GameOverview from './GameOverview';
 import CoachCards from './CoachCards';
 import PracticeCard from './PracticeCard';
 import { useReviewPractice } from './useReviewPractice';
+import { useMovePreview } from './useMovePreview';
 import { needsPractice } from './reviewPractice';
 import type { CoachResponse, EngineReview, GameAnalysis, GameDetail } from './types';
 import { api, perspective, readStored, store } from './types';
@@ -63,6 +64,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move}
     : engineReview ? {fen: position.fen, responseId: engineSelectionId(engineReview), uci: engineReview.played_move} : null);
   const [variation, setVariation] = useState<VariationPlayback | null>(null);
+  const preview = useMovePreview(`${game.id}:${ply}:${position.fen}:${coachResponse?.response_id ?? (engineReview ? engineSelectionId(engineReview) : '')}:${practice.inPractice}`, reducedMotion);
   const boardColumn = useRef<HTMLDivElement>(null);
   const candidate = coachResponse ? visibleCandidate(candidateSelection, coachResponse, position.fen, practice.inPractice)
     : visibleEngineCandidate(candidateSelection, engineReview, position.fen, practice.inPractice);
@@ -80,16 +82,16 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const boardCandidate = candidate?.uci !== playedMove?.uci ? candidate : undefined;
   const beforeError = practice.inPractice && practice.phase !== 'replaying' && !practice.shownMove;
   const shownPosition = practice.shownMove?.position ?? (beforeError ? position
-    : playback ? playback.sequence.positions[playback.step] : boardCandidate ? position : boardPosition);
-  const onMainLine = !boardCandidate && !playback && !practice.shownMove;
+    : playback ? playback.sequence.positions[playback.step] : preview.frame?.position ?? boardPosition);
+  const onMainLine = !boardCandidate && !playback && !practice.shownMove && !preview.reverting;
   const errorMove = practiceEligible && !boardCandidate && !playback ? playedMove : undefined;
   const statistics = analysis?.statistics ?? Object.values(game.engine_analyses ?? {}).find(saved => saved?.statistics?.complete)?.statistics;
   const turn = shownPosition.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
   const top = flipped ? 'white' : 'black';
   const bottom = flipped ? 'black' : 'white';
-  const seek = (value: number) => { setCandidateSelection(null); setVariation(null); dispatch({ type: 'seek', ply: value }); };
-  const step = (direction: 1 | -1) => { setCandidateSelection(null); setVariation(null); dispatch({ type: 'step', direction }); };
-  const toggleGamePlayback = () => { if (boardCandidate) setCandidateSelection(null); setVariation(null); dispatch({type: 'toggle-play'}); };
+  const seek = (value: number) => { preview.clear(); setCandidateSelection(null); setVariation(null); dispatch({ type: 'seek', ply: value }); };
+  const step = (direction: 1 | -1) => { preview.clear(); setCandidateSelection(null); setVariation(null); dispatch({ type: 'step', direction }); };
+  const toggleGamePlayback = () => { preview.clear(); if (boardCandidate) setCandidateSelection(null); setVariation(null); dispatch({type: 'toggle-play'}); };
 
   useEffect(() => {
     setCandidateSelection(coachResponse?.played_move
@@ -102,13 +104,26 @@ export default function Replay({ game, username }: { game: GameDetail; username:
 
   function selectCandidate(uci: string) {
     if (!coachResponse && !engineReview) return;
+    const selected = candidate?.uci === uci ? null : uci;
+    const targetUci = selected ?? playedMove?.uci;
+    const destination = targetUci === playedMove?.uci ? boardPosition
+      : targetUci ? coachResponse?.candidate_positions?.[targetUci]
+        ?? coachResponse?.move_lines?.[targetUci]?.positions[1]
+        ?? engineReview?.candidate_positions?.[targetUci] : undefined;
+    if (targetUci && destination) {
+      // Switching alternatives undoes the currently shown root. During an undo
+      // the decision position is already current, so no stale move is replayed.
+      preview.play(position, shownPosition, destination, targetUci,
+        playback ? undefined : preview.uci ?? playedMove?.uci);
+    } else preview.clear();
     setVariation(null);
     dispatch({ type: 'pause' });
-    setCandidateSelection(candidate?.uci === uci ? null : { fen: position.fen, responseId: coachResponse?.response_id ?? engineSelectionId(engineReview!), uci });
+    setCandidateSelection(selected ? { fen: position.fen, responseId: coachResponse?.response_id ?? engineSelectionId(engineReview!), uci: selected } : null);
   }
 
   function playSequence(sequence: PvSequence) {
     if (!candidate || !coachResponse) return;
+    preview.clear();
     dispatch({type: 'pause'});
     setVariation({sequence, step: 0, gamePly: ply, responseId: coachResponse.response_id, ownerUci: candidate.uci});
     const board = boardColumn.current?.querySelector('.board');
@@ -188,6 +203,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', ' '].includes(event.key)) return;
       event.preventDefault();
       if (event.key === ' ' && practice.inPractice) return;
+      preview.clear();
       setVariation(null);
       if (event.key !== ' ' || boardCandidate) setCandidateSelection(null);
       if (event.key === ' ') dispatch({ type: 'toggle-play' });
@@ -213,8 +229,8 @@ export default function Replay({ game, username }: { game: GameDetail; username:
           positionPly={beforeError ? reviewPly : ply} onMainLine={onMainLine} analyzing={analyzing} submitting={submitting} onComplete={() => void resumeAnalysis()}/>
         {playerBar(top)}
         <Board position={shownPosition} flipped={flipped}
-          candidate={!playback ? boardCandidate : undefined} candidateName={candidateName} playedMove={onMainLine && !beforeError ? playedMove : undefined}
-          errorMove={errorMove} showErrorArrow={beforeError} animation={practice.animation} reducedMotion={reducedMotion}
+          showLastMove={!boardCandidate && !preview.reverting} playedMove={onMainLine && !beforeError ? playedMove : undefined}
+          errorMove={errorMove} showErrorArrow={beforeError} animation={practice.animation ?? preview.frame?.animation} reducedMotion={reducedMotion}
           legalMoves={practice.legalMoves.map(move => move.uci)} onMove={practice.inPractice ? practice.attemptMove : undefined} inputDisabled={practice.inputDisabled}/>
         {playerBar(bottom)}
         {playback && <div className="variation-playback" role="group" aria-label="Variation playback">
@@ -222,7 +238,10 @@ export default function Replay({ game, username }: { game: GameDetail; username:
             <span>{playback.step === 0 ? 'Starting position' : playback.sequence.san[playback.step - 1]} · {playback.step} / {playback.sequence.san.length}</span>
           </span>
           <div className="variation-actions">
-            <button type="button" className="text-button" onClick={() => setVariation(null)}>Back to game</button>
+            <button type="button" className="text-button" onClick={() => {
+              preview.clear(); setVariation(null);
+              setCandidateSelection(coachResponse?.played_move ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move} : null);
+            }}>Back to game</button>
             <button type="button" className="text-button" onClick={() => playSequence(playback.sequence)}><RotateCcw size={14} aria-hidden="true"/>Replay</button>
           </div>
         </div>}

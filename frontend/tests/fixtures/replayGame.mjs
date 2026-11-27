@@ -13,6 +13,7 @@ const moves = [
 const engineMove = (uci, san) => ({uci, san, depth: 18, rank: 1, score: {cp: 500, mate: null, bound: 'exact'}});
 const reviews = Object.fromEntries(moves.map((move, index) => [index, {
   fen: positions[index].fen, played_move: move.uci,
+  candidate_positions: index === 0 ? {b8b2: {fen: '4k3/8/8/8/8/8/1q6/4K3 w - - 1 13', last_move: ['b8', 'b2'], check_square: null}} : {},
   stockfish: {perspective: move.color === 'white' ? 'White' : 'Black',
     top_moves: [engineMove(move.uci, move.san), ...(index === 0 ? [engineMove('b8b2', 'Qb2')] : [])],
     played_move: engineMove(move.uci, move.san), move_quality: {status: index === 1 ? 'good' : 'mistake'}},
@@ -21,7 +22,7 @@ const coach = index => ({
   ...reviews[index], response_id: `replay-fixture-${index}`, model: 'gpt-6-astra', created_at: '2026-11-26T12:00:00Z', text: '',
   candidate_san: {[moves[index].uci]: moves[index].san, b8b2: 'Qb2'},
   teaching: {position_overview: 'Consider the queen and king.', position_explanation: `Review of ${moves[index].san}. Your move was [[${moves[index].uci}]].${index === 0 ? ' Consider [[b8b2]].' : ''}`,
-    candidate_moves: index === 0 ? [{uci: 'b8b2', reason: 'An alternative queen move.', highlight_squares: ['b8', 'b2']}] : [],
+    candidate_moves: index === 0 ? [{uci: 'b8b2', reason: 'An alternative queen move.'}] : [],
     move_evaluation: {explanation: `Saved assessment of ${moves[index].san}.${index === 0 ? ' Line: [[Qb4+ Kf1]].' : ''}`, mistake_classification: null}},
   move_lines: index === 0 ? {b8b4: {san: ['Qb4+', 'Kf1'], uci: ['b8b4', 'e1f1'], positions: positions.slice(0, 3)}} : {},
 });

@@ -14,7 +14,6 @@ test('engine-only rows show top three in ranking order plus the player, without 
   assert.deepEqual(rows.map(move => move.engineMove.score.cp), [50, 40, 35, -200]);
   assert.equal(rows.filter(move => move.isPlayed).length, 1);
   assert(rows.every(move => move.reason === '' && !move.feedback));
-  assert.deepEqual(rows[3].highlight_squares, ['g2', 'g4']);
   assert.deepEqual(review, before);
 });
 
@@ -28,12 +27,12 @@ test('a top-three played move is marked once; fourth-ranked played move is appen
   }
 });
 
-test('fewer legal candidates, castling and promotion keep correct overlays', () => {
+test('fewer legal candidates, castling and promotion keep their move information', () => {
   for (const uci of ['e1g1', 'e7e8q']) {
     const only = engineMove(uci, 'move', 100, 1);
     const result = {...review, played_move: uci, stockfish: {...review.stockfish, top_moves: [only], played_move: only}};
     assert.equal(engineMoves(result).length, 1);
-    assert.deepEqual(engineMoves(result)[0].highlight_squares, [uci.slice(0, 2), uci.slice(2, 4)]);
+    assert.equal(engineMoves(result)[0].uci, uci);
   }
   assert.deepEqual(engineMoves(), []);
 });

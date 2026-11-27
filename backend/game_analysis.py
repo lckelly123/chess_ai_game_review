@@ -13,6 +13,7 @@ from .chess_games import parse_game, replay
 from .game_statistics import STATISTICS_VERSION, build_statistics, position_evaluation, terminal_evaluation
 from .coach.context import COACH_CONTRACT_VERSION, current_coaching, context_key, previous_move_from_replay
 from .coach.move_review import MoveReview
+from .coach.lines import candidate_positions
 from .coach.move_quality import analyze_played_move
 from .coach.player_move_quality import with_player_move_quality
 from .coach.position_classification import analyze_position
@@ -56,7 +57,9 @@ def analysis_result(row: dict | None) -> dict | None:
     if row is None:
         return None
     def rescored(moves):
-        return {ply: {**move, "position_evidence": with_position_sharpness(
+        return {ply: {**move, "candidate_positions": candidate_positions(move["fen"],
+            [item["uci"] for item in move["stockfish"].get("top_moves", [])[:3]]),
+            "position_evidence": with_position_sharpness(
             move.get("position_evidence") or {**move["stockfish"], "fen": move["fen"]}, expected_fen=move["fen"])}
                 for ply, move in moves.items()}
     return {**analysis_summary(row), "moves": rescored(row["moves"]),

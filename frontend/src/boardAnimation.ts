@@ -1,4 +1,20 @@
+import type { Position } from './types.ts';
+
 export const BOARD_MOVE_MS = 300;
+
+export type MovePreviewStep = {position: Position; animation?: {uci: string; reverse: boolean}};
+
+// Always branch from the exact decision position, restoring captured pieces,
+// castling rights and promotions before playing the chosen alternative.
+export function movePreviewSteps(decision: Position, current: Position, destination: Position, uci: string, undoUci?: string): MovePreviewStep[] {
+  if (current.fen === destination.fen) return [{position: destination}];
+  const steps: MovePreviewStep[] = [];
+  if (current.fen.split(' ')[0] !== decision.fen.split(' ')[0]) {
+    steps.push({position: decision, animation: undoUci ? {uci: undoUci, reverse: true} : undefined});
+  }
+  steps.push({position: destination, animation: {uci, reverse: false}});
+  return steps;
+}
 
 export function piecesAt(fen: string): Record<string, string> {
   const squares: Record<string, string> = {};

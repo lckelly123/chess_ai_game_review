@@ -13,7 +13,6 @@ export function playedMoveAnnotation(response: CoachResponse): CandidateMove | u
   return {
     uci,
     reason: response.teaching?.move_evaluation?.explanation ?? 'No saved explanation is available for this move.',
-    highlight_squares: [uci.slice(0, 2), uci.slice(2, 4)],
   };
 }
 

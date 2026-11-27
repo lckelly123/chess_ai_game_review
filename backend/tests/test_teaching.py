@@ -27,6 +27,19 @@ def response_with(data):
     return result
 
 
+def test_candidate_schema_has_no_annotations_and_saved_highlights_remain_readable():
+    schema = TeachingOutput.model_json_schema()["$defs"]["CandidateMove"]
+    assert set(schema["properties"]) == {"uci", "reason"}
+    assert set(schema["required"]) == {"uci", "reason"}
+    data = teaching_output()
+    legacy = deepcopy(data)
+    legacy["candidate_moves"][0]["highlight_squares"] = ["f3", "e5"]
+    assert TeachingAnalysis.model_validate(legacy).model_dump() == data
+    assert legacy["candidate_moves"][0]["highlight_squares"] == ["f3", "e5"]
+    with pytest.raises(ValueError):
+        TeachingOutput.model_validate(legacy)
+
+
 @pytest.mark.parametrize("fen,uci,san", [
     (chess.STARTING_FEN, "e2e4", "e4"),
     ("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", "e1g1", "O-O"),
