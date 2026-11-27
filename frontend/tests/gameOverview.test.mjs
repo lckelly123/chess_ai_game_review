@@ -45,6 +45,22 @@ test('counts include both players and do not classify missing or uncertain moves
   assert.equal(overviewCounts(game, {}) .white.analysed, 0);
 });
 
+test('summary separates Best and Excellent for both players and only plots errors', () => {
+  for (const [white, black] of [['best', 'excellent'], ['excellent', 'best']]) {
+    const graded = Object.fromEntries(Object.entries(reviews).map(([ply, review]) => [ply,
+      {...review, stockfish: {...review.stockfish, move_quality: {status: ply === '0' ? white : black}}}]));
+    const counts = overviewCounts(game, graded);
+    assert.equal(counts.white[white], 1);
+    assert.equal(counts.black[black], 1);
+    assert.equal(counts.white.good + counts.black.good, 0);
+    const html = render({reviews: graded, ply: 2});
+    assert.deepEqual([...html.matchAll(/class="overview-grade (\w+)"/g)].map(match => match[1]),
+      ['best', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder']);
+    assert.match(html, new RegExp(`class="move-quality ${black}">`));
+    assert.doesNotMatch(html, /class="evaluation-event/);
+  }
+});
+
 test('position facts describe the displayed board while move facts describe the move just played', () => {
   const html = render({ply: 1});
   assert.match(html, /White player.*Black player/);

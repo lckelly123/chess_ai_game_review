@@ -23,7 +23,8 @@ def mate(value):
 
 
 @pytest.mark.parametrize("loss,status", [
-    (0, "good"), (math.nextafter(5, 0), "good"), (5, "inaccuracy"),
+    (0, "excellent"), (math.nextafter(2.5, 0), "excellent"), (2.5, "good"),
+    (math.nextafter(5, 0), "good"), (5, "inaccuracy"),
     (math.nextafter(10, 0), "inaccuracy"), (10, "mistake"),
     (math.nextafter(15, 0), "mistake"), (15, "blunder"), (50, "blunder"),
 ])
@@ -40,11 +41,21 @@ def test_logistic_curve_caps_and_draw_symmetry():
     assert assess_player_move(cp(1500), cp(1000))["winning_chances_loss_pp"] == 0
 
 
-@pytest.mark.parametrize("played,status", [(50,"good"), (0,"inaccuracy"), (-50,"mistake"), (-100,"blunder")])
+@pytest.mark.parametrize("played,status", [(100,"best"), (90,"excellent"), (50,"good"), (0,"inaccuracy"), (-50,"mistake"), (-100,"blunder")])
 def test_centipawn_severity_including_missed_opportunities(played, status):
     result = assess_player_move(cp(100), cp(played))
     assert result["status"] == status
     assert result["winning_chances_loss_pp"] == pytest.approx(win_chance(100) - win_chance(played))
+
+
+@pytest.mark.parametrize("best,played,status", [
+    (1500, 1000, "excellent"), (-1000, -1500, "excellent"),
+    (1500, 1500, "best"), (-1500, -1500, "best"), (0, 0, "best"),
+])
+def test_best_requires_raw_score_tie_not_a_tie_from_capping(best, played, status):
+    result = assess_player_move(cp(best), cp(played))
+    assert result["status"] == status
+    assert result["winning_chances_loss_pp"] == 0
 
 
 def test_g5_example_is_good_using_cp_even_when_wdl_says_inferior():
@@ -83,6 +94,9 @@ def test_unreliable_scores_do_not_get_a_severity_label(best, played):
     (mate(3),mate(-3),"blunder","mate_lost"),
     (mate(3),mate(0),"blunder","mate_lost"),
     (mate(3),mate(8),"good","mate_retained"),
+    (mate(3),mate(3),"best","mate_retained"),
+    (mate(-3),mate(-3),"best","already_forced_loss"),
+    (mate(0),mate(0),"best","already_forced_loss"),
     (mate(-3),mate(-1),"good","already_forced_loss"),
 ])
 def test_mate_advice_is_separate_from_cp_formula(best, played, status, reason):
@@ -100,12 +114,13 @@ def test_player_severity_cannot_change_position_classification_or_candidate_appr
     assert prepared == snapshot == position
 
 
-def test_saved_labels_are_recomputed_from_scores_without_mutating_stored_evidence():
-    old = {"perspective":"White", "top_moves":[cp(187)], "played_move":cp(130),
+@pytest.mark.parametrize("played,status", [(187, "best"), (177, "excellent"), (130, "good")])
+def test_saved_labels_are_recomputed_from_scores_without_mutating_stored_evidence(played, status):
+    old = {"perspective":"White", "top_moves":[cp(187)], "played_move":cp(played),
            "move_quality":{"status":"meaningfully_inferior","expected_score_loss_pp":10.3}}
     snapshot = deepcopy(old)
     result = with_player_move_quality(old)
-    assert result["move_quality"]["status"] == "good"
+    assert result["move_quality"]["status"] == status
     assert result["move_quality_policy"]["metric"] == "winning_chances_loss_pp"
     assert result["top_moves"] == old["top_moves"]
     assert old == snapshot
@@ -115,7 +130,7 @@ def test_saved_labels_are_recomputed_from_scores_without_mutating_stored_evidenc
              "model":"gpt-6-astra","response_id":"old","created_at":datetime.now(timezone.utc),
              "stockfish":old,"position_evidence":position_evidence(chess.STARTING_FEN)}
     response = AnalyzePositionResponse(**saved)
-    assert response.stockfish["move_quality"]["status"] == "good"
+    assert response.stockfish["move_quality"]["status"] == status
     assert response.position_evidence == saved["position_evidence"]
     assert response.text == saved["text"] and old == snapshot
 
@@ -125,6 +140,6 @@ def test_saved_labels_are_recomputed_from_scores_without_mutating_stored_evidenc
     app.include_router(create_coach_router())
     with TestClient(app) as client:
         data = client.get('/api/coach/feedback', params={"fen":chess.STARTING_FEN,"played_move":"e2e4"}).json()
-    assert data["stockfish"]["move_quality"]["status"] == "good"
+    assert data["stockfish"]["move_quality"]["status"] == status
     assert data["position_evidence"] == saved["position_evidence"]
     app.state.db.save_coach_feedback.assert_not_called()

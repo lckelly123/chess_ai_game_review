@@ -155,7 +155,7 @@ export default function Lessons({username, profilesLoading, profileError, onRetr
           {data.outdated_reviews > 0 && <p>{data.outdated_reviews} {data.outdated_reviews === 1 ? 'error needs an updated coach review' : 'errors need updated coach reviews'}. Earlier reviews use different categories.
             {' '}<a href="#games">Update reviews in your game library</a>, or run coach on individual moves.</p>}
           {data.pending_reviews > 0 && <p>{data.pending_reviews} {data.pending_reviews === 1 ? 'error still needs' : 'errors still need'} a coach review to add lesson categories.</p>}
-          <p>Each move is counted once per game. Good and uncertain moves are excluded.</p>
+          <p>Each move is counted once per game. Best, Excellent, Good, and uncertain moves are excluded.</p>
         </div>
       </>}
   </div>;

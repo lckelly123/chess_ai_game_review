@@ -15,7 +15,7 @@ from .coach.context import COACH_CONTRACT_VERSION, current_coaching, context_key
 from .coach.move_review import MoveReview
 from .coach.lines import candidate_positions
 from .coach.move_quality import analyze_played_move
-from .coach.player_move_quality import with_player_move_quality
+from .coach.player_move_quality import assess_player_move, with_player_move_quality
 from .coach.position_classification import analyze_position
 from .coach.sharpness import with_position_sharpness
 from .coach.stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
@@ -46,10 +46,12 @@ def player_color(record: dict, username: str) -> str:
 def analysis_summary(row: dict | None) -> dict | None:
     if row is None:
         return None
-    return {**{key: row[key] for key in ("game_id", "player_color", "status", "total", "completed", "counts", "error", "updated_at")},
+    counts = quality_counts(row["moves"]) if "moves" in row else row["counts"]
+    return {**{key: row[key] for key in ("game_id", "player_color", "status", "total", "completed", "error", "updated_at")},
+            "counts": counts,
             "opponent_total": row.get("opponent_total"),
             "opponent_completed": row.get("opponent_completed", len(row.get("opponent_moves", {}))),
-            "coach_total": coaching_total(row),
+            "coach_total": coaching_total({"counts": counts}),
             "coach_completed": row.get("coach_completed", 0) if row.get("coach_version") == COACH_CONTRACT_VERSION else 0}
 
 
@@ -57,7 +59,8 @@ def analysis_result(row: dict | None) -> dict | None:
     if row is None:
         return None
     def rescored(moves):
-        return {ply: {**move, "candidate_positions": candidate_positions(move["fen"],
+        return {ply: {**move, "stockfish": with_player_move_quality(move["stockfish"]),
+            "candidate_positions": candidate_positions(move["fen"],
             [item["uci"] for item in move["stockfish"].get("top_moves", [])[:3]]),
             "position_evidence": with_position_sharpness(
             move.get("position_evidence") or {**move["stockfish"], "fen": move["fen"]}, expected_fen=move["fen"])}
@@ -67,7 +70,9 @@ def analysis_result(row: dict | None) -> dict | None:
 
 
 def quality_counts(moves: dict) -> dict:
-    return dict(Counter(value["stockfish"]["move_quality"]["status"] for value in moves.values()))
+    return dict(Counter(assess_player_move(next(iter(engine.get("top_moves") or []), {}),
+                                          engine.get("played_move") or {})["status"]
+                        for engine in (value["stockfish"] for value in moves.values())))
 
 
 def analyze_game_move(review: MoveReview) -> dict:

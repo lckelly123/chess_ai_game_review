@@ -6,6 +6,7 @@
   --ink: #f1f2f4; --muted: #a5adb8; --line: #2b2e34; --field-border: #606773;
   --accent: #91b4d3; --accent-hover: #c3daed; --selected: #1d2b38; --selection-badge: #2b4257;
   --positive: #9bd5b0; --positive-surface: #1d3328;
+  --quality-best: #b7e887; --quality-excellent: #8dd9c4;
   --negative: #f0ad9f; --negative-surface: #392622;
   --warning: #e6c389; --warning-surface: #342d20;
   --primary: #f1f2f4; --primary-hover: #d9dce1; --primary-ink: #16181c;
@@ -111,6 +112,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .game-analysis-status { grid-column: 2 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; font-size: 11px; color: var(--muted); }
 .analysis-counts { display: flex; flex-wrap: wrap; gap: 10px; }
 .analysis-count.good { color: var(--positive); }
+.analysis-count.best { color: var(--quality-best); }
+.analysis-count.excellent { color: var(--quality-excellent); }
 .analysis-count.inaccuracy { color: var(--warning); }
 .analysis-count.mistake { color: #efaa72; }
 .analysis-count.blunder, .analysis-error { color: var(--negative); }
@@ -323,6 +326,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .factor-explanation { padding: 0 4px 16px 32px; }
 .move-quality { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
 .move-quality.good { color: var(--positive); }
+.move-quality.best { color: var(--quality-best); }
+.move-quality.excellent { color: var(--quality-excellent); }
 .move-quality.inaccuracy { color: var(--warning); }
 .move-quality.mistake { color: var(--negative); }
 .move-quality.blunder { color: var(--negative); font-weight: 700; }

@@ -80,7 +80,7 @@ def test_invalid_or_mixed_category_shapes_are_rejected(classification):
         TeachingOutput.model_validate(output_with(classification))
 
 
-@pytest.mark.parametrize("severity", ["good", "uncertain", "unknown", None])
+@pytest.mark.parametrize("severity", ["best", "excellent", "good", "uncertain", "unknown", None])
 def test_classification_is_forbidden_without_an_error_severity(severity):
     teaching = TeachingOutput.model_validate(output_with({"category": "tactical_miss", "subcategory": "fork"}))
     with pytest.raises(ValueError, match="reliable error severity"):
@@ -98,7 +98,7 @@ def test_classification_requires_a_played_move_and_nonempty_explanation():
             played_move="e2e4", evidence={"move_quality": {"status": "blunder"}})
 
 
-@pytest.mark.parametrize("severity", ["good", "uncertain", "unknown", None])
+@pytest.mark.parametrize("severity", ["best", "excellent", "good", "uncertain", "unknown", None])
 def test_null_classification_is_valid_without_an_error(severity):
     TeachingOutput.model_validate(output_with(None)).validate_move_evaluation(
         played_move="e2e4", evidence={**position_evidence(chess.STARTING_FEN), "move_quality": {"status": severity}})

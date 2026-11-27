@@ -160,7 +160,7 @@ class TeachingOutput(BaseModel):
         return self
 
     def validate_move_evaluation(self, *, played_move: str | None, evidence: dict | None) -> "TeachingOutput":
-        from .player_move_quality import ERROR_STATUSES
+        from .player_move_quality import ACCEPTABLE_STATUSES, ERROR_STATUSES
 
         evaluation = self.move_evaluation
         candidates = {candidate.uci for candidate in self.candidate_moves}
@@ -169,12 +169,12 @@ class TeachingOutput(BaseModel):
             raise ValueError("Mistake classification requires a recorded move with a reliable error severity.")
         if played_move is not None and quality in ERROR_STATUSES and evaluation.mistake_classification is None:
             raise ValueError("A recorded error requires a mistake classification.")
-        if played_move in candidates and quality == "good" and evaluation.explanation is not None:
+        if played_move in candidates and quality in ACCEPTABLE_STATUSES and evaluation.explanation is not None:
             raise ValueError("An acceptable selected move must reuse its candidate explanation without correction.")
         if evaluation.explanation is None and not (
-            played_move in candidates and quality == "good"
+            played_move in candidates and quality in ACCEPTABLE_STATUSES
         ):
-            raise ValueError("Only a good supplied candidate may omit its explanation.")
+            raise ValueError("Only a best, excellent, or good supplied candidate may omit its explanation.")
         return self
 
     def as_analysis(self, fen: str, *, played_move: str | None, evidence: dict | None) -> "TeachingAnalysis":
