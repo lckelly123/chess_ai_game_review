@@ -121,11 +121,14 @@ export default function Replay({ game, username }: { game: GameDetail; username:
     setCandidateSelection(selected ? { fen: position.fen, responseId: coachResponse?.response_id ?? engineSelectionId(engineReview!), uci: selected } : null);
   }
 
-  function playSequence(sequence: PvSequence) {
+  function playSequence(sequence: PvSequence, restart = false) {
     if (!candidate || !coachResponse) return;
+    // Continue from the displayed position without undoing moves already shown.
+    // Keeping the same FEN also lets an in-flight piece animation finish.
+    const step = restart ? 0 : Math.max(0, sequence.positions.findIndex(position => position.fen === shownPosition.fen));
     preview.clear();
     dispatch({type: 'pause'});
-    setVariation({sequence, step: 0, gamePly: ply, responseId: coachResponse.response_id, ownerUci: candidate.uci});
+    setVariation({sequence, step, gamePly: ply, responseId: coachResponse.response_id, ownerUci: candidate.uci});
     const board = boardColumn.current?.querySelector('.board');
     const bounds = board?.getBoundingClientRect();
     if (bounds && (bounds.top < 0 || bounds.bottom > window.innerHeight)) {
@@ -242,7 +245,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
               preview.clear(); setVariation(null);
               setCandidateSelection(coachResponse?.played_move ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move} : null);
             }}>Back to game</button>
-            <button type="button" className="text-button" onClick={() => playSequence(playback.sequence)}><RotateCcw size={14} aria-hidden="true"/>Replay</button>
+            <button type="button" className="text-button" onClick={() => playSequence(playback.sequence, true)}><RotateCcw size={14} aria-hidden="true"/>Replay</button>
           </div>
         </div>}
         <div className="board-controls">
