@@ -1,3 +1,5 @@
+import type { ReviewSession } from './reviewPractice';
+
 export type Game = {
   id: string; url: string; white: string; black: string;
   white_rating: number | null; black_rating: number | null;
@@ -8,7 +10,7 @@ export type Game = {
 };
 export type Position = { fen: string; last_move: string[] | null; check_square: string | null; phase?: 'opening' | 'middlegame' | 'endgame' };
 export type Move = { ply: number; san: string; uci: string; color: string; number: number; clock_seconds?: number | null; elapsed_seconds?: number | null };
-export type GameDetail = Game & { pgn: string; positions: Position[]; moves: Move[]; coach_responses: Record<string, CoachResponse>; engine_analyses?: Partial<Record<'white' | 'black', GameAnalysis>> };
+export type GameDetail = Game & { pgn: string; positions: Position[]; moves: Move[]; coach_responses: Record<string, CoachResponse>; engine_analyses?: Partial<Record<'white' | 'black', GameAnalysis>>; review_sessions?: Record<string, ReviewSession> };
 export type Profile = { username: string; last_synced: number; game_count: number };
 export type ImportJob = { id: string; username: string; status: 'queued' | 'running' | 'completed' | 'failed'; found: number; added: number; skipped: number; message: string };
 export type EngineMove = {
@@ -62,6 +64,7 @@ export type MistakeClassification =
   | { category: 'tactical_miss' | 'tactical_allowed'; subcategory: 'hanging_piece' | 'fork' | 'pin_skewer' | 'discovered_attack' }
   | { category: 'positional'; subcategory: PieceType; best_move_piece?: PieceType; played_piece?: PieceType; same_piece?: boolean };
 export type PositionTeaching = {
+  decision_context?: 'Attack' | 'Defend' | 'Improve' | 'Convert' | null;
   position_overview?: string | null;
   position_explanation?: string;
   positional_thesis?: string;

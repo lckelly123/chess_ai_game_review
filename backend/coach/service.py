@@ -18,8 +18,8 @@ from .settings import CoachSettings
 class Coach:
     """Reuse an injected SDK client; the caller owns its lifecycle."""
 
-    def __init__(self, client: AsyncOpenAI, settings: CoachSettings | None = None, *, engine=None, position_engine=None):
-        adapter = ResponsesCoach(client, settings, position_engine=position_engine, engine=engine)
+    def __init__(self, client: AsyncOpenAI, settings: CoachSettings | None = None, *, engine=None, position_engine=None, on_evidence=None):
+        adapter = ResponsesCoach(client, settings, position_engine=position_engine, engine=engine, on_evidence=on_evidence)
         self.client = adapter.client
         self.settings = adapter.settings
         self.graph = build_coach_graph(adapter.analyze)
@@ -39,11 +39,12 @@ class Coach:
             played_move=result["move_uci"], position_analysis=result["position_analysis"],
             move_analysis=result["move_analysis"], stockfish=result["stockfish"],
             previous_move=result["previous_move_context"],
+            output_raw=result["position_analysis"].get("output_raw"),
         )
 
 
 @asynccontextmanager
-async def open_coach(settings: CoachSettings | None = None, *, position_engine=None, engine=None) -> AsyncIterator[Coach]:
+async def open_coach(settings: CoachSettings | None = None, *, position_engine=None, engine=None, on_evidence=None) -> AsyncIterator[Coach]:
     settings = settings or CoachSettings.from_env()
     async with open_response_client(settings) as client:
-        yield Coach(client, settings, position_engine=position_engine, engine=engine)
+        yield Coach(client, settings, position_engine=position_engine, engine=engine, on_evidence=on_evidence)

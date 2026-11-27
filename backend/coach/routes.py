@@ -182,14 +182,31 @@ def create_coach_router(coach_factory=open_coach, *, request_lock=None) -> APIRo
             # Avoid starting a paid request when persistence is already down.
             await run_in_threadpool(database.health)
             try:
-                async with coach_factory(CoachSettings.from_env(model=request.model)) as coach:
+                options = {}
+                if request.game_id and played_move:
+                    from ..game_analysis import pgn_fingerprint
+                    saved_engine = await run_in_threadpool(database.move_engine, request.game_id, request.ply)
+                    if isinstance(saved_engine, dict) and saved_engine.get("position_evidence"):
+                        options = {"position_engine": lambda _: saved_engine["position_evidence"],
+                                   "engine": lambda *_: saved_engine["stockfish"]}
+                    else:
+                        def persist_evidence(position_evidence, move_evidence):
+                            if move_evidence is None:
+                                return
+                            persisted = database.save_game_analysis_move(request.game_id, position.side_to_move.lower(),
+                                pgn_fingerprint(record["pgn"], record.get("analysis_revision", 0)), request.ply,
+                                {"fen": position.fen, "played_move": played_move, "stockfish": move_evidence, "position_evidence": position_evidence})
+                            if not persisted:
+                                raise HTTPException(409, "This game's analysis changed. Reload before running the coach.")
+                        options["on_evidence"] = persist_evidence
+                async with coach_factory(CoachSettings.from_env(model=request.model), **options) as coach:
                     result = await coach.analyze(position.fen,
                                                  **({"played_move": played_move} if played_move is not None else {}),
                                                  **({"previous_move": previous_move} if previous_move else {}))
                 if result.position.fen != position.fen or result.played_move != played_move:
                     raise CoachResponseError("The coach returned a different position.", result.response_id)
                 try:
-                    scope = {"game_id": request.game_id, "expected_revision": record.get("analysis_revision", 0)} if request.game_id else {}
+                    scope = {"game_id": request.game_id, "expected_revision": record.get("analysis_revision", 0), "decision_ply": request.ply} if request.game_id else {}
                     saved = await run_in_threadpool(database.save_coach_feedback, result, **scope)
                     if saved is None:
                         raise HTTPException(409, "Analysis was cleared while this review was running. Run it again for fresh results.")

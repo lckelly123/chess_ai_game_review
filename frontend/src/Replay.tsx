@@ -59,7 +59,7 @@ export default function Replay({ game, username }: { game: GameDetail; username:
   const previousReview = reviewPlies.filter(value => value < ply).at(-1);
   const nextReview = reviewPlies.find(value => value > ply);
   const practiceEligible = needsPractice(playedMove, color, position.fen, engineReview, coachResponse);
-  const practice = useReviewPractice(game.id, color, reviewPly, position.fen, playedMove?.uci ?? '', practiceEligible, false, reducedMotion, game.analysis_revision ?? 0);
+  const practice = useReviewPractice(game.id, color, reviewPly, position.fen, playedMove?.uci ?? '', practiceEligible, false, reducedMotion, game.analysis_revision ?? 0, game.review_sessions?.[String(reviewPly)] ?? null);
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(() => coachResponse?.played_move
     ? {fen: position.fen, responseId: coachResponse.response_id, uci: coachResponse.played_move}
     : engineReview ? {fen: position.fen, responseId: engineSelectionId(engineReview), uci: engineReview.played_move} : null);
@@ -290,6 +290,9 @@ export default function Replay({ game, username }: { game: GameDetail; username:
           {playedMove ? practice.inPractice ? <PracticeCard key={speechId} practice={practice} original={playedMove}
             overview={coachResponse?.teaching?.position_overview} speechId={speechId} reducedMotion={reducedMotion}/>
           : <div key={speechId} className={practice.justCompleted ? 'coach-review-reveal' : undefined}><div>
+            {practice.complete && <p><button type="button" className="text-button" disabled={practice.busy}
+              onClick={() => void practice.repeatReview()}>Practice again</button></p>}
+            {practice.error && <p className="coach-error" role="alert">{practice.error}</p>}
             <CoachCards response={coachResponse} engineReview={engineReview} engineMode={!!analysis || opponentMove} opponent={opponentMove} reviewedMove={playedMove} pending={analyzing && !coachResponse} selectedUci={candidate?.uci} onSelectCandidate={selectCandidate} transitioning={false}
               speechId={speechId} reducedMotion={reducedMotion} activeSequenceId={playback?.sequence.id} onPlaySequence={playSequence}/>
           </div></div> : <p className="coach-placeholder">Play a move to see its review.</p>}

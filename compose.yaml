@@ -46,10 +46,7 @@ services:
       PGUSER: chess
       PGDATABASE: chess_study
       PGPASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
-      LEGACY_SQLITE_PATH: /legacy/chess.db
       CHESSCOM_USER_AGENT: "${CHESSCOM_USER_AGENT:-ChessStudy/0.1 (local game library)}"
-    volumes:
-      - chess-data:/legacy:ro
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
@@ -73,6 +70,5 @@ services:
     stop_grace_period: 30s
 
 volumes:
-  chess-data:
   postgres-data:
   studio-data:

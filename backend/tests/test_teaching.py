@@ -237,7 +237,7 @@ def test_move_explanations_accept_san_pv_sequences_and_exports_omit_delimiters(s
     assert saved.move_evaluation.explanation == data["move_evaluation"]["explanation"]
     markdown = output.as_markdown(chess.STARTING_FEN)
     assert sequence in markdown and "[[" not in markdown
-    assert set(output.model_dump()) == {"position_overview", "position_explanation", "candidate_moves", "move_evaluation"}
+    assert set(output.model_dump()) == {"position_overview", "position_explanation", "candidate_moves", "move_evaluation", "decision_context"}
 
 
 @pytest.mark.parametrize("sequence", ["[[]]", "[[Nxe4]", "[[[[Nxe4]]]]", "[[Nxe4 and Qxe4]]", "[[g1f3]]", "[[Qh9]]", "[[Nxe4 ... Qxe4]]"])

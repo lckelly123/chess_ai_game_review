@@ -22,12 +22,12 @@ from backend.tests.position_fixtures import position_evidence
 
 def mock_coach_factory(handler, *, engine=None):
     @asynccontextmanager
-    async def factory(settings):
+    async def factory(settings, **options):
         async with AsyncOpenAI(
             api_key="test-key", max_retries=0,
             http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
         ) as client:
-            yield Coach(client, settings, engine=engine, position_engine=position_evidence)
+            yield Coach(client, settings, engine=options.get("engine", engine), position_engine=options.get("position_engine", position_evidence), on_evidence=options.get("on_evidence"))
     return factory
 
 
@@ -54,7 +54,7 @@ def test_coach_endpoint_calls_responses_with_only_selected_position(test_db_url,
         assert result["fen"] == fen
         assert result["model"] == (model or "gpt-6-astra")
         assert result["text"].startswith("### 1. Understand the Position")
-        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at", "stockfish", "teaching", "candidate_san", "candidate_positions", "position_evidence", "classification_version", "classification_current", "sharpness_version", "sharpness_current", "move_lines", "previous_move", "coach_contract_version", "coach_current", "better_candidate_uci"}
+        assert set(result) == {"fen", "played_move", "text", "model", "response_id", "created_at", "stockfish", "teaching", "candidate_san", "position_evidence", "classification_version", "classification_current", "sharpness_version", "sharpness_current", "move_lines", "previous_move", "coach_contract_version", "coach_current", "better_candidate_uci", "candidate_positions"}
         assert result["sharpness_current"] is True
         assert result["position_evidence"] == position_evidence(fen)
         assert result["teaching"]["candidate_moves"][0]["uci"] == "g8h6"
@@ -184,7 +184,7 @@ def test_overlapping_coach_requests_are_rejected(test_db_url):
                 await finish.wait()
                 return CoachAnalysis("Test response", "resp_test", "gpt-6-astra", CoachPosition.from_fen(fen), None)
         @asynccontextmanager
-        async def factory(settings):
+        async def factory(settings, **options):
             yield SlowCoach()
         app = create_app(test_db_url, coach_factory=factory)
         app.state.db = Database(test_db_url)

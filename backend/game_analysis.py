@@ -200,7 +200,7 @@ class GameAnalysisService:
                     if result.position.fen != fen or result.played_move != uci:
                         raise CoachResponseError("The coach returned a different position or move.", result.response_id)
                     persisted = await run_in_threadpool(self.db.save_coach_feedback, result, game_id=game_id,
-                                                        expected_revision=current.get("analysis_revision", 0))
+                                                        expected_revision=current.get("analysis_revision", 0), decision_ply=ply)
                     if persisted is None:
                         return False
                 completed += 1
@@ -212,6 +212,7 @@ class GameAnalysisService:
         async def status(value, error=None):
             await run_in_threadpool(self.db.set_game_analysis_status, game_id, color, fingerprint, value, error)
         phase = "engine"
+        current_ply = None
         try:
             # One game search at a time avoids multiplying Stockfish CPU/hash
             # usage when multiple games are submitted. Queued work is durable.
@@ -236,6 +237,12 @@ class GameAnalysisService:
                         destination[str(ply)] = cached
                         continue
                     review = MoveReview.from_fen(fen, uci)
+                    current_ply = ply
+                    if not await run_in_threadpool(self.db.mark_engine_move, game_id, fingerprint, ply, "running"):
+                        # Another side's run may have completed it while this job waited.
+                        fresh = await run_in_threadpool(self.db.game_analysis, game_id, color, fingerprint)
+                        if fresh is None:
+                            return
                     evidence = await run_in_threadpool(self.analyzer, review)
                     if (evidence.get("fen") != review.position.fen
                             or evidence.get("perspective") != review.position.side_to_move
@@ -251,6 +258,7 @@ class GameAnalysisService:
                     if not persisted:
                         return  # The PGN was replaced; never write stale results.
                     destination[str(ply)] = result
+                    current_ply = None
                 cached_stats = statistics or (other or {}).get("statistics") or {}
                 timeline = cached_stats.get("timeline") or []
                 final = timeline[-1] if timeline and timeline[-1].get("fen") == detail["positions"][-1]["fen"] else None
@@ -285,6 +293,8 @@ class GameAnalysisService:
             # Do not expose process diagnostics or connection strings to the UI.
             logger.warning("Game analysis stopped (%s).", type(exc).__name__)
             try:
+                if current_ply is not None and phase == "engine":
+                    await run_in_threadpool(self.db.mark_engine_move, game_id, fingerprint, current_ply, "failed", message)
                 await status("failed", message)
             except Exception:
                 logger.warning("Could not persist game-analysis failure status.")

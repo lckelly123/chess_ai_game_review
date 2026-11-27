@@ -192,7 +192,7 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
         assert saved["text"] == FIRST
         assert saved["played_move"] == "e2e4"
         assert saved["model"] == model
-        assert saved["position_evidence"] == position_evidence(chess.STARTING_FEN)
+        assert [m["score"] for m in saved["position_evidence"]["top_moves"]] == [m["score"] for m in position_evidence(chess.STARTING_FEN)["top_moves"]]
         assert saved["teaching"] == teaching_output()
         assert saved["candidate_san"] == {move["uci"]: chess.Board().san(chess.Move.from_uci(move["uci"])) for move in teaching_output()["candidate_moves"]}
         assert saved["stockfish"]["perspective"] == "White"
@@ -202,16 +202,17 @@ def test_combined_review_persists_restores_and_keeps_other_moves_separate(test_d
         assert client.get(f'/api/games/{different["id"]}').json()["coach_responses"] == {}
     with TestClient(create_app(test_db_url, coach_factory=factory)) as restarted:
         assert restarted.get(f'/api/games/{game["id"]}').json()["coach_responses"]["0"] == saved
-        assert restarted.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN, "played_move": "e2e4"}).json() == saved
+        assert restarted.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN, "played_move": "e2e4", "game_id": game["id"], "ply": 0}).json() == saved
     assert len(calls) == 1
     with db.connection() as conn:
-        row = conn.execute("SELECT position_analysis, move_analysis, stockfish, usage FROM coach_feedback").fetchone()
-        assert row["position_analysis"]["text"] == FIRST
-        assert row["position_analysis"]["structured"] == teaching_output()
-        assert row["move_analysis"] is None
-        assert row["position_analysis"]["model"] == model
-        assert row["stockfish"]["played_move"]["uci"] == "e2e4"
-        assert row["usage"]["total_tokens"] == 160
+        row = conn.execute("SELECT * FROM game_moves WHERE game_id=%s AND decision_ply=0", (game['id'],)).fetchone()
+        assert row['coach_metadata']['text'] == FIRST
+        assert json.loads(row['coach_output_raw']) == teaching_output()
+        assert row['coach_metadata']['model'] == model
+        assert row['uci'] == 'e2e4'
+        assert row['coach_metadata']['usage']['total_tokens'] == 160
+        assert conn.execute('SELECT COUNT(*) AS n FROM coach_feedback').fetchone()['n'] == 0
+
 
 
 @pytest.mark.parametrize("failure", ["incomplete", "refusal", "engine"])

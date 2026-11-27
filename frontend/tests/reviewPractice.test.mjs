@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { needsPractice, practiceComplete, practiceKey, restoreAttempts, resultMatches } from '../src/reviewPractice.ts';
+import { needsPractice, practiceComplete, practiceKey, restoreAttempts, resultMatches, sessionAttempts } from '../src/reviewPractice.ts';
 
 const move = {uci: 'e2e4', color: 'white'};
 const engine = status => ({fen: 'position', played_move: move.uci, stockfish: {move_quality: {status}}});
@@ -17,7 +17,7 @@ test('only the player’s flagged moves enter practice, from matching saved engi
   assert.equal(needsPractice(undefined, 'white', 'position', engine('blunder')), false);
 });
 
-test('ordered attempts survive restoration and only a graded Good move is terminal', () => {
+test('ordered attempts survive restoration and an ungraded move cannot complete practice', () => {
   const attempts = ['inaccuracy', 'mistake', 'blunder', 'uncertain'].map(quality => ({uci: 'e2e4', san: 'e4', at: 'now', quality, lossPp: null, status: 'graded'}));
   assert.equal(practiceComplete(attempts), false);
   assert.deepEqual(restoreAttempts(JSON.stringify(attempts)), attempts);
@@ -39,6 +39,9 @@ test('Best, Excellent, and Good all complete practice and survive restoration', 
   for (const quality of ['best', 'excellent', 'good']) {
     const attempt = {uci: 'd2d4', san: 'd4', at: 'now', quality, lossPp: 0, status: 'graded'};
     assert.equal(practiceComplete(restoreAttempts(JSON.stringify([attempt]))), true);
+    const saved = sessionAttempts({created_at: 'now', tried_moves: [{uci: 'd2d4', quality: quality.toUpperCase(), grading_status: 'graded'}]}, [{uci: 'd2d4', san: 'd4'}]);
+    assert.equal(saved[0].quality, quality);
+    assert.equal(practiceComplete(saved), true);
     assert.equal(practiceComplete([{...attempt, status: 'checking'}]), false);
     const result = {fen: 'fen', original_move: 'e2e4', move: 'd2d4', accepted: true, quality: {status: quality}};
     assert.equal(resultMatches(result, 'fen', 'e2e4', 'd2d4'), true);

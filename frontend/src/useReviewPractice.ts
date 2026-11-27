@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, readStored, store } from './types';
-import { practiceComplete, practiceKey, restoreAttempts, resultMatches } from './reviewPractice';
-import type { PracticeAttempt, PracticeContext, PracticeMove, PracticeResult } from './reviewPractice';
+import { api, readStored } from './types';
+import { practiceComplete, practiceKey, sessionAttempts, resultMatches } from './reviewPractice';
+import type { PracticeAttempt, PracticeContext, PracticeMove, PracticeResult, ReviewSession } from './reviewPractice';
 import { analysisResetEvent } from './analysisReset';
 
 type Preview = {key: string; move: PracticeMove; phase: 'checking' | 'retry' | 'accepted' | 'reverting' | 'replaying'};
 
-export function useReviewPractice(gameId: string, color: string, ply: number, fen: string, original: string, eligible: boolean, transitioning: boolean, reducedMotion = false, analysisRevision = 0) {
+export function useReviewPractice(gameId: string, color: string, ply: number, fen: string, original: string, eligible: boolean, transitioning: boolean, reducedMotion = false, analysisRevision = 0, initialReview: ReviewSession | null = null) {
   const key = practiceKey(gameId, color, ply, fen, original, analysisRevision);
+  const currentKey = useRef(key);
+  currentKey.current = key;
   const [sessions, setSessions] = useState<Record<string, PracticeAttempt[]>>({});
-  const attempts = sessions[key] ?? restoreAttempts(readStored(key));
+  const [reviews, setReviews] = useState<Record<string, ReviewSession | null>>({});
+  const attempts = sessions[key] ?? sessionAttempts(initialReview, []);
   const complete = practiceComplete(attempts);
   const active = eligible && !complete;
   const [context, setContext] = useState<{key: string; data: PracticeContext} | null>(null);
@@ -43,23 +46,33 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
   }, [currentPreview, key, reducedMotion]);
 
   useEffect(() => {
-    if (!active || transitioning) return;
+    if (!eligible || transitioning) return;
     const controller = new AbortController();
     setError(null);
     api<PracticeContext>(endpoint, {signal: controller.signal}).then(data => {
       if (controller.signal.aborted) return;
       if (data.fen !== fen || data.original_move !== original) throw new Error('This position has changed. Reload the game to continue.');
+      if (data.analysis_revision !== analysisRevision) throw new Error('Analysis changed. Reload the game to continue.');
       setContext({key, data});
+      setReviews(current => ({...current, [key]: data.review}));
+      setSessions(current => ({...current, [key]: sessionAttempts(data.review, data.legal_moves)}));
     }).catch(err => {
       if (!controller.signal.aborted) setError({key, message: err instanceof Error ? err.message : 'Could not load legal moves. Try again.'});
     });
     return () => controller.abort();
-  }, [active, transitioning, endpoint, key, fen, original, revision]);
+  }, [eligible, transitioning, endpoint, key, fen, original, revision, analysisRevision]);
 
   const legalMoves = context?.key === key ? context.data.legal_moves : [];
   const phase = currentPreview?.phase;
   const shownMove = currentPreview && phase !== 'reverting' && phase !== 'replaying' ? currentPreview.move : undefined;
-  const busy = pendingKey === key || !!currentPreview;
+  const awaitingGrade = attempts.some(attempt => attempt.status === 'checking');
+  const busy = pendingKey === key || !!currentPreview || awaitingGrade;
+
+  useEffect(() => {
+    if (!eligible || !awaitingGrade || pendingKey === key) return;
+    const timer = window.setTimeout(() => setRevision(value => value + 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [eligible, awaitingGrade, pendingKey, key, revision]);
 
   async function attemptMove(uci: string) {
     if (!active || transitioning || busy || request.current) return;
@@ -73,22 +86,25 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
     const resetToken = readStored(analysisResetEvent);
     const save = (values: PracticeAttempt[]) => {
       if (controller.signal.aborted || readStored(analysisResetEvent) !== resetToken) return;
-      store(key, JSON.stringify(values));
       setSessions(current => ({...current, [key]: values}));
     };
     save(updated);
     let accepted = false;
     try {
       const result = await api<PracticeResult>(endpoint, {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({fen, original_move: original, move: uci}), signal: controller.signal});
+        body: JSON.stringify({fen, original_move: original, move: uci, submission_id: crypto.randomUUID(),
+          review_id: (reviews[key] ?? initialReview)?.review_id, analysis_revision: analysisRevision}), signal: controller.signal});
       if (controller.signal.aborted) return;
       if (!resultMatches(result, fen, original, uci)) throw new Error('The move result did not match this position. Try again.');
       accepted = result.accepted;
-      save([...attempts, {...entry, status: 'graded', quality: result.quality.status, lossPp: result.quality.winning_chances_loss_pp}]);
+      setReviews(current => ({...current, [key]: result.review}));
+      save(sessionAttempts(result.review, legalMoves));
     } catch (err) {
       if (controller.signal.aborted) return;
       save([...attempts, {...entry, status: 'error'}]);
       setError({key, message: err instanceof Error ? err.message : 'Could not check this move. Try again.'});
+      // A response can be lost after the server saved it. Reload canonical state.
+      setRevision(value => value + 1);
     } finally {
       if (!controller.signal.aborted) {
         request.current = null; setPendingKey(null);
@@ -97,10 +113,28 @@ export function useReviewPractice(gameId: string, color: string, ply: number, fe
     }
   }
 
+  async function repeatReview() {
+    if (busy || transitioning) return;
+    setPendingKey(key);
+    try {
+      const review = await api<ReviewSession>(`${endpoint}/reviews`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({repeat: true, analysis_revision: analysisRevision})});
+      if (currentKey.current !== key) return;
+      setReviews(current => ({...current, [key]: review}));
+      setSessions(current => ({...current, [key]: sessionAttempts(review, legalMoves)}));
+      setPreview(null); setRevealedKey(null); setError(null);
+      setRevision(value => value + 1);
+    } catch (err) {
+      if (currentKey.current !== key) return;
+      setError({key, message: err instanceof Error ? err.message : 'Could not start another review.'});
+    } finally { if (currentKey.current === key) setPendingKey(null); }
+  }
+
   return {active, complete, attempts, legalMoves, shownMove, busy, phase, inPractice: eligible && (active || !!currentPreview),
     animation: currentPreview ? {uci: phase === 'replaying' ? original : currentPreview.move.uci, reverse: phase === 'reverting'} : undefined,
     checking: pendingKey === key, justCompleted: revealedKey === key,
     inputDisabled: !active || transitioning || busy || pendingKey !== null || !legalMoves.length,
     error: error?.key === key ? error.message : '', loading: active && context?.key !== key,
-    retry: () => setRevision(value => value + 1), attemptMove};
+    reviewNumber: reviews[key]?.review_number ?? 1,
+    retry: () => setRevision(value => value + 1), attemptMove, repeatReview};
 }
