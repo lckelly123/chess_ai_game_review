@@ -35,7 +35,7 @@ class MemoryDatabase:
                          'moves': {str(ply): saved_move(ply, cp)
                                    for ply, cp in [(0, 100), (2, 30), (4, -30), (6, -100), (8, None)]}}]
         moves = self.records[0]['moves']
-        self.feedback = {(moves['2']['fen'], moves['2']['played_move']): feedback('positional', 'knight'),
+        self.feedback = {(moves['2']['fen'], moves['2']['played_move']): feedback('positional', 'Improve'),
                          (moves['4']['fen'], moves['4']['played_move']): feedback('tactical_miss', 'fork'),
                          (moves['6']['fen'], moves['6']['played_move']): feedback('tactical_allowed', 'pin_skewer')}
 
@@ -61,7 +61,7 @@ def test_breakdown_counts_errors_in_each_new_category():
     assert category(result, 'tactical_miss')['counts'] == {'inaccuracy': 0, 'mistake': 1, 'blunder': 0, 'total': 1}
     assert category(result, 'tactical_allowed')['counts']['blunder'] == 1
     assert category(result, 'positional')['counts']['inaccuracy'] == 1
-    assert len(category(result, 'positional')['subcategories']) == 6
+    assert [row['key'] for row in category(result, 'positional')['subcategories']] == ['Attack', 'Defend', 'Improve', 'Convert']
     assert all(row['key'] != 'unspecified' for group in result['categories'] for row in group['subcategories'])
     assert result['unclassified']['total'] == result['pending_reviews'] == 0
     assert db.records == before  # No regrading or aggregation writes to storage.
@@ -133,7 +133,7 @@ def test_current_explicit_null_is_reviewed_but_remains_unclassified():
     assert result['outdated_reviews'] == result['pending_reviews'] == 0
 
 
-def test_version_two_and_enriched_positional_records_keep_existing_lesson_counts():
+def test_supported_historical_labels_and_piece_metadata_keep_objective_counts():
     db = MemoryDatabase()
     expected = lesson_analytics(db, 'alice')
     for review in db.feedback.values():
@@ -144,6 +144,19 @@ def test_version_two_and_enriched_positional_records_keep_existing_lesson_counts
     positional['teaching']['move_evaluation']['mistake_classification'].update(
         best_move_piece='knight', played_piece='pawn', same_piece=False)
     assert lesson_analytics(db, 'alice') == expected
+
+
+def test_legacy_piece_subcategory_is_not_counted_as_a_positional_objective():
+    db = MemoryDatabase()
+    positional = next(iter(db.feedback.values()))
+    positional['classification_version'] = 3
+    positional['teaching']['move_evaluation']['mistake_classification']['subcategory'] = 'knight'
+    result = lesson_analytics(db, 'alice')
+    assert category(result, 'positional')['counts']['total'] == 0
+    assert result['unclassified']['inaccuracy'] == 1
+    assert result['outdated_reviews'] == 1
+    assert category(result, 'tactical_miss')['counts']['total'] == 1
+    assert category(result, 'tactical_allowed')['counts']['total'] == 1
 
 
 def test_http_uses_latest_review_per_move_and_selected_profile_without_model_calls(test_db_url):

@@ -15,8 +15,8 @@ TACTICAL_MOTIFS = (
 LESSON_CATEGORIES = (
     ("tactical_miss", "Missed tactics", TACTICAL_MOTIFS),
     ("tactical_allowed", "Allowed tactics", TACTICAL_MOTIFS),
-    ("positional", "Positional", tuple((piece, piece.title()) for piece in
-        ("pawn", "knight", "bishop", "rook", "queen", "king"))),
+    ("positional", "Positional", tuple((objective, objective) for objective in
+        ("Attack", "Defend", "Improve", "Convert"))),
 )
 
 

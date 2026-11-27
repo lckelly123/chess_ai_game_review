@@ -52,7 +52,7 @@ def response_with(data, model="gpt-6-astra"):
 @pytest.mark.parametrize("category,subcategory", [
     (category, motif) for category in ("tactical_miss", "tactical_allowed")
     for motif in ("hanging_piece", "fork", "pin_skewer", "discovered_attack")
-] + [("other", None)])
+] + [("positional", objective) for objective in ("Attack", "Defend", "Improve", "Convert")])
 @pytest.mark.parametrize("severity", ["inaccuracy", "mistake", "blunder"])
 def test_supported_categories_and_subcategories_are_retained_for_errors(category, subcategory, severity):
     data = output_with({"category": category, "subcategory": subcategory})
@@ -73,6 +73,9 @@ def test_supported_categories_and_subcategories_are_retained_for_errors(category
     {"category": "positional", "subcategory": "knight"},
     {"category": "other", "subcategory": "knight"},
     {"category": "other"},
+    {"category": "other", "subcategory": None},
+    {"category": "tactical_allowed", "subcategory": "Defend"},
+    {"category": "positional", "subcategory": "Improve", "played_piece": "pawn"},
     {"category": "other", "subcategory": None, "played_piece": "pawn"},
 ])
 def test_invalid_or_mixed_category_shapes_are_rejected(classification):
@@ -113,7 +116,7 @@ def test_null_classification_is_rejected_for_a_recorded_error(severity):
 
 def test_error_feedback_uses_authoritative_severity_even_for_inconsistent_saved_candidates():
     # Legacy candidate lists may predate the unified severity policy.
-    data = output_with({"category": "other", "subcategory": None})
+    data = output_with({"category": "positional", "subcategory": "Improve"})
     TeachingOutput.model_validate(data).validate_move_evaluation(
         played_move=data["candidate_moves"][0]["uci"], evidence={**position_evidence(chess.STARTING_FEN), "move_quality": {"status": "inaccuracy"}})
 
@@ -135,7 +138,7 @@ def test_request_schema_constrains_categories_and_preserves_existing_inputs():
     evaluation = schema["$defs"]["MoveEvaluation"]
     assert "mistake_classification" in evaluation["required"]
     assert evaluation["additionalProperties"] is False
-    for name, subcategory_type in (("TacticalMistake", "string"), ("OtherMistake", "null")):
+    for name, subcategory_type in (("TacticalMistake", "string"), ("PositionalError", "string")):
         variant = schema["$defs"][name]
         assert variant["properties"]["subcategory"]["type"] == subcategory_type
         assert set(variant["required"]) == {"category", "subcategory"}
@@ -148,7 +151,26 @@ def test_request_schema_constrains_categories_and_preserves_existing_inputs():
     assert "PositionalMistake" not in schema["$defs"]
     assert all(field not in json.dumps(schema) for field in ("best_move_piece", "played_piece", "same_piece"))
     assert schema["$defs"]["TacticalMistake"]["properties"]["category"]["enum"] == ["tactical_miss", "tactical_allowed"]
+    assert schema["$defs"]["PositionalError"]["properties"]["subcategory"]["enum"] == ["Attack", "Defend", "Improve", "Convert"]
+    assert "decision_context" not in schema["properties"]
     assert "PLAYER MOVE: none" in message
+
+
+def test_retired_top_level_context_is_rejected_in_new_output_but_restored_for_old_reviews():
+    old = output_with({"category": "positional", "subcategory": "knight", "best_move_piece": "knight",
+                       "played_piece": "pawn", "same_piece": False})
+    old["decision_context"] = "Defend"
+    with pytest.raises(ValueError):
+        TeachingOutput.model_validate(old)
+    restored = TeachingAnalysis.model_validate(old).model_dump()
+    assert "decision_context" not in restored
+    assert restored["move_evaluation"]["mistake_classification"] == {
+        "category": "positional", "subcategory": "Defend", "best_move_piece": "knight",
+        "played_piece": "pawn", "same_piece": False}
+    current = output_with({"category": "positional", "subcategory": "Improve"})
+    current["decision_context"] = None
+    with pytest.raises(ValueError):
+        TeachingOutput.model_validate(current)
 
 
 @pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-terra"])
@@ -157,12 +179,12 @@ def test_request_schema_constrains_categories_and_preserves_existing_inputs():
      {"category": "tactical_miss", "subcategory": "fork"}),
     ({"category": "tactical_allowed", "subcategory": "pin_skewer"}, "e2e4",
      {"category": "tactical_allowed", "subcategory": "pin_skewer"}),
-    ({"category": "other", "subcategory": None}, "e2e4",
-     {"category": "positional", "subcategory": "knight", "best_move_piece": "knight", "played_piece": "pawn", "same_piece": False}),
-    ({"category": "other", "subcategory": None}, "g1f3",
-     {"category": "positional", "subcategory": "knight", "best_move_piece": "knight", "played_piece": "knight", "same_piece": True}),
-    ({"category": "other", "subcategory": None}, "b1c3",
-     {"category": "positional", "subcategory": "knight", "best_move_piece": "knight", "played_piece": "knight", "same_piece": False}),
+    ({"category": "positional", "subcategory": "Improve"}, "e2e4",
+     {"category": "positional", "subcategory": "Improve", "best_move_piece": "knight", "played_piece": "pawn", "same_piece": False}),
+    ({"category": "positional", "subcategory": "Improve"}, "g1f3",
+     {"category": "positional", "subcategory": "Improve", "best_move_piece": "knight", "played_piece": "knight", "same_piece": True}),
+    ({"category": "positional", "subcategory": "Improve"}, "b1c3",
+     {"category": "positional", "subcategory": "Improve", "best_move_piece": "knight", "played_piece": "knight", "same_piece": False}),
 ])
 def test_single_response_preserves_classification_through_database_json_and_http(model, classification, played_move, saved_classification):
     data = output_with(classification)
@@ -214,8 +236,8 @@ def test_classification_on_good_move_fails_the_run_before_persistence():
 @pytest.mark.parametrize("classification,saved_classification", [
     ({"category": "tactical_miss", "subcategory": "hanging_piece"},
      {"category": "tactical_miss", "subcategory": "hanging_piece"}),
-    ({"category": "other", "subcategory": None},
-     {"category": "positional", "subcategory": "knight", "best_move_piece": "knight", "played_piece": "pawn", "same_piece": False}),
+    ({"category": "positional", "subcategory": "Improve"},
+     {"category": "positional", "subcategory": "Improve", "best_move_piece": "knight", "played_piece": "pawn", "same_piece": False}),
 ])
 def test_mistake_classification_persists_and_restores_after_restart(test_db_url, classification, saved_classification):
     db = Database(test_db_url)
@@ -274,23 +296,23 @@ def test_positional_piece_uses_original_board_including_castling_and_promotion(f
     evidence = {"fen": fen, "perspective": "White" if chess.Board(fen).turn else "Black",
                 "top_moves": [{"rank": 1, "uci": uci, "depth": 18, "score": {"bound": "exact"}}]}
     assert best_move_piece(fen, evidence) == piece
-    teaching = TeachingOutput.model_validate(output_with({"category": "other", "subcategory": None}))
+    teaching = TeachingOutput.model_validate(output_with({"category": "positional", "subcategory": "Improve"}))
     teaching.validate_move_evaluation(played_move=uci, evidence={"move_quality": {"status": "mistake"}})
     saved = teaching.as_analysis(fen, played_move=uci, evidence=evidence)
     assert saved.move_evaluation.mistake_classification.model_dump() == {
-        "category": "positional", "subcategory": piece, "best_move_piece": piece, "played_piece": piece, "same_piece": True}
+        "category": "positional", "subcategory": "Improve", "best_move_piece": piece, "played_piece": piece, "same_piece": True}
 
 
 def test_piece_label_ignores_selected_candidates_and_played_piece_but_checks_engine_rank():
     evidence = position_evidence(chess.STARTING_FEN)
     evidence["top_moves"] = list(reversed(evidence["top_moves"]))
-    data = output_with({"category": "other", "subcategory": None})
+    data = output_with({"category": "positional", "subcategory": "Improve"})
     data["candidate_moves"][0]["uci"] = "e2e4"
     teaching = TeachingOutput.model_validate(data)
     teaching.validate_move_evaluation(played_move="d2d4", evidence={"move_quality": {"status": "mistake"}})
     saved = teaching.as_analysis(chess.STARTING_FEN, played_move="d2d4", evidence=evidence)
     assert saved.move_evaluation.mistake_classification.model_dump() == {
-        "category": "positional", "subcategory": "knight", "best_move_piece": "knight", "played_piece": "pawn", "same_piece": False}
+        "category": "positional", "subcategory": "Improve", "best_move_piece": "knight", "played_piece": "pawn", "same_piece": False}
     evidence["top_moves"] = [move for move in evidence["top_moves"] if move["rank"] != 1]
     with pytest.raises(ValueError, match="top-ranked"):
         teaching.as_analysis(chess.STARTING_FEN, played_move="d2d4", evidence=evidence)
@@ -318,7 +340,7 @@ def test_old_positional_record_loads_without_inventing_metadata_but_needs_new_co
 
 @pytest.mark.parametrize("field", ["best_move_piece", "played_piece", "same_piece"])
 def test_partial_positional_metadata_is_rejected(field):
-    classification = {"category": "positional", "subcategory": "knight", "best_move_piece": "knight",
+    classification = {"category": "positional", "subcategory": "Improve", "best_move_piece": "knight",
                       "played_piece": "pawn", "same_piece": False}
     del classification[field]
     with pytest.raises(ValueError):

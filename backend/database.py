@@ -417,8 +417,6 @@ class Database:
                 raw_teaching = json.loads(raw) if raw else teaching
                 evaluation = raw_teaching.get("move_evaluation") or {}
                 category = evaluation.get("mistake_classification") or {}
-                # Historical/custom adapters may already have normalized the label.
-                original_category = "other" if category.get("category") == "positional" else category.get("category")
                 evidence = payload.get("engine_evidence") or analysis.engine_evidence
                 fingerprint = pgn_fingerprint(game["raw_pgn"], game["analysis_revision"])
                 if move["engine_status"] != "completed" and analysis.stockfish and analysis.stockfish.get("top_moves"):
@@ -438,9 +436,8 @@ class Database:
                     "coach_position_explanation": teaching.get("position_explanation"),
                     "coach_candidate_moves": teaching.get("candidate_moves"),
                     "coach_move_explanation": evaluation.get("explanation"),
-                    "coach_error_category": original_category,
-                    "coach_error_subcategory": category.get("subcategory") if original_category != "other" else None,
-                    "coach_decision_context": raw_teaching.get("decision_context"),
+                    "coach_error_category": category.get("category"),
+                    "coach_error_subcategory": category.get("subcategory"),
                     "coach_output_raw": raw, "coach_metadata": metadata}
                 update(db, "game_moves", fields, "move_id=%s", [move["move_id"]])
                 return self._coach_row({**move, **fields})
@@ -464,11 +461,18 @@ class Database:
     def _coach_row(row):
         metadata = row["coach_metadata"]
         result = engine_result(row) if row["engine_status"] == "completed" else {}
+        classification = None
+        if row["coach_error_category"] is not None and row["coach_error_subcategory"] is not None:
+            # Queryable columns own the labels; metadata only adds piece facts.
+            details = metadata.get("normalized_classification") or {}
+            classification = {"category": row["coach_error_category"], "subcategory": row["coach_error_subcategory"]}
+            if row["coach_error_category"] == "positional":
+                classification.update({key: details[key] for key in ("best_move_piece", "played_piece", "same_piece") if key in details})
         teaching = None if row["coach_position_explanation"] is None else {
             "position_overview": row["coach_position_overview"], "position_explanation": row["coach_position_explanation"],
-            "candidate_moves": row["coach_candidate_moves"] or [], "decision_context": row["coach_decision_context"],
+            "candidate_moves": row["coach_candidate_moves"] or [],
             "move_evaluation": {"explanation": row["coach_move_explanation"],
-                                "mistake_classification": metadata.get("normalized_classification")}}
+                                "mistake_classification": classification}}
         return {"fen": row["fen_before"], "played_move": row["uci"], "text": metadata["text"], "model": metadata["model"],
                 "response_id": metadata["response_id"], "created_at": datetime.fromisoformat(metadata["generated_at"]),
                 "stockfish": result.get("stockfish"), "position_evidence": result.get("position_evidence"), "teaching": teaching,

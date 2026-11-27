@@ -62,6 +62,7 @@ test('model error labels cover allowed tactics and normalized positional errors'
   for (const [mistake_classification, labels] of [
     [{category: 'tactical_allowed', subcategory: 'pin_skewer'}, ['Allowed tactic', 'Pin / skewer']],
     [{category: 'positional', subcategory: 'bishop'}, ['Positional', 'Bishop']],
+    [{category: 'positional', subcategory: 'Defend'}, ['Positional', 'Defend']],
   ]) {
     const current = {...response, teaching: {...response.teaching,
       move_evaluation: {...response.teaching.move_evaluation, mistake_classification}}};
