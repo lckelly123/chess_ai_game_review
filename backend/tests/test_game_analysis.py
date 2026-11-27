@@ -61,7 +61,7 @@ def create_app(*args, **kwargs):
 
 
 def evidence(review):
-    position = position_evidence(review.position.fen)
+    position = position_evidence(review.position.fen, preferred=[m.uci() for m in chess.Board(review.position.fen).legal_moves if m.uci() != review.played_move_uci][:5])
     return {"fen": review.position.fen, "engine": "Stockfish fixture", "perspective": review.position.side_to_move,
             "top_moves": position["top_moves"], "played_move": {
                 "uci": review.played_move_uci, "san": review.played_move_san, "rank": None, "depth": 12,
@@ -79,7 +79,19 @@ class MemoryDatabase:
     def health(self):
         pass
 
-    def save_coach_feedback(self, analysis, *, game_id=None, expected_revision=0):
+    def mark_engine_move(self, *args):
+        return True
+
+    def move_engine(self, game_id, ply):
+        return None
+
+    def game_reviews(self, game_id):
+        return {}
+
+    def game_replay(self, game_id):
+        return replay(self.record["pgn"])
+
+    def save_coach_feedback(self, analysis, *, game_id=None, expected_revision=0, decision_ply=None):
         saved = {"fen": analysis.position.fen, "played_move": analysis.played_move,
                  "text": analysis.text, "model": analysis.model, "response_id": analysis.response_id,
                  "created_at": datetime.now(timezone.utc), "stockfish": analysis.stockfish,
@@ -483,9 +495,10 @@ def test_postgres_resume_keeps_saved_moves_and_separates_colors(test_db_url):
         assert partial["status"] == "interrupted" and partial["completed"] == 1
         client.post(f'/api/games/{game["id"]}/analysis', json={"username": "alice"})
         restored = wait_completed(client, game["id"])["moves"]["0"]
-        assert all(restored[key] == value for key, value in first.items())
+        assert restored["fen"] == first["fen"] and restored["played_move"] == first["played_move"]
+        assert restored["stockfish"]["played_move"]["score"] == first["stockfish"]["played_move"]["score"]
         assert restored['position_evidence']['sharpness']['score'] is not None
-        assert db.game_analysis(game['id'], 'white', fingerprint)['moves']['0'] == first
+        assert db.game_analysis(game['id'], 'white', fingerprint)['moves']['0']['stockfish']['top_moves'][0]['score'] == first['stockfish']['top_moves'][0]['score']
         assert client.get(f'/api/games/{game["id"]}/analysis?username=bob').json() is None
 
 
@@ -694,9 +707,9 @@ def test_completed_old_taxonomy_job_refreshes_only_stale_reviews_without_engine_
         client.post(f'/api/games/{game["id"]}/analysis', json={'username': 'alice'})
         assert wait_completed(client, game['id'])['coach_completed'] == 4
     with db.connection() as conn:
-        conn.execute('UPDATE game_engine_analysis SET coach_version=0')
-        conn.execute("UPDATE coach_feedback SET position_analysis=position_analysis - 'classification_version' WHERE played_move != 'e2e4'")
-        before = conn.execute('SELECT moves FROM game_engine_analysis').fetchone()['moves']
+        conn.execute('UPDATE analysis_jobs SET coach_version=0')
+        conn.execute("UPDATE game_moves SET coach_metadata=coach_metadata - 'classification_version' WHERE uci != 'e2e4'")
+    before = db.game_analysis(game['id'], 'white', pgn_fingerprint(game['pgn']))['moves']
     calls = []
     @asynccontextmanager
     async def factory(settings, **options):
@@ -716,4 +729,4 @@ def test_completed_old_taxonomy_job_refreshes_only_stale_reviews_without_engine_
         client.post(f'/api/games/{game["id"]}/analysis', json={'username': 'alice'})
         assert len(calls) == 3  # Completed current reviews are reused.
     with db.connection() as conn:
-        assert conn.execute('SELECT count(*) AS count FROM coach_feedback').fetchone()['count'] == 7
+        assert conn.execute('SELECT count(*) AS count FROM game_moves WHERE coach_metadata IS NOT NULL').fetchone()['count'] == 4

@@ -25,6 +25,7 @@ def teaching_output(fen=chess.STARTING_FEN, *, candidate_ucis=None):
     moves = [chess.Move.from_uci(uci) for uci in ucis]
     return {
         "position_overview": "Test position hint.",
+        "decision_context": None,
         "position_explanation": "Test analysis with " + ", ".join(f"[[{move.uci()}]]" for move in moves) + "." if moves else "Play has ended.",
         "move_evaluation": {"explanation": "Test move feedback.", "mistake_classification": None},
         "candidate_moves": [{"uci": move.uci(), "reason": "Test candidate reasoning."} for move in moves],
@@ -96,7 +97,7 @@ def test_responses_request_and_output_through_real_sdk():
         assert body["text"]["format"]["strict"] is True
         assert body["text"]["format"]["type"] == "json_schema"
         schema = body["text"]["format"]["schema"]
-        assert set(schema["properties"]) == {"position_overview", "position_explanation", "candidate_moves", "move_evaluation"}
+        assert set(schema["properties"]) == {"position_overview", "position_explanation", "candidate_moves", "move_evaluation", "decision_context"}
         assert set(schema["required"]) == set(schema["properties"])
         assert body["input"][0] == {"role": "system", "content": SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")}
         message = body["input"][1]

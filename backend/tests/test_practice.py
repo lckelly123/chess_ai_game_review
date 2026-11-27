@@ -14,6 +14,17 @@ from backend.coach.stockfish import StockfishAnalysisError, StockfishTimeoutErro
 from backend.practice import create_practice_router, grade_attempt, saved_evidence
 
 
+from backend.database import Database
+from backend.chess_games import normalize_game
+from backend.tests.test_app import raw_game
+
+
+@pytest.fixture(autouse=True)
+def practice_database(test_db_url):
+    global practice_db_url
+    practice_db_url = test_db_url
+
+
 PGN = '1. e4 e5 2. Nf3 Nc6 *'
 
 
@@ -40,6 +51,12 @@ def practice_app(analyzer=grade_attempt, pgn=PGN):
         def coach_feedback_for_reviews(self, keys, *, game_id=None):
             return {}
 
+    durable = Database(practice_db_url)
+    record = normalize_game(raw_game(pgn=pgn.replace('*', '1-0')), 'alice')
+    record['id'] = 'saved'
+    durable.save_import('alice', [record], 1)
+    for name in ('review_sessions', 'start_review', 'reserve_review_submission', 'finish_review_submission'):
+        setattr(SavedGames, name, staticmethod(getattr(durable, name)))
     app = FastAPI()
     app.state.db = SavedGames()
     app.include_router(create_practice_router(analyzer))
@@ -61,7 +78,7 @@ def test_context_exposes_only_legal_moves_and_board_previews_without_engine_work
         assert data['fen'] == original.position.fen
         assert data['original_move'] == 'e7e5'
         assert len(data['legal_moves']) == 20
-        assert set(data) == {'fen', 'original_move', 'legal_moves'}
+        assert set(data) == {'fen', 'original_move', 'legal_moves', 'review', 'reviews', 'analysis_revision'}
         option = next(move for move in data['legal_moves'] if move['uci'] == 'c7c5')
         board = chess.Board(original.position.fen)
         board.push_uci('c7c5')

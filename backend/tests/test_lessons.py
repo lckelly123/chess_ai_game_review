@@ -159,7 +159,7 @@ def test_http_uses_latest_review_per_move_and_selected_profile_without_model_cal
     for number, label in enumerate(['hanging_piece', 'fork'], 1):
         db.save_coach_feedback(CoachAnalysis(text='Saved coaching', model='test', response_id=f'review-{number}',
             position=review.position, played_move=review.played_move_uci, usage=None,
-            position_analysis={'classification_version': CLASSIFICATION_VERSION, 'structured': feedback('tactical_miss', label)['teaching']}))
+            position_analysis={'classification_version': CLASSIFICATION_VERSION, 'structured': {**feedback('tactical_miss', label)['teaching'], 'position_explanation': 'Test explanation', 'position_overview': 'Hint', 'candidate_moves': []}}), game_id=game['id'], decision_ply=0)
     def forbidden(*args, **kwargs):
         raise AssertionError('Lessons must not start any engine or model work')
     with TestClient(create_app(test_db_url, game_engine=forbidden, coach_factory=forbidden)) as client:
@@ -174,4 +174,4 @@ def test_http_uses_latest_review_per_move_and_selected_profile_without_model_cal
         assert client.get('/api/lessons?username=outsider').json()['imported_games'] == 0
         assert client.get('/api/lessons').status_code == 422
         assert client.get('/api/lessons?username=bad%20name').status_code == 422
-        assert len(db.coach_feedback_for_reviews([(review.position.fen, review.played_move_uci)])) == 1
+        assert len(db.coach_feedback_for_reviews([(review.position.fen, review.played_move_uci)], game_id=game['id'])) == 1

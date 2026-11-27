@@ -113,6 +113,7 @@ class TeachingOutput(BaseModel):
     # Zero is valid in terminal positions or when no engine moves are approved.
     candidate_moves: list[CandidateMove] = Field(max_length=3)
     move_evaluation: MoveEvaluation
+    decision_context: Literal["Attack", "Defend", "Improve", "Convert"] | None
 
     @field_validator("position_overview", "position_explanation")
     @classmethod
@@ -236,6 +237,7 @@ class TeachingAnalysis(TeachingOutput):
     """Read saved teaching while omitting obsolete fields and labels."""
 
     position_character: Literal["quiet", "tense", "forcing"] | None = Field(default=None, exclude=True)
+    decision_context: Literal["Attack", "Defend", "Improve", "Convert"] | None = None
     # A legacy thesis can reveal the answer, so it is never used as a hint.
     position_overview: str | None = Field(default=None, min_length=1)
     move_evaluation: SavedMoveEvaluation | None = None

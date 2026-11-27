@@ -1,7 +1,4 @@
-import hashlib
 import json
-import shutil
-import sqlite3
 from copy import deepcopy
 
 import chess
@@ -14,79 +11,9 @@ from backend.chess_games import normalize_game
 from backend.coach import CoachAnalysis, CoachPosition
 from backend.database import Database
 from backend.main import create_app
-from backend.migrate_sqlite import MIGRATION, migrate_sqlite
 from backend.tests.test_app import raw_game
 from backend.tests.test_coach import completed_response, teaching_output
 from backend.tests.test_coach_routes import mock_coach_factory
-
-
-def legacy_database(path, *, broken=False):
-    game = normalize_game(raw_game(99), "alice")
-    metadata = {key: value for key, value in game.items() if key != "pgn"}
-    with sqlite3.connect(path) as db:
-        db.executescript("""
-            CREATE TABLE games (id TEXT PRIMARY KEY, url TEXT, pgn TEXT, metadata TEXT, end_time INTEGER);
-            CREATE TABLE profiles (username TEXT PRIMARY KEY, last_synced INTEGER);
-            CREATE TABLE profile_games (username TEXT, game_id TEXT, PRIMARY KEY(username, game_id));
-            CREATE TABLE http_cache (url TEXT PRIMARY KEY, body TEXT, etag TEXT, modified TEXT, fetched REAL);
-        """)
-        db.execute("INSERT INTO profiles VALUES (?, ?)", ("alice", 123))
-        db.execute("INSERT INTO games VALUES (?, ?, ?, ?, ?)", (game["id"], game["url"], game["pgn"], json.dumps(metadata), game["end_time"]))
-        db.execute("INSERT INTO profile_games VALUES (?, ?)", ("alice", "missing" if broken else game["id"]))
-        db.execute("INSERT INTO http_cache VALUES (?, ?, ?, ?, ?)", ("https://api.chess.com/pub/player/alice", '{"username":"alice"}', '"etag"', None, 123.5))
-    return game
-
-
-def test_sqlite_migration_is_complete_read_only_and_idempotent(test_db_url, tmp_path):
-    source = tmp_path / "legacy.db"
-    game = legacy_database(source)
-    before = hashlib.sha256(source.read_bytes()).hexdigest()
-    db = Database(test_db_url)
-    assert migrate_sqlite(db, source) == {"profiles": 1, "games": 1, "profile_games": 1, "http_cache": 1}
-    assert db.game(game["id"]) == {**game, "analysis_revision": 0}
-    assert db.profiles() == [{"username": "alice", "last_synced": 123, "game_count": 1}]
-    assert db.cache("https://api.chess.com/pub/player/alice")["etag"] == '"etag"'
-    db.save_import("alice", [game], 456)
-    assert migrate_sqlite(db, source) == {}
-    assert db.profiles()[0]["last_synced"] == 456
-    assert hashlib.sha256(source.read_bytes()).hexdigest() == before
-
-
-def test_broken_migration_rolls_back_all_records_and_marker(test_db_url, tmp_path):
-    source = tmp_path / "broken.db"
-    legacy_database(source, broken=True)
-    db = Database(test_db_url)
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):
-        migrate_sqlite(db, source)
-    assert db.profiles() == []
-    with db.connection() as conn:
-        assert conn.execute("SELECT count(*) AS n FROM games").fetchone()["n"] == 0
-        assert conn.execute("SELECT name FROM schema_migrations WHERE name=%s", (MIGRATION,)).fetchone() is None
-
-
-def test_read_only_wal_source_keeps_uncheckpointed_records(test_db_url, tmp_path):
-    original = tmp_path / "original.db"
-    legacy_database(original)
-    snapshot_dir = tmp_path / "readonly"
-    snapshot_dir.mkdir()
-    snapshot = snapshot_dir / "chess.db"
-    with sqlite3.connect(original) as writer:
-        writer.execute("PRAGMA journal_mode=WAL")
-        writer.execute("PRAGMA wal_autocheckpoint=0")
-        writer.execute("UPDATE profiles SET last_synced=987")
-        writer.commit()
-        # A stable offline snapshot with WAL but no shared-memory index.
-        shutil.copyfile(original, snapshot)
-        shutil.copyfile(str(original) + "-wal", str(snapshot) + "-wal")
-    before = {p.name: p.read_bytes() for p in snapshot_dir.iterdir()}
-    snapshot_dir.chmod(0o555)
-    try:
-        db = Database(test_db_url)
-        migrate_sqlite(db, snapshot)
-        assert db.profiles()[0]["last_synced"] == 987
-        assert {p.name: p.read_bytes() for p in snapshot_dir.iterdir()} == before
-    finally:
-        snapshot_dir.chmod(0o755)
 
 
 def test_feedback_restores_after_restart_and_is_position_specific(test_db_url):
@@ -104,7 +31,7 @@ def test_feedback_restores_after_restart_and_is_position_specific(test_db_url):
         assert client.get('/api/coach/feedback', params={"fen": fen}).json() is None
         saved = client.post('/api/coach/analyze', json={"fen": fen}).json()
         assert saved["created_at"] and saved["text"]
-        assert set(saved["teaching"]) == {"position_overview", "position_explanation", "candidate_moves", "move_evaluation"}
+        assert set(saved["teaching"]) == {"position_overview", "position_explanation", "candidate_moves", "move_evaluation", "decision_context"}
         assert "Needs of the Position" not in saved["text"]
         with db.connection() as conn:
             structured = conn.execute("SELECT position_analysis -> 'structured' AS teaching FROM coach_feedback").fetchone()["teaching"]

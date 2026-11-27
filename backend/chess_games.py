@@ -50,6 +50,7 @@ def normalize_game(raw: dict, username: str) -> dict:
         "opening": game.headers.get("Opening", ""),
         "eco": game.headers.get("ECO", ""),
         "ply_count": len(moves),
+        "raw_metadata": raw,
     }
 
 

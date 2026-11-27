@@ -20,6 +20,10 @@ function render(ply, game = replayGame, username = game.black, completed = false
   globalThis.window = {matchMedia: () => ({matches: true})};
   globalThis.localStorage = {getItem: key => key === `position:${game.id}` ? String(ply)
     : completed && key.startsWith('review-practice:') ? JSON.stringify([{uci: 'b8b2', san: 'Qb2', at: 'now', quality: 'good', status: 'graded', lossPp: 0}]) : null};
+  if (completed) game = {...game, review_sessions: Object.fromEntries(game.moves.map((move, ply) => [String(ply), {
+    review_id: ply + 1, move_id: ply + 1, review_number: 1, created_at: 'now', status: 'completed',
+    tried_moves: [{submission_id: 'one', uci: 'b8b2', quality: 'Good', grading_status: 'graded'}],
+  }]))};
   try { return renderToStaticMarkup(React.createElement(Replay, {game, username})); }
   finally {
     if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;

@@ -119,11 +119,17 @@ def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishS
     played = next((move for move in candidates if move["uci"] == review.played_move_uci), None)
     in_top = played is not None
     engine_name = evidence["engine"]
+    searches = {"position": {"limits": evidence.get("limits"), "threads": evidence.get("threads"),
+        "hash_mb": evidence.get("hash_mb"), "multipv": len(candidates), "root_scope": "all_legal_moves", "history_mode": "fen_only"}}
+    source = "candidate_reuse" if in_top else "separate_search"
     if played is None:
         settings = settings or StockfishSettings.from_env()
         # Compare at the completed position search's depth, not the requested
         # depth which a timed MultiPV search may never have reached.
         settings = replace(settings, depth=candidates[0]["depth"])
+        searches["played"] = {"limits": {"depth": settings.depth, "seconds_per_search": settings.time_limit},
+            "threads": settings.threads, "hash_mb": settings.hash_mb, "multipv": 1,
+            "root_scope": [review.played_move_uci], "history_mode": "fen_only"}
         board = chess.Board(review.position.fen)
         try:
             with chess.engine.SimpleEngine.popen_uci(settings.executable(), timeout=5.0) as engine:
@@ -144,13 +150,19 @@ def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishS
         raise StockfishAnalysisError("Stockfish evaluated a different played move.")
     quality = assess_player_move(candidates[0], played)
     verified_position = None
+    comparison = None
     if not in_top and quality["reason"] == "conflicting_order":
         # Separate searches can disagree even at the same depth. Compare all
         # original candidates and the player together; never sort mixed scores
         # or turn a negative loss into an automatic Good grade.
+        comparison = {"original_candidates": deepcopy(candidates), "original_played": deepcopy(played)}
+        source = "comparison"
+        searches["comparison"] = {**searches["played"], "multipv": len(candidates) + 1,
+                                  "root_scope": [move["uci"] for move in candidates] + [played["uci"]]}
         engine_name, compared = compare_candidate_moves(
             review.position.fen, [move["uci"] for move in candidates] + [played["uci"]], settings)
         played = next(move for move in compared if move["uci"] == review.played_move_uci)
+        comparison["compared_candidates"] = deepcopy(compared)
         candidates = compared[:len(candidates)]
         verified_position = _comparison_position(evidence, candidates, engine_name, settings)
         candidates = verified_position["top_moves"]
@@ -160,4 +172,5 @@ def analyze_played_move(review: MoveReview, evidence: dict, settings: StockfishS
     return {"fen": review.position.fen, "engine": engine_name, "perspective": review.position.side_to_move,
             "top_moves": candidates, "played_move": played, "played_move_in_top": in_top,
             "move_quality": played["quality"], "move_quality_policy": PLAYER_QUALITY_POLICY.copy(),
+            "played_evaluation_source": source, "search_metadata": searches, "comparison_evidence": comparison,
             **({"position_evidence": verified_position} if verified_position is not None else {})}

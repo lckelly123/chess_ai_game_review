@@ -188,9 +188,10 @@ def test_single_response_preserves_classification_through_database_json_and_http
         yield connection
     db = object.__new__(Database)
     db.connection = connect
+    db._standalone_row = lambda row: row
     db.save_coach_feedback(result)
     sql, params = connection.execute.call_args.args
-    assert "position_analysis -> 'structured' AS teaching" in sql
+    assert '"coach_feedback"' in sql.as_string()
     stored = json.loads(json.dumps(params[6].obj))
     assert stored["structured"] == saved_data
     assert stored["classification_version"] == CLASSIFICATION_VERSION
@@ -230,11 +231,13 @@ def test_mistake_classification_persists_and_restores_after_restart(test_db_url,
         assert saved["teaching"] == saved_data
         assert saved["classification_current"] is True and saved["classification_version"] == CLASSIFICATION_VERSION
     with db.connection() as conn:
-        row = conn.execute("SELECT position_analysis FROM coach_feedback").fetchone()
-        assert row["position_analysis"]["structured"] == saved_data
+        row = conn.execute("SELECT * FROM game_moves WHERE decision_ply=0").fetchone()
+        assert json.loads(row["coach_output_raw"]) == data
+        assert row["coach_error_category"] == classification["category"]
+        assert row["coach_metadata"]["normalized_classification"] == saved_classification
     with TestClient(create_app(test_db_url, coach_factory=factory)) as restarted:
         assert restarted.get(f'/api/games/{game["id"]}').json()["coach_responses"]["0"] == saved
-        assert restarted.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN, "played_move": "e2e4"}).json() == saved
+        assert restarted.get('/api/coach/feedback', params={"fen": chess.STARTING_FEN, "played_move": "e2e4", "game_id": game["id"], "ply": 0}).json() == saved
 
 
 @pytest.mark.parametrize("category,subcategory", [

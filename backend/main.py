@@ -23,7 +23,6 @@ from .importer import ChessComImporter
 from .game_analysis import GameAnalysisService, analyze_game_move, create_game_analysis_router
 from .lessons import lesson_analytics
 from .practice import create_practice_router
-from .migrate_sqlite import migrate_sqlite
 from .multi_game.service import MultiGameService, create_multi_game_router
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,9 +48,6 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
         # Explicit process environment values always take precedence.
         load_dotenv(ROOT / ".env", override=False)
         app.state.db = Database(database_url if database_url is not None else os.getenv("DATABASE_URL", ""))
-        legacy_path = os.getenv("LEGACY_SQLITE_PATH")
-        if legacy_path and database_url is None:
-            migrate_sqlite(app.state.db, legacy_path)
         app.state.jobs = {}
         app.state.tasks = set()
         app.state.db.interrupt_game_analyses()
@@ -102,13 +98,14 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
         record = app.state.db.game(game_id)
         if not record:
             raise HTTPException(404, "Game not found.")
-        detail = replay(record["pgn"])
+        detail = app.state.db.game_replay(game_id)
         reviews = [(position["fen"], detail["moves"][ply]["uci"] if ply < len(detail["moves"]) else None,
                     context_key(previous_move_from_replay(detail, ply)))
                    for ply, position in enumerate(detail["positions"])]
         feedback = app.state.db.coach_feedback_for_reviews(reviews + [(fen, None, history) for fen, _, history in reviews], game_id=game_id)
         # Legacy position-only answers remain visible until a move review exists.
-        return {**record, **detail, "engine_analyses": app.state.db.game_analyses(game_id, record["pgn"]), "coach_responses": {
+        return {**record, **detail, "review_sessions": app.state.db.game_reviews(game_id),
+                "engine_analyses": app.state.db.game_analyses(game_id, record["pgn"]), "coach_responses": {
             str(ply): AnalyzePositionResponse(**answer).model_dump(mode="json")
             for ply, (fen, move, history) in enumerate(reviews)
             if (answer := feedback.get((fen, move, history)) or feedback.get((fen, None, history))) is not None

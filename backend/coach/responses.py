@@ -48,9 +48,12 @@ class CoachAnalysis:
     structured: dict[str, Any] | None = None
     engine_evidence: dict[str, Any] | None = None
     previous_move: dict[str, str] | None = None
+    output_raw: str | None = None
 
     def as_pass(self) -> dict[str, Any]:
         result = {"text": self.text, "response_id": self.response_id, "model": self.model, "usage": self.usage}
+        if self.output_raw is not None:
+            result["output_raw"] = self.output_raw
         if self.structured is not None:
             result["coach_contract_version"] = COACH_CONTRACT_VERSION
             result["previous_move"] = self.previous_move
@@ -151,7 +154,7 @@ def build_move_request(review: MoveReview, previous_analysis: dict | str, eviden
 class ResponsesCoach:
     """Reuse an injected SDK client; the caller owns its lifecycle."""
 
-    def __init__(self, client: AsyncOpenAI, settings: CoachSettings | None = None, *, position_engine=None, engine=None):
+    def __init__(self, client: AsyncOpenAI, settings: CoachSettings | None = None, *, position_engine=None, engine=None, on_evidence=None):
         # The wrapper mutates the client. An injected client may already be traced.
         if not (
             getattr(client.responses.create, "_coach_traced", False)
@@ -163,6 +166,7 @@ class ResponsesCoach:
         self.settings = settings or CoachSettings()
         self.position_engine = position_engine or analyze_position
         self.move_engine = engine or analyze_played_move
+        self.on_evidence = on_evidence
 
     async def analyze(self, fen: str, *, ascii_board: str | None = None, played_move: str | None = None,
                       previous_move: dict | None = None) -> CoachAnalysis:
@@ -179,6 +183,8 @@ class ResponsesCoach:
         if move_evidence and "position_evidence" in move_evidence:
             move_evidence = dict(move_evidence)
             evidence = move_evidence.pop("position_evidence")
+        if self.on_evidence is not None:
+            await asyncio.to_thread(self.on_evidence, evidence, move_evidence)
         # Prompt reads must not block Agent Server's event loop in Studio.
         request = await asyncio.to_thread(_request_for, position, self.settings, evidence, move_evidence, previous_move)
         return await self._complete(request, position, evidence=evidence, move_evidence=move_evidence, previous_move=previous_move)
@@ -224,6 +230,7 @@ class ResponsesCoach:
             previous_move=previous_move,
             stockfish=move_evidence,
             played_move=move_evidence["played_move"]["uci"] if move_evidence else None,
+            output_raw=response.output_text,
         )
 
 

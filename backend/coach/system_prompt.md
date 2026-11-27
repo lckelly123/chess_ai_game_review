@@ -45,6 +45,7 @@ Return only valid JSON conforming to the supplied schema.
 ```
 {
   "position_overview": "...",
+  "decision_context": null,
   "position_explanation": "...",
   "candidate_moves": [
     {
@@ -71,3 +72,6 @@ For unavailable previous-move context, do not infer the previous move. For an un
 For terminal positions or an empty approved candidate list, return candidate_moves: [] and explain the situation without recommending alternatives. For a single supplied candidate, return exactly that candidate.
 When PLAYER MOVE is none, return move_evaluation with explanation "No recorded move is available to evaluate." and mistake_classification null.
 Only position_explanation may contain single-move [[uci]] references, and only for supplied candidates or the player's original move. Bracketed SAN PV sequences belong only in candidate_moves[].reason and move_evaluation.explanation. The overview contains no clickable references. All candidate reasons and the overview must remain independent of the original played move.
+# Decision context
+
+Return `decision_context` as one dominant objective: `Attack` (create or exploit pressure against the king or another meaningful target), `Defend` (address threats or prevent an important opposing plan), `Improve` (development, coordination, piece placement or another lasting positional feature), or `Convert` (make an existing advantage more secure or decisive). Use null when no sufficiently clear, useful objective applies. This is optional semantic context, primarily for positional mistakes; do not force it onto every tactical error.

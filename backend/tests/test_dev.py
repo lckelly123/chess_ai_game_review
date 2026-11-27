@@ -75,16 +75,16 @@ def test_single_reset_preserves_source_games_other_reviews_profiles_and_import_c
         assert restarted.get(f'/api/games/{first["id"]}').json()['coach_responses'] == {}
 
 
-def test_shared_legacy_feedback_is_available_only_to_games_that_have_not_been_reset(test_db_url):
+def test_standalone_feedback_never_attaches_to_game_moves(test_db_url):
     db = Database(test_db_url)
     first, other = seed(db), seed(db, 2)
     fen = replay(first['pgn'])['positions'][2]['fen']
     db.save_coach_feedback(CoachAnalysis('Legacy shared answer', 'legacy', 'test', CoachPosition.from_fen(fen), None))
     with TestClient(create_app(test_db_url, game_engine=evidence, coach_factory=fake_coach)) as client:
-        assert client.get(f'/api/games/{first["id"]}').json()['coach_responses']['2']['text'] == 'Legacy shared answer'
+        assert "2" not in client.get(f'/api/games/{first["id"]}').json()["coach_responses"]
         assert client.post('/api/dev/analysis/reset', json={'game_id': first['id']}).status_code == 200
         assert client.get(f'/api/games/{first["id"]}').json()['coach_responses'] == {}
-        assert client.get(f'/api/games/{other["id"]}').json()['coach_responses']['2']['text'] == 'Legacy shared answer'
+        assert "2" not in client.get(f'/api/games/{other["id"]}').json()["coach_responses"]
         assert client.post(f'/api/games/{first["id"]}/analysis', json={'username': 'alice'}).status_code == 202
         saved = wait_completed(client, first['id'])
         assert saved['coach_completed'] == 4
