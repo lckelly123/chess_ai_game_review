@@ -12,6 +12,7 @@ from .coach.move_review import MoveReview
 from .chess_games import replay
 from .coach.context import context_key, previous_move_from_replay
 from .coach.move_quality import analyze_played_move
+from .coach.player_move_quality import ACCEPTABLE_STATUSES, ERROR_STATUSES
 from .coach.position_classification import analyze_position
 from .coach.stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
 from .database import ReviewConflict
@@ -128,7 +129,7 @@ def create_practice_router(analyzer=grade_attempt) -> APIRouter:
                     evidence = await run_in_threadpool(saved_evidence, database, game_id, record["pgn"], ply, original)
                     result = await run_in_threadpool(analyzer, review, evidence)
                 quality = result["move_quality"]
-                if quality.get("status") not in {"good", "inaccuracy", "mistake", "blunder", "uncertain"}:
+                if quality.get("status") not in ACCEPTABLE_STATUSES | ERROR_STATUSES | {"uncertain"}:
                     raise StockfishAnalysisError("Invalid grading result.")
                 session = await finish(quality["status"])
             except (Exception, asyncio.CancelledError) as exc:
@@ -141,6 +142,6 @@ def create_practice_router(analyzer=grade_attempt) -> APIRouter:
                     raise HTTPException(502, "Stockfish could not grade this move. Please try again.") from exc
                 raise
         return {"fen": original.position.fen, "original_move": original.played_move_uci,
-                "move": review.played_move_uci, "quality": quality, "accepted": quality["status"] == "good", "review": session}
+                "move": review.played_move_uci, "quality": quality, "accepted": quality["status"] in ACCEPTABLE_STATUSES, "review": session}
 
     return router

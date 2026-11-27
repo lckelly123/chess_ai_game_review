@@ -37,7 +37,7 @@ def practice_app(analyzer=grade_attempt, pgn=PGN):
     original = MoveReview.from_game(pgn, 0)
     evidence = {"fen": original.position.fen, "perspective": original.position.side_to_move, "engine": "test",
                 "top_moves": [candidate(uci, cp, rank) for rank, (uci, cp) in enumerate([
-                    ('d2d4', 100), ('g1f3', 90), ('e2e4', -100), ('h2h3', 0), ('a2a3', -50)], 1)]}
+                    ('d2d4', 100), ('g1f3', 90), ('e2e4', -100), ('h2h3', 0), ('a2a3', -50), ('b2b3', 50)], 1)]}
 
     class SavedGames:
         def game(self, game_id):
@@ -87,7 +87,7 @@ def test_context_exposes_only_legal_moves_and_board_previews_without_engine_work
 
 
 @pytest.mark.parametrize('move,quality,accepted', [
-    ('d2d4', 'good', True), ('g1f3', 'good', True),
+    ('d2d4', 'best', True), ('g1f3', 'excellent', True), ('b2b3', 'good', True),
     ('h2h3', 'inaccuracy', False), ('a2a3', 'mistake', False), ('e2e4', 'blunder', False),
 ])
 def test_attempts_use_saved_root_and_accept_any_good_move(move, quality, accepted, monkeypatch):

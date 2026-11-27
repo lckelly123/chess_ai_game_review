@@ -2,7 +2,7 @@
 version: 1
 slug: "frontend-src-replay-tsx"
 primary_target: "frontend/src/Replay.tsx"
-related_targets: ["frontend/src/Board.tsx","frontend/src/GameOverview.tsx","frontend/src/MoveList.tsx","frontend/src/replayNavigation.ts","frontend/src/engineReview.ts","frontend/src/CoachCards.tsx","frontend/src/useCoachSpeech.tsx","frontend/src/styles.css"]
+related_targets: ["frontend/src/Board.tsx","frontend/src/GameOverview.tsx","frontend/src/gameOverview.css","frontend/src/overviewData.ts","frontend/src/MoveList.tsx","frontend/src/replayNavigation.ts","frontend/src/engineReview.ts","frontend/src/CoachCards.tsx","frontend/src/useCoachSpeech.tsx","frontend/src/styles.css"]
 ---
 
 # Game replay
@@ -16,10 +16,14 @@ This is a user-approved extension of the existing dark study workspace. Preserve
 - THESIS: Inspect every recorded half-move and move directly between saved coaching decisions.
 - OWN-WORLD: Inherit flat dark surfaces, fine outlines, blue selection and focus, existing evaluation colors, and gently rounded panels.
 - STORY: Select an error, try a better move from the original position, watch it undo and the original move replay, then read the saved assessment. Green arrows navigate the selected player's coached errors.
-- FIRST VIEWPORT: Move panel left of the board with exactly matching top and bottom edges; board and controls in the middle; Coach at right, with review arrows below the response. Narrow layouts move Coach below the board, then the move panel below the board controls.
+- FIRST VIEWPORT: Game overview left of the board with exactly matching top and bottom edges; board and controls in the middle; Coach at right, with review arrows below the response. Narrow layouts move Coach below the board, then the overview below the board controls.
 - SIGNATURE INTERACTION: A solved exercise holds the better move briefly, reverses it, and replays the original move with sound. The position explanation then types out, followed by the automatically selected played-move assessment. Previously read text appears immediately.
 
 ## Data and behavior
+
+The replay summary lists Best, Excellent, Good, Inaccuracy, Mistake, and Blunder in that order beneath accuracy, with White counts on the left and Black counts on the right. Seven table rows share the available summary height. Best uses the pale-lime `--quality-best` token, Excellent the mint `--quality-excellent` token, and Good the existing `--positive` sage. The same roles carry into library counts and move-quality labels. This narrow extension retains the existing summary composition, typography, pure-black surfaces, container-query compaction, and natural mobile height. Best, Excellent, and Good do not receive graph or timeline error markers.
+
+Best requires an exact raw centipawn or mate-score tie. Other centipawn losses below 2.5 percentage points are Excellent; losses from 2.5 to below 5 percentage points are Good. Existing mate-distance behavior remains unchanged for non-ties. Missing or uncertain evidence remains explicitly ungraded.
 
 Coach prose and move explanations use Times New Roman at 17px with 1.6 line height, 18px section headings, and a 20px panel title. Hint and structured explanation text reveal incrementally with short sentence pauses. Paragraphs reserve their final line wrapping; SAN and variation links appear as whole interactive units. Show all completes both queued explanation sections and preserves keyboard focus. Completed passages are remembered locally by response, section, and content so updated explanations still animate. Reduced-motion preferences show text immediately; screen readers receive complete text without character-by-character live announcements. Navigation cancels the previous passage's timers.
 
@@ -34,6 +38,8 @@ Green Previous review and Next review controls target only the selected player's
 Move explanations embed short SAN PV excerpts in double brackets. Each complete excerpt is one inline link, matched against saved legal PV positions. Clicking autoplays the excerpt at one ply per second and holds its final position. A compact status below the board distinguishes variation playback and exposes Back to game and Replay throughout. Canonical game navigation stays unchanged during the demonstration; navigating or selecting another move cancels it. Full engine-continuation lists and the comparison button are removed. Explicit alternative selections animate the current move back to the decision position, then play the chosen move and hold its resulting position. Candidate arrows and square highlights are removed; error squares retain borderless translucent red fill. Selecting the recorded move or toggling the alternative restores the game. Navigation cancels pending animation steps, and reduced motion preserves the sequence without piece movement. Unresolved excerpts stay readable as plain text.
 
 ## Quality bar and evidence
+
+Move-grade summary extension: independent visual review returned ship at 1440px, 1024px, 390px, and 320px widths, with no overflow or overlap. Evidence: `.impeccable/review/desktop.jpg`, `compact.jpg`, `mobile.jpg`, `mobile-small.jpg`, and `quality-summary.jpg`. The review confirms the six labeled grade rows, the distinct positive colors, and the retained composition. This is an extension of the existing visual world; no new comp or artwork was introduced.
 
 Alternative preview update: 96 frontend tests, 86 focused backend tests, production build, and 12 browser checks covering borderless error squares, undo/play order, candidate switching, rapid clicks, both orientations, navigation and variation cancellation, original-move toggling, engine-only previews, reduced motion, and mobile overflow. Browser checks use synthetic games in React Strict Mode. Evidence: `.impeccable/review/candidate-browser-checks.json` and `candidate-*.png`. Database integration and Stockfish CLI checks require external test dependencies unavailable in this worktree.
 

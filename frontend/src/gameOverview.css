@@ -36,12 +36,14 @@
 .overview-stats th { width: 46%; text-align: center; font-size: 11px; font-weight: 400; color: var(--muted); }
 .overview-stats td { width: 27%; font-size: 13px; text-align: left; }
 .overview-stats td:last-child { text-align: right; }
-.overview-stats tbody tr { height: 20%; }
+.overview-stats tbody tr { height: calc(100% / 7); }
 .overview-stats .overview-accuracy td { font-size: 22px; font-weight: 600; letter-spacing: -.04em; padding: 0 0 14px; }
 .overview-stats .overview-accuracy th { padding-bottom: 14px; font-size: 10px; }
 .overview-grade td, .overview-grade th { height: 29px; }
 .overview-grade .grade-dot { display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
 .overview-grade.good td, .overview-grade.good .grade-dot { color: var(--positive); }
+.overview-grade.best td, .overview-grade.best .grade-dot { color: var(--quality-best); }
+.overview-grade.excellent td, .overview-grade.excellent .grade-dot { color: var(--quality-excellent); }
 .overview-grade.inaccuracy td, .overview-grade.inaccuracy .grade-dot { color: var(--warning); }
 .overview-grade.mistake td, .overview-grade.mistake .grade-dot { color: #e39867; }
 .overview-grade.blunder td, .overview-grade.blunder .grade-dot { color: var(--negative); }

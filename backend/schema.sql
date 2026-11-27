@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS game_moves (
     engine_final_position JSONB,
     sharpness_score DOUBLE PRECISION CHECK (sharpness_score BETWEEN 0 AND 100),
     sharpness_classification TEXT CHECK (sharpness_classification IN ('Forgiving','Flexible','Selective','Demanding','Critical')),
-    move_quality TEXT CHECK (move_quality IN ('Good','Inaccuracy','Mistake','Blunder','Uncertain')),
+    move_quality TEXT CHECK (move_quality IN ('Best','Excellent','Good','Inaccuracy','Mistake','Blunder','Uncertain')),
     coach_position_overview TEXT,
     coach_position_explanation TEXT,
     coach_candidate_moves JSONB,

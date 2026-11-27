@@ -4,7 +4,7 @@ import { api, perspective, readStored } from './types';
 import type { Game, GameAnalysis, GameAnalysisSummary, MoveQuality } from './types';
 import { analysisActive, analysisProgress, coachingPending, opponentAnalysisPending, qualityLabels } from './engineReview';
 
-const qualities: MoveQuality[] = ['good', 'inaccuracy', 'mistake', 'blunder', 'uncertain'];
+const qualities: MoveQuality[] = ['best', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder', 'uncertain'];
 
 export default function GameAnalysisAction({game, username, onUpdate, onOpen}: {
   game: Game; username: string; onUpdate: (analysis: GameAnalysisSummary | null) => void; onOpen: () => void;

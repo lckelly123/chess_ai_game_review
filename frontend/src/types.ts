@@ -32,7 +32,7 @@ export type EngineAnalysis = {
   top_moves?: EngineMove[];
   tactic_classification?: TacticClassification;
   move_quality?: {
-    status: 'good' | 'inaccuracy' | 'mistake' | 'blunder' | 'uncertain';
+    status: 'best' | 'excellent' | 'good' | 'inaccuracy' | 'mistake' | 'blunder' | 'uncertain';
     winning_chances_loss_pp: number | null;
     reason?: string;
   };

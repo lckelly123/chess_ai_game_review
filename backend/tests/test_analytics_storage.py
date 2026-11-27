@@ -14,6 +14,7 @@ from backend.chess_games import normalize_game, replay
 from backend.coach.move_review import MoveReview
 from backend.coach.responses import CoachAnalysis
 from backend.coach.context import COACH_CONTRACT_VERSION
+from backend.coach.player_move_quality import PLAYER_QUALITY_POLICY
 from backend.coach.classification import CLASSIFICATION_VERSION
 from backend.coach.sharpness import SHARPNESS_VERSION
 from backend.coach.stockfish import StockfishSettings, StockfishAnalysisError
@@ -137,7 +138,8 @@ def test_coaching_preserves_raw_taxonomy_decision_context_and_previous_success(t
     assert move_row(db, game)["coach_metadata"]["response_id"] == "response-two"
 
 
-def test_review_sessions_restart_repeat_idempotency_and_reset_guard(test_db_url):
+@pytest.mark.parametrize("quality", ["best", "excellent", "good"])
+def test_review_sessions_restart_repeat_idempotency_and_reset_guard(test_db_url, quality):
     db, game = imported(test_db_url)
     first, entry, fresh = db.reserve_review_submission(game["id"], 0, 0, "e2e4", "one")
     assert fresh and entry["grading_status"] == "pending"
@@ -145,9 +147,9 @@ def test_review_sessions_restart_repeat_idempotency_and_reset_guard(test_db_url)
     assert not fresh and same["review_id"] == first["review_id"]
     db.finish_review_submission(game["id"], 0, 0, first["review_id"], "one", "mistake")
     db.reserve_review_submission(game["id"], 0, 0, "d2d4", "two", first["review_id"])
-    done = db.finish_review_submission(game["id"], 0, 0, first["review_id"], "two", "good")
+    done = db.finish_review_submission(game["id"], 0, 0, first["review_id"], "two", quality)
     assert done["status"] == "completed"
-    assert [e["quality"] for e in done["tried_moves"]] == ["Mistake", "Good"]
+    assert [e["quality"] for e in done["tried_moves"]] == ["Mistake", quality.title()]
     restarted = Database(test_db_url)
     assert restarted.review_sessions(game["id"], 0) == [done]
     assert restarted.start_review(game["id"], 0, 0)["review_id"] == first["review_id"]
@@ -162,7 +164,8 @@ def test_review_sessions_restart_repeat_idempotency_and_reset_guard(test_db_url)
     assert restarted.review_sessions(game["id"], 0) == []
 
 
-def test_practice_http_persists_failure_then_success_without_touching_original_engine(test_db_url):
+@pytest.mark.parametrize("quality", ["best", "excellent", "good"])
+def test_practice_http_persists_failure_then_success_without_touching_original_engine(test_db_url, quality):
     db, game = imported(test_db_url)
     save_engine(db, game)
     before = move_row(db, game)
@@ -171,7 +174,7 @@ def test_practice_http_persists_failure_then_success_without_touching_original_e
     def grade(review, evidence):
         if review.played_move_uci == "e2e4":
             raise StockfishAnalysisError("private")
-        return {"move_quality": {"status": "good", "winning_chances_loss_pp": 0}}
+        return {"move_quality": {"status": quality, "winning_chances_loss_pp": 0}}
     app.include_router(create_practice_router(grade))
     endpoint = f'/api/games/{game["id"]}/practice/0'
     with TestClient(app) as client:
@@ -182,9 +185,65 @@ def test_practice_http_persists_failure_then_success_without_touching_original_e
         payload.update(move="d2d4", submission_id="good")
         response = client.post(endpoint, json=payload)
         assert response.status_code == 200 and response.json()["accepted"]
+        assert response.json()["review"]["status"] == "completed"
+        assert response.json()["review"]["tried_moves"][-1]["quality"] == quality.title()
         assert client.post(endpoint, json=payload).json()["accepted"]  # Safe network retry.
         assert len(client.get(endpoint).json()["review"]["tried_moves"]) == 2
     assert move_row(db, game) == before
+
+
+def test_grade_upgrade_recalculates_once_preserving_evidence_and_review_history(test_db_url):
+    db, game = imported(test_db_url)
+    fingerprint = pgn_fingerprint(game["pgn"])
+    db.begin_game_analysis(game["id"], "white", fingerprint, 4, 3)
+    for ply, cp in enumerate([100, 90, 50]):
+        review = MoveReview.from_game(game["pgn"], ply)
+        stockfish = evidence(review)
+        stockfish["played_move"]["score"]["cp"] = cp
+        db.save_game_analysis_move(game["id"], "white", fingerprint, ply,
+            {"fen": review.position.fen, "played_move": review.played_move_uci, "stockfish": stockfish})
+    session, _, _ = db.reserve_review_submission(game["id"], 0, 0, "d2d4", "old-good")
+    history = db.finish_review_submission(game["id"], 0, 0, session["review_id"], "old-good", "good")
+    with db.connection() as conn:
+        conn.execute("UPDATE game_moves SET move_quality='Good' WHERE engine_status='completed'")
+        conn.execute("""UPDATE game_moves SET engine_search_metadata = jsonb_set(
+            engine_search_metadata, '{policies,move_quality}', '{"legacy":true}') WHERE engine_status='completed'""")
+        conn.execute("ALTER TABLE game_moves DROP CONSTRAINT game_moves_move_quality_check")
+        conn.execute("""ALTER TABLE game_moves ADD CONSTRAINT game_moves_move_quality_check
+            CHECK (move_quality IN ('Good','Inaccuracy','Mistake','Blunder','Uncertain'))""")
+        conn.execute("DELETE FROM schema_migrations WHERE name='analytics_move_quality_best_excellent_v1'")
+    before = [move_row(db, game, ply) for ply in range(7)]
+    upgraded = Database(test_db_url)
+    after = [move_row(upgraded, game, ply) for ply in range(7)]
+    assert [row["move_quality"] for row in after] == ["Best", "Excellent", "Good", None, None, None, None]
+    for old, new in zip(before, after):
+        expected = deepcopy(old)
+        if expected["engine_status"] == "completed":
+            expected["move_quality"] = new["move_quality"]
+            expected["engine_search_metadata"]["policies"]["move_quality"] = PLAYER_QUALITY_POLICY
+        assert new == expected
+    assert upgraded.review_sessions(game["id"], 0) == [history]
+    counts = upgraded.game_analysis(game["id"], "white", fingerprint)["counts"]
+    assert counts == upgraded.games("alice")[0]["analysis"]["counts"]
+    assert counts == {"best": 1, "good": 1}
+    # A normal restart must not run the backfill again.
+    with upgraded.connection() as conn:
+        conn.execute("UPDATE game_moves SET move_quality='Uncertain' WHERE decision_ply=0")
+    assert move_row(Database(test_db_url), game)["move_quality"] == "Uncertain"
+
+
+def test_black_exact_mate_tie_persists_as_best(test_db_url):
+    db, game = imported(test_db_url)
+    review = MoveReview.from_game(game["pgn"], 1)
+    stockfish = evidence(review)
+    stockfish["top_moves"][0]["score"] = {"cp": None, "mate": 5, "bound": "exact"}
+    stockfish["played_move"]["score"] = {"cp": None, "mate": 5, "bound": "exact"}
+    db.save_game_analysis_move(game["id"], "black", pgn_fingerprint(game["pgn"]), 1,
+        {"fen": review.position.fen, "played_move": review.played_move_uci, "stockfish": stockfish})
+    stored = move_row(db, game, 1)
+    assert stored["top_1_mate"] == stored["played_mate"] == -5
+    assert stored["move_quality"] == "Best"
+    assert engine_result(stored)["stockfish"]["move_quality"]["status"] == "best"
 
 
 def test_changed_pgn_invalidates_downstream_but_keeps_source_identity(test_db_url):

@@ -4,7 +4,7 @@ import { ArrowUpRight, Check, ChevronDown } from 'lucide-react';
 import type { CoachResponse, EngineReview, MistakeClassification, Move } from './types';
 import { engineEvaluation, parseCoachContent } from './coachContent';
 import { coachMoves } from './coachMoves';
-import { engineMoves, qualityLabels } from './engineReview';
+import { acceptableQuality, engineMoves, qualityLabels } from './engineReview';
 import { moveReferences } from './moveReferences';
 import { pvReferences, type PvSequence } from './pvReferences';
 import { useCoachSpeech } from './useCoachSpeech';
@@ -50,7 +50,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
   const qualityLoss = engine?.move_quality?.winning_chances_loss_pp;
   const playedLabel = opponent ? 'Opponent move' : 'Player move';
   const qualityDescription = qualityLoss != null
-    ? `Winning chances lost: ${qualityLoss.toFixed(2)} percentage points from ${engine?.perspective ?? 'the mover'}’s perspective. Less than 5: Good; 5 to less than 10: Inaccuracy; 10 to less than 15: Mistake; 15 or more: Blunder.`
+    ? `Winning chances lost: ${qualityLoss.toFixed(2)} percentage points from ${engine?.perspective ?? 'the mover'}’s perspective. Best: matches the engine’s top raw evaluation. Otherwise, less than 2.5: Excellent; 2.5 to less than 5: Good; 5 to less than 10: Inaccuracy; 10 to less than 15: Mistake; 15 or more: Blunder.`
     : mateQualityDescriptions[engine?.move_quality?.reason ?? ''] ?? 'The available engine scores do not support a reliable comparison.';
   const waiting = pending ? 'Game analysis is in progress.' : 'Analyze this game from the library to prepare coaching for inaccuracies, mistakes, and blunders.';
   const explanation = teaching?.position_explanation ?? teaching?.positional_thesis;
@@ -130,7 +130,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
               <button type="button" className="candidate-move" aria-label={`${selected ? 'Hide' : 'Show'} explanation for ${move.san}${move.isPlayed ? `, ${playedLabel.toLowerCase()}` : ''}`} aria-expanded={selected} aria-controls={`${id}-move-detail`} aria-pressed={selected} disabled={transitioning} onClick={() => onSelectCandidate(move.uci)}>
                 <span className="candidate-heading">
                   <span className="move-labels"><strong>{move.san}</strong>
-                    {move.isPlayed && <><span className="player-move-badge">{playedLabel}</span><span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{quality === 'good' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span></>}
+                    {move.isPlayed && <><span className="player-move-badge">{playedLabel}</span><span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{acceptableQuality(quality) && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span></>}
                   </span>
                   <span className="candidate-meta">
                     {score && <span id={`${id}-${move.uci}-score`} className={`engine-score ${score.tone}`} title={`${score.label} · ${score.perspective}'s perspective · depth ${move.engineMove?.depth}`} aria-label={`Evaluation ${score.value}, ${score.label}, ${score.perspective}'s perspective`}>{score.value}</span>}
@@ -149,7 +149,7 @@ export default function CoachCards({ response, engineReview, engineMode = false,
           {inlineMoves && <div className="candidate-heading">
             <h3>{selectedMove.san}{selectedMove.isPlayed && <>
               <span className="player-move-badge">{playedLabel}</span>
-              <span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{quality === 'good' && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span>
+              <span className={`move-quality ${quality}`} title={qualityDescription} aria-label={`${qualityLabel}. ${qualityDescription}`}>{acceptableQuality(quality) && <Check size={12} aria-hidden="true"/>}{qualityLabel}</span>
             </>}</h3>
             {selectedScore && <span className={`engine-score ${selectedScore.tone}`} title={`${selectedScore.label} · ${selectedScore.perspective}'s perspective`}>{selectedScore.value}</span>}
           </div>}

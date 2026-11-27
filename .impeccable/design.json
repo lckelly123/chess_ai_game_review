@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-26T21:49:09.955581+00:00",
+  "generatedAt": "2026-11-27T19:50:35.657572+00:00",
   "title": "Design System: Chess study",
   "extensions": {
     "colorMeta": {
@@ -437,6 +437,34 @@
           "oklch(84% 0.08472 79.79)",
           "oklch(95% 0.08472 79.79)"
         ]
+      },
+      "quality-best": {
+        "role": "semantic",
+        "displayName": "Best pale lime",
+        "tonalRamp": [
+          "oklch(15% 0.13537 130.63)",
+          "oklch(26% 0.13537 130.63)",
+          "oklch(38% 0.13537 130.63)",
+          "oklch(49% 0.13537 130.63)",
+          "oklch(61% 0.13537 130.63)",
+          "oklch(72% 0.13537 130.63)",
+          "oklch(84% 0.13537 130.63)",
+          "oklch(95% 0.13537 130.63)"
+        ]
+      },
+      "quality-excellent": {
+        "role": "semantic",
+        "displayName": "Excellent mint",
+        "tonalRamp": [
+          "oklch(15% 0.08140 174.87)",
+          "oklch(26% 0.08140 174.87)",
+          "oklch(38% 0.08140 174.87)",
+          "oklch(49% 0.08140 174.87)",
+          "oklch(61% 0.08140 174.87)",
+          "oklch(72% 0.08140 174.87)",
+          "oklch(84% 0.08140 174.87)",
+          "oklch(95% 0.08140 174.87)"
+        ]
       }
     },
     "typographyMeta": {
@@ -657,12 +685,12 @@
       "css": ".ds-sync-notice{font-family:\"DM Sans Variable\",sans-serif;display:flex;align-items:flex-start;gap:10px;padding:16px 0;margin-bottom:18px;border-top:1px solid var(--line,#2b2e34);border-bottom:1px solid var(--line,#2b2e34);font-size:13px;line-height:1.6;color:var(--ink,#f1f2f4);background:var(--canvas,#000000)}.ds-sync-notice>svg{flex-shrink:0;color:var(--warning,#e6c389);margin-top:2px}.ds-sync-notice p{margin:0}.ds-sync-notice .ds-sync-hint{color:var(--muted,#a5adb8);margin-top:3px}.ds-sync-actions{display:flex;gap:20px;flex-wrap:wrap}.ds-sync-actions button{font:inherit;font-size:12px;font-weight:600;min-height:36px;border:0;padding:0;background:transparent;color:var(--accent,#91b4d3);cursor:pointer}.ds-sync-actions button:hover{text-decoration:underline}.ds-sync-actions button:focus-visible{outline:2px solid var(--accent,#91b4d3);outline-offset:4px}"
     },
     {
-      "name": "Replay move list",
+      "name": "Replay quality summary",
       "kind": "custom",
-      "refersTo": "replay-move-list",
-      "description": "Illustrative numbered White/Black SAN table. Each button opens the position before its move; scores use the mover perspective. The panel matches board height on desktop and sits below it on mobile.",
-      "html": "<aside class=\"ds-moves\"><header><strong>Moves</strong><span>Eval for mover</span></header><table><thead><tr><th></th><th>White</th><th>Black</th></tr></thead><tbody><tr><th>1.</th><td><button aria-current=\"step\"><b>e4</b><span class=\"positive\">+0.30</span></button></td><td><button><b>e5</b><span class=\"negative\">−0.25</span></button></td></tr><tr><th>2.</th><td><button><b>Nf3</b><span>—</span></button></td><td></td></tr></tbody></table></aside>",
-      "css": ".ds-moves{max-width:280px;background:var(--surface,#000);color:var(--ink,#f1f2f4);border:1px solid var(--line,#2b2e34);border-radius:12px;overflow:hidden;font-family:inherit}.ds-moves header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:14px 12px 10px;font-size:14px}.ds-moves header span,.ds-moves th,.ds-moves button span{font-size:11px;color:var(--muted,#a5adb8)}.ds-moves table{width:100%;table-layout:fixed;border-collapse:collapse;font-variant-numeric:tabular-nums}.ds-moves th{height:32px;font-weight:500}.ds-moves th:first-child{width:32px}.ds-moves td{padding:2px}.ds-moves button{display:flex;align-items:center;justify-content:space-between;gap:3px;width:100%;min-height:36px;padding:7px 6px;border:0;border-radius:4px;color:inherit;background:transparent;cursor:pointer;font-family:inherit}.ds-moves b{font-size:12px;font-weight:550}.ds-moves button .positive{color:var(--positive,#9bd5b0)}.ds-moves button .negative{color:var(--negative,#f0ad9f)}.ds-moves button:hover{background:var(--hover,#202329)}.ds-moves button[aria-current]{background:var(--selected,#1d2b38);outline:1px solid var(--accent,#91b4d3);outline-offset:-1px}.ds-moves button:focus-visible{outline:2px solid var(--accent-hover,#c3daed);outline-offset:-2px}"
+      "refersTo": "replay-game-overview",
+      "description": "The existing game-overview summary shows accuracy and six labeled move grades, White at left and Black at right. Seven rows share the available height; Best and Excellent extend the existing positive colors. Isolated summary preview with illustrative counts; positive grades add no error markers to the graph or timeline.",
+      "html": "<section class=\"ds-quality-summary\" aria-label=\"Overall game summary\"><div class=\"ds-summary-players\"><div><span class=\"ds-summary-color\"><span class=\"ds-color-white\" aria-hidden=\"true\"></span>White</span><strong>White player</strong></div><div><span class=\"ds-summary-color\"><span class=\"ds-color-black\" aria-hidden=\"true\"></span>Black</span><strong>Black player</strong></div></div><table class=\"ds-summary-stats\"><caption class=\"ds-visually-hidden\">Illustrative whole-game statistics, White on the left and Black on the right</caption><thead class=\"ds-visually-hidden\"><tr><th scope=\"col\">White</th><th scope=\"col\">Statistic</th><th scope=\"col\">Black</th></tr></thead><tbody><tr class=\"ds-summary-accuracy\"><td>96.0%</td><th scope=\"row\">Accuracy</th><td>84.2%</td></tr><tr class=\"ds-grade-best\"><td>0</td><th scope=\"row\"><span class=\"ds-grade-dot\" aria-hidden=\"true\"></span>Best</th><td>1</td></tr><tr class=\"ds-grade-excellent\"><td>1</td><th scope=\"row\"><span class=\"ds-grade-dot\" aria-hidden=\"true\"></span>Excellent</th><td>0</td></tr><tr class=\"ds-grade-good\"><td>0</td><th scope=\"row\"><span class=\"ds-grade-dot\" aria-hidden=\"true\"></span>Good</th><td>1</td></tr><tr class=\"ds-grade-inaccuracy\"><td>0</td><th scope=\"row\"><span class=\"ds-grade-dot\" aria-hidden=\"true\"></span>Inaccuracy</th><td>0</td></tr><tr class=\"ds-grade-mistake\"><td>0</td><th scope=\"row\"><span class=\"ds-grade-dot\" aria-hidden=\"true\"></span>Mistake</th><td>0</td></tr><tr class=\"ds-grade-blunder\"><td>0</td><th scope=\"row\"><span class=\"ds-grade-dot\" aria-hidden=\"true\"></span>Blunder</th><td>0</td></tr></tbody></table></section>",
+      "css": ".ds-quality-summary{box-sizing:border-box;display:flex;flex-direction:column;width:280px;max-width:100%;height:340px;padding:16px 12px;background:var(--surface,#000);color:var(--ink,#f1f2f4);font-family:\"DM Sans Variable\",sans-serif;font-variant-numeric:tabular-nums}.ds-summary-players{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:12px}.ds-summary-players>div{min-width:0}.ds-summary-players>div:last-child{text-align:right}.ds-summary-color{display:inline-flex;align-items:center;gap:5px;margin-bottom:4px;color:var(--muted,#a5adb8);font-size:10px}.ds-summary-color>span{box-sizing:border-box;width:10px;height:10px;border:1px solid var(--field-border,#606773);border-radius:2px}.ds-color-white{background:var(--ink,#f1f2f4)}.ds-color-black{background:var(--surface,#000)}.ds-summary-players strong{display:block;font-size:12px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds-summary-stats{width:100%;height:100%;border-collapse:collapse;table-layout:fixed}.ds-summary-stats th{width:46%;text-align:center;font-size:11px;font-weight:400;color:var(--muted,#a5adb8)}.ds-summary-stats td{width:27%;font-size:13px;text-align:left}.ds-summary-stats td:last-child{text-align:right}.ds-summary-stats tbody tr{height:calc(100% / 7)}.ds-summary-stats .ds-summary-accuracy td{font-size:22px;font-weight:600;letter-spacing:-.04em;padding:0 0 14px}.ds-summary-stats .ds-summary-accuracy th{padding-bottom:14px;font-size:10px}.ds-grade-dot{display:inline-block;width:5px;height:5px;margin-right:5px;border-radius:50%;background:currentColor;vertical-align:1px}.ds-grade-best td,.ds-grade-best .ds-grade-dot{color:var(--quality-best,#b7e887)}.ds-grade-excellent td,.ds-grade-excellent .ds-grade-dot{color:var(--quality-excellent,#8dd9c4)}.ds-grade-good td,.ds-grade-good .ds-grade-dot{color:var(--positive,#9bd5b0)}.ds-grade-inaccuracy td,.ds-grade-inaccuracy .ds-grade-dot{color:var(--warning,#e6c389)}.ds-grade-mistake td,.ds-grade-mistake .ds-grade-dot{color:#e39867}.ds-grade-blunder td,.ds-grade-blunder .ds-grade-dot{color:var(--negative,#f0ad9f)}.ds-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}"
     },
     {
       "name": "Saved coach review navigation",

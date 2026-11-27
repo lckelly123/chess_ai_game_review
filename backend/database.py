@@ -14,6 +14,7 @@ from .analysis_storage import engine_columns, engine_result, derived_columns, or
 from .ingestion import import_records, game_api
 from .chess_games import replay
 from .coach.context import COACH_CONTRACT_VERSION, context_key
+from .coach.player_move_quality import ACCEPTABLE_STATUSES, PLAYER_QUALITY_POLICY
 from .game_analysis import analysis_result, analysis_summary, coaching_total, pgn_fingerprint, quality_counts
 from .game_statistics import STATISTICS_VERSION, build_statistics
 
@@ -47,6 +48,26 @@ class Database:
         with self.connection() as db:
             db.execute("SELECT pg_advisory_xact_lock(7420918001)")
             db.execute(Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
+            self._upgrade_move_quality(db)
+
+    @staticmethod
+    def _upgrade_move_quality(db):
+        """Regrade saved evidence once, under the startup transaction/lock."""
+        migration = "analytics_move_quality_best_excellent_v1"
+        if db.execute("SELECT 1 FROM schema_migrations WHERE name=%s", (migration,)).fetchone():
+            return
+        db.execute("ALTER TABLE game_moves DROP CONSTRAINT game_moves_move_quality_check")
+        db.execute("""ALTER TABLE game_moves ADD CONSTRAINT game_moves_move_quality_check
+            CHECK (move_quality IN ('Best','Excellent','Good','Inaccuracy','Mistake','Blunder','Uncertain'))""")
+        rows = db.execute("""SELECT m.* FROM game_moves m JOIN games g USING(game_id)
+            WHERE m.engine_status='completed' AND m.engine_pgn_hash=g.pgn_hash""")
+        for row in rows:
+            quality = engine_result(row)["stockfish"]["move_quality"]["status"]
+            metadata = row["engine_search_metadata"] or {}
+            metadata["policies"] = {**metadata.get("policies", {}), "move_quality": PLAYER_QUALITY_POLICY}
+            update(db, "game_moves", {"move_quality": quality.title(), "engine_search_metadata": metadata},
+                   "move_id=%s", [row["move_id"]])
+        db.execute("INSERT INTO schema_migrations(name) VALUES (%s)", (migration,))
 
     @contextmanager
     def connection(self):
@@ -544,7 +565,7 @@ class Database:
                 raise ReviewConflict("This submission no longer exists.")
             if entry["grading_status"] == "pending":
                 entry.update(quality=quality.title() if quality else None, grading_status="graded" if quality else "failed")
-                if quality == "good":
+                if quality in ACCEPTABLE_STATUSES:
                     session["status"] = "completed"
                 update(db, "review_attempts", {"status": session["status"], "tried_moves": session["tried_moves"]}, "review_id=%s", [review_id])
             return session

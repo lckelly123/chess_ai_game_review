@@ -13,7 +13,7 @@ export default function PracticeCard({ practice, original, overview, speechId = 
   const speech = useCoachSpeech({id: `${speechId}:hint:${original.san}`, children: overview, reducedMotion, immediate: practice.complete});
   const last = practice.attempts.at(-1);
   const message = practice.checking ? 'Checking your move…'
-    : practice.complete ? 'Good move. Let’s look at why.'
+    : practice.complete ? 'That works. Let’s look at why.'
       : last?.quality === 'uncertain' ? 'This move could not be graded reliably. Try again.'
         : last?.status === 'error' ? 'The last attempt was not graded. Try again.'
           : last?.quality ? `${qualityLabels[last.quality]}. Try another move.`

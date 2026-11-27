@@ -68,7 +68,7 @@ def test_conflicting_search_regrades_and_reranks_the_whole_pool(monkeypatch, pla
     assert {move["depth"] for move in [*result["top_moves"], result["played_move"]]} == {16}
     assert result["played_move_in_top"] is player_first
     assert result["played_move"]["rank"] == (1 if player_first else 6)
-    assert result["move_quality"]["status"] == ("good" if player_first else "blunder")
+    assert result["move_quality"]["status"] == ("best" if player_first else "blunder")
     assert result["move_quality"] == assess_player_move(result["top_moves"][0], result["played_move"])
     assert with_player_move_quality(result)["move_quality"] == result["move_quality"]
     position = result["position_evidence"]
@@ -84,7 +84,7 @@ def test_conflicting_search_regrades_and_reranks_the_whole_pool(monkeypatch, pla
 @pytest.mark.parametrize("changes,expected", [
     ({"depth": 17}, "uncertain"),
     ({"upperbound": True}, "uncertain"),
-    ({"score": chess.engine.PovScore(chess.engine.Cp(990), chess.WHITE)}, "good"),
+    ({"score": chess.engine.PovScore(chess.engine.Cp(990), chess.WHITE)}, "excellent"),
 ])
 def test_only_reliable_conflicts_trigger_shared_comparison(monkeypatch, changes, expected):
     single_search(monkeypatch, **changes)
@@ -107,7 +107,7 @@ def test_newly_found_mate_is_also_compared_together(monkeypatch):
     assert result["top_moves"][0]["uci"] == PLAYED
     assert result["played_move"]["score"]["mate"] == 4
     assert result["move_quality"]["reason"] == "mate_retained"
-    assert result["move_quality"]["status"] == "good"
+    assert result["move_quality"]["status"] == "best"
 
 
 @pytest.mark.parametrize("defect", ["missing", "wrong_root", "mixed_depth", "bound"])

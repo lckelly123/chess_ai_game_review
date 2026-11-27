@@ -8,7 +8,7 @@ import chess
 import chess.engine
 
 from .move_review import MoveReview
-from .player_move_quality import PLAYER_QUALITY_POLICY, assess_player_move
+from .player_move_quality import ACCEPTABLE_STATUSES, PLAYER_QUALITY_POLICY, assess_player_move
 from .position_classification import compare_candidate_moves
 from .sharpness import with_position_sharpness
 from .stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError, StockfishUnavailableError, _candidate
@@ -68,7 +68,7 @@ def prepare_position_evidence(evidence: dict) -> dict:
     # Keep all raw lines and WDL metadata for consumers, but select the exact
     # teaching list with the same severity rules used to grade practice moves.
     result["permitted_candidate_uci"] = [move["uci"] for move in candidates
-                                         if assess_player_move(candidates[0], move)["status"] == "good"][:3]
+                                         if move["quality"]["status"] in ACCEPTABLE_STATUSES][:3]
     result["move_quality_policy"] = PLAYER_QUALITY_POLICY.copy()
     return result
 

@@ -152,7 +152,7 @@ test('the practice card keeps the hint spoiler-free and acknowledges success wit
     assert.match(html, /The center needs attention/);
     assert.doesNotMatch(html, /Control the center with|Unique candidate detail|Unique original move assessment/);
     assert.doesNotMatch(html, /View review|Control the center with|Try another move/);
-    assert.equal(html.includes('Good move. Let’s look at why.'), complete);
+    assert.equal(html.includes('That works. Let’s look at why.'), complete);
     assert.equal(html.includes('class="practice-feedback"'), complete);
   }
 });
