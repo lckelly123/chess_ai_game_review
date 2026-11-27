@@ -2,7 +2,8 @@ import type { CoachMove } from './coachMoves.ts';
 import type { CandidateSelection } from './boardAnnotations.ts';
 import type { CoachResponse, EngineReview, GameAnalysisSummary, Move, MoveQuality, Position } from './types.ts';
 
-export const qualityLabels: Record<MoveQuality, string> = {good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder', uncertain: 'Quality uncertain'};
+export const qualityLabels: Record<MoveQuality, string> = {best: 'Best', excellent: 'Excellent', good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder', uncertain: 'Quality uncertain'};
+export const acceptableQuality = (quality?: MoveQuality | null) => quality === 'best' || quality === 'excellent' || quality === 'good';
 export const analysisActive = (analysis?: GameAnalysisSummary | null) => analysis?.status === 'queued' || analysis?.status === 'running';
 export const coachingPending = (analysis?: GameAnalysisSummary | null) => (analysis?.coach_completed ?? 0) < (analysis?.coach_total ?? 0);
 export const opponentAnalysisPending = (analysis?: GameAnalysisSummary | null) => !!analysis &&

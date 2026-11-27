@@ -17,7 +17,7 @@ from backend.tests.test_coach import teaching_output
 from backend.coach.move_review import MoveReview
 from backend.coach.responses import CoachAnalysis, CoachResponseError
 from backend.coach.position import CoachPosition
-from backend.coach.player_move_quality import assess_player_move
+from backend.coach.player_move_quality import assess_player_move, with_player_move_quality
 from backend.coach.stockfish import StockfishAnalysisError, StockfishSettings, StockfishTimeoutError
 from backend.database import Database
 from backend.game_analysis import (
@@ -483,7 +483,8 @@ def test_postgres_resume_keeps_saved_moves_and_separates_colors(test_db_url):
         assert partial["status"] == "interrupted" and partial["completed"] == 1
         client.post(f'/api/games/{game["id"]}/analysis', json={"username": "alice"})
         restored = wait_completed(client, game["id"])["moves"]["0"]
-        assert all(restored[key] == value for key, value in first.items())
+        assert restored['fen'] == first['fen'] and restored['played_move'] == first['played_move']
+        assert restored['stockfish'] == with_player_move_quality(first['stockfish'])
         assert restored['position_evidence']['sharpness']['score'] is not None
         assert db.game_analysis(game['id'], 'white', fingerprint)['moves']['0'] == first
         assert client.get(f'/api/games/{game["id"]}/analysis?username=bob').json() is None
@@ -568,7 +569,7 @@ def test_automatic_coach_selects_only_three_error_grades_and_reuses_exact_eviden
         await finish(service)
         row = await service.saved(db.record['id'], 'alice')
         assert row['status'] == 'completed'
-        assert row['counts'] == {grade: 1 for grade in ('good', 'inaccuracy', 'mistake', 'blunder', 'uncertain')}
+        assert row['counts'] == {grade: 1 for grade in ('best', 'inaccuracy', 'mistake', 'blunder', 'uncertain')}
         assert row['coach_total'] == row['coach_completed'] == 3
         assert coach_calls == [(move, 'gpt-6.1-terra') for move in ('g1f3', 'f1c4', 'd2d3')]
         assert len(db.feedback) == 3
@@ -684,6 +685,33 @@ def test_manual_and_background_coach_share_one_generation_lock(monkeypatch):
             assert wait_completed(client, game_id)['coach_completed'] == 4
     finally:
         release.set()
+
+
+def test_saved_good_labels_and_library_counts_regrade_without_database_writes(test_db_url):
+    db = Database(test_db_url)
+    game = normalize_game(raw_game(), 'alice')
+    db.save_import('alice', [game], 1)
+    fingerprint = pgn_fingerprint(game['pgn'])
+    db.begin_game_analysis(game['id'], 'white', fingerprint, 4, 3)
+    for ply, score in enumerate([100, 100, 90, 90, 50, 50, -200]):
+        review = MoveReview.from_game(game['pgn'], ply)
+        engine = evidence(review)
+        engine['played_move']['score']['cp'] = score
+        saved = {'fen': review.position.fen, 'played_move': review.played_move_uci, 'stockfish': engine}
+        if ply % 2:
+            db.save_game_opponent_move(game['id'], 'white', fingerprint, ply, saved)
+        else:
+            db.save_game_analysis_move(game['id'], 'white', fingerprint, ply, saved)
+    with db.connection() as conn:
+        conn.execute('UPDATE game_engine_analysis SET counts=%s::jsonb', ('{"good": 4}',))
+    before = db.game_analysis(game['id'], 'white', fingerprint)
+    expected = {'best': 1, 'excellent': 1, 'good': 1, 'blunder': 1}
+    assert db.games('alice')[0]['analysis']['counts'] == expected
+    restored = db.game_analyses(game['id'], game['pgn'])['white']
+    assert restored['counts'] == expected
+    assert [restored['moves'][str(ply)]['stockfish']['move_quality']['status'] for ply in (0, 2, 4, 6)] == list(expected)
+    assert [restored['opponent_moves'][str(ply)]['stockfish']['move_quality']['status'] for ply in (1, 3, 5)] == ['best', 'excellent', 'good']
+    assert db.game_analysis(game['id'], 'white', fingerprint) == before
 
 
 def test_completed_old_taxonomy_job_refreshes_only_stale_reviews_without_engine_work(test_db_url):

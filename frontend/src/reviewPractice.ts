@@ -1,4 +1,5 @@
 import type { CoachResponse, EngineReview, Move, MoveQuality, Position } from './types.ts';
+import { acceptableQuality, qualityLabels } from './engineReview.ts';
 
 export type PracticeMove = { uci: string; san: string; position: Position };
 export type PracticeContext = { fen: string; original_move: string; legal_moves: PracticeMove[] };
@@ -16,7 +17,7 @@ export function needsPractice(move: Move | undefined, color: string, fen: string
 
 export const practiceKey = (gameId: string, color: string, ply: number, fen: string, move: string, revision = 0) =>
   `review-practice:v1:${JSON.stringify([gameId, color, ply, fen, move, ...(revision ? [revision] : [])])}`;
-export const practiceComplete = (attempts: PracticeAttempt[]) => attempts.some(attempt => attempt.status === 'graded' && attempt.quality === 'good');
+export const practiceComplete = (attempts: PracticeAttempt[]) => attempts.some(attempt => attempt.status === 'graded' && acceptableQuality(attempt.quality));
 
 export function restoreAttempts(raw: string): PracticeAttempt[] {
   try {
@@ -25,12 +26,12 @@ export function restoreAttempts(raw: string): PracticeAttempt[] {
     return value.filter(attempt => attempt && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(attempt.uci)
       && typeof attempt.san === 'string' && typeof attempt.at === 'string'
       && ['checking', 'graded', 'error'].includes(attempt.status)
-      && (attempt.quality === null || ['good', 'inaccuracy', 'mistake', 'blunder', 'uncertain'].includes(attempt.quality)))
+      && (attempt.quality === null || Object.hasOwn(qualityLabels, attempt.quality)))
       .map(attempt => attempt.status === 'checking' ? {...attempt, status: 'error', quality: null} : attempt);
   } catch { return []; }
 }
 
 export function resultMatches(result: PracticeResult, fen: string, original: string, move: string) {
   return result.fen === fen && result.original_move === original && result.move === move
-    && result.accepted === (result.quality.status === 'good');
+    && result.accepted === acceptableQuality(result.quality.status);
 }

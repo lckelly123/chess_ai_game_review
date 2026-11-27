@@ -1,7 +1,7 @@
 import type { EngineReview, GameDetail, GameStatistics, PositionEvaluation } from './types.ts';
 import { matchingReview } from './engineReview.ts';
 
-export const summaryGrades = ['good', 'inaccuracy', 'mistake', 'blunder'] as const;
+export const summaryGrades = ['best', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder'] as const;
 
 export function statisticsReady(game: Pick<GameDetail, 'positions'>, statistics?: GameStatistics | null): statistics is GameStatistics {
   return statistics?.version === 1 && statistics.perspective === 'White' && statistics.complete
@@ -45,7 +45,7 @@ export function moveTime(seconds?: number | null): string {
 }
 
 export function overviewCounts(game: Pick<GameDetail, 'moves' | 'positions'>, reviews: Record<string, EngineReview>) {
-  const empty = () => ({good: 0, inaccuracy: 0, mistake: 0, blunder: 0, analysed: 0, total: 0, uncertain: 0});
+  const empty = () => ({best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0, analysed: 0, total: 0, uncertain: 0});
   const result = {white: empty(), black: empty()};
   game.moves.forEach((move, ply) => {
     const counts = result[move.color as 'white' | 'black'];

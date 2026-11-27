@@ -66,9 +66,9 @@ def test_in_pool_played_moves_reuse_search_without_engine_process(monkeypatch):
     monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", Mock(side_effect=AssertionError("No duplicate search")))
     original = position_evidence(chess.STARTING_FEN)
     snapshot = deepcopy(original)
-    for move in original["top_moves"]:
+    for move, status in zip(original["top_moves"], ["best", "excellent", "excellent", "good", "good"]):
         result = analyze_played_move(MoveReview.from_fen(chess.STARTING_FEN, move["uci"]), original)
-        assert result["played_move_in_top"] and result["move_quality"]["status"] == "good"
+        assert result["played_move_in_top"] and result["move_quality"]["status"] == status
         assert result["move_quality_policy"] == PLAYER_QUALITY_POLICY
         assert result["played_move"]["uci"] == move["uci"]
     assert original == snapshot
@@ -109,11 +109,12 @@ def test_outside_pool_search_stays_on_original_board_and_perspective(monkeypatch
     engine.__exit__.assert_called_once()
 
 
-def test_feedback_reuses_reason_only_for_acceptable_selected_move():
+@pytest.mark.parametrize("status", ["best", "excellent", "good"])
+def test_feedback_reuses_reason_only_for_acceptable_selected_move(status):
     data = teaching_output()
     data["move_evaluation"] = {"explanation": None, "mistake_classification": None}
     teaching = TeachingOutput.model_validate(data)
-    evidence = {"move_quality": {"status": "good"}}
+    evidence = {"move_quality": {"status": status}}
     teaching.validate_move_evaluation(played_move="g1h3", evidence=evidence)
     teaching.move_evaluation.explanation = "A duplicate reason."
     with pytest.raises(ValueError):

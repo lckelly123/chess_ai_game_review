@@ -79,7 +79,7 @@ def test_one_request_contains_position_and_played_move_and_never_runs_second_ada
     message = body["input"][1]["content"]
     candidates, player = message.split("PLAYER MOVE\n", 1)
     assert candidates.count(" | ") == 8
-    assert "UCI: e7e5" in player and "Severity: good" in player
+    assert "UCI: e7e5" in player and "Severity: best" in player
     assert "top_moves" not in message
     assert body["model"] == model and body["reasoning"] == {"effort": "medium"}
     assert body["store"] is False and "previous_response_id" not in body

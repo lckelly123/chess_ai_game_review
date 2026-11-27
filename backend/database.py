@@ -60,7 +60,7 @@ class Database:
         with self.connection() as db:
             rows = db.execute(
                 """SELECT g.metadata, g.pgn, g.analysis_revision, a.game_id, a.player_color, a.pgn_hash, a.status,
-                          a.total, a.completed, a.counts, a.coach_completed, a.coach_version, a.error, a.updated_at,
+                          a.total, a.completed, a.counts, a.moves, a.coach_completed, a.coach_version, a.error, a.updated_at,
                           a.opponent_total, (SELECT count(*) FROM jsonb_object_keys(a.opponent_moves)) AS opponent_completed
                    FROM games g JOIN profile_games pg ON pg.game_id=g.id
                    LEFT JOIN game_engine_analysis a ON a.game_id=g.id AND a.player_color=

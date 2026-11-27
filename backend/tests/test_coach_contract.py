@@ -65,7 +65,7 @@ def test_compact_request_keeps_full_internal_evidence_and_small_dynamic_input():
     request = build_request(chess.STARTING_FEN, evidence=evidence, played_move="g1h3")
     message = request["input"][1]["content"]
     assert message.startswith("Side to move: White\n\nOpponent's previous move: unavailable\n\nFEN: ")
-    assert "Severity: good" in message and "SAN: Nh3" in message
+    assert "Severity: best" in message and "SAN: Nh3" in message
     assert "pv_uci" not in message and "probabilities" not in message and "move_quality_policy" not in message
     assert "UCI | Evaluation | PV (SAN)" in message
     assert len(message) < 1000  # Fixed one-ply fixture previously exceeded 8,000 characters.

@@ -47,7 +47,7 @@ def completed_response(*, request=None, fen=chess.STARTING_FEN, **overrides):
             player = content.split("PLAYER MOVE\n", 1)[1]
             uci = player.split("UCI: ", 1)[1].splitlines()[0]
             severity = player.split("Severity: ", 1)[1].splitlines()[0]
-            if uci in ucis and severity == "good":
+            if uci in ucis and severity in {"best", "excellent", "good"}:
                 data["move_evaluation"]["explanation"] = None
             if severity in ("inaccuracy", "mistake", "blunder"):
                 data["move_evaluation"]["mistake_classification"] = {"category": "other", "subcategory": None}

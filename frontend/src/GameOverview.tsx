@@ -39,7 +39,7 @@ function EvaluationGraph({ timeline, game, reviews, ply, onSelect }: {
         {game.moves.map((move, index) => {
           const grade = matchingReview(move, game.positions[index], reviews[String(index)])?.stockfish.move_quality?.status;
           const value = y(timeline[index + 1]);
-          return grade && grade !== 'good' && grade !== 'uncertain' && value != null
+          return grade && ['inaccuracy', 'mistake', 'blunder'].includes(grade) && value != null
             ? <circle key={index} cx={x(index + 1)} cy={value} r="2.8" className={`evaluation-event ${grade}`}/> : null;
         })}
         <line x1={x(ply)} x2={x(ply)} y1={padding} y2={height - padding} className="evaluation-cursor"/>

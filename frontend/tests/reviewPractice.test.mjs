@@ -10,7 +10,7 @@ test('only the player’s flagged moves enter practice, from matching saved engi
     assert.equal(needsPractice(move, 'white', 'position', engine(quality)), true);
     assert.equal(needsPractice(move, 'white', 'position', undefined, engine(quality)), true);
   }
-  for (const quality of ['good', 'uncertain']) assert.equal(needsPractice(move, 'white', 'position', engine(quality)), false);
+  for (const quality of ['best', 'excellent', 'good', 'uncertain']) assert.equal(needsPractice(move, 'white', 'position', engine(quality)), false);
   assert.equal(needsPractice(move, 'black', 'position', engine('blunder')), false);
   assert.equal(needsPractice(move, 'white', 'different', engine('blunder')), false);
   assert.equal(needsPractice(move, 'white', 'position', {...engine('blunder'), played_move: 'd2d4'}), false);
@@ -33,6 +33,17 @@ test('interrupted checks restore as ungraded attempts and corrupt storage is saf
   assert.equal(restoreAttempts(JSON.stringify([checking]))[0].status, 'error');
   assert.equal(practiceComplete(restoreAttempts(JSON.stringify([checking]))), false);
   for (const raw of ['', '{', '{}', '[null, {}]']) assert.deepEqual(restoreAttempts(raw), []);
+});
+
+test('Best, Excellent, and Good all complete practice and survive restoration', () => {
+  for (const quality of ['best', 'excellent', 'good']) {
+    const attempt = {uci: 'd2d4', san: 'd4', at: 'now', quality, lossPp: 0, status: 'graded'};
+    assert.equal(practiceComplete(restoreAttempts(JSON.stringify([attempt]))), true);
+    assert.equal(practiceComplete([{...attempt, status: 'checking'}]), false);
+    const result = {fen: 'fen', original_move: 'e2e4', move: 'd2d4', accepted: true, quality: {status: quality}};
+    assert.equal(resultMatches(result, 'fen', 'e2e4', 'd2d4'), true);
+    assert.equal(resultMatches({...result, accepted: false}, 'fen', 'e2e4', 'd2d4'), false);
+  }
 });
 
 test('practice identities isolate players, games, plies, exact positions and original moves', () => {
