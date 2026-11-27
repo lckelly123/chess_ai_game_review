@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { Move, Position } from './types';
 import { squareCenter } from './boardAnnotations';
 import { useBoardSound } from './useBoardSound';
-import { BOARD_MOVE_MS, pieceMotions, piecesAt } from './boardAnimation';
+import { BOARD_MOVE_MS, boardPieceMotions, piecesAt } from './boardAnimation';
 
 const names: Record<string, string> = { p: 'pawn', r: 'rook', n: 'knight', b: 'bishop', q: 'queen', k: 'king' };
 
@@ -29,24 +29,50 @@ export default function Board({ position, flipped, playedMove, showLastMove = tr
 }) {
   useBoardSound(position.fen);
   const board = useRef<HTMLDivElement>(null);
-  const previousFen = useRef(position.fen);
+  const previous = useRef({fen: position.fen, flipped, reducedMotion});
+  const running = useRef(new Map<string, {movement: Animation; piece: HTMLElement; dx: number; dy: number}>());
+  useLayoutEffect(() => () => {
+    for (const {movement, piece} of running.current.values()) { movement.cancel(); piece.style.zIndex = ''; }
+    running.current.clear();
+  }, []);
   useLayoutEffect(() => {
-    const before = previousFen.current;
-    previousFen.current = position.fen;
-    if (!animation || reducedMotion || !board.current) return;
+    const before = previous.current;
+    previous.current = {fen: position.fen, flipped, reducedMotion};
+    // Clearing a preview or receiving a grading result must not cut short a move.
+    if (before.fen === position.fen && before.flipped === flipped && before.reducedMotion === reducedMotion) return;
+    if (!board.current) return;
+    const motions = boardPieceMotions(before.fen, position.fen, animation);
+    const beforePieces = piecesAt(before.fen), afterPieces = piecesAt(position.fen);
+    const offsets = new Map<string, {dx: number; dy: number}>();
+    for (const [square, active] of running.current) {
+      const progress = active.movement.effect?.getComputedTiming().progress ?? 0;
+      offsets.set(square, {dx: active.dx * (1 - progress), dy: active.dy * (1 - progress)});
+      const currentPiece = board.current.querySelector(`[data-square="${square}"] .piece`);
+      // Let unrelated moves finish while another piece starts moving.
+      if (!reducedMotion && before.flipped === flipped && currentPiece === active.piece && beforePieces[square] === afterPieces[square]
+        && !motions.some(motion => motion.from === square || motion.to === square)) continue;
+      active.movement.cancel();
+      active.piece.style.zIndex = '';
+      running.current.delete(square);
+    }
+    if (reducedMotion || before.flipped !== flipped) return;
     const size = board.current.getBoundingClientRect().width / 8;
-    const running = pieceMotions(before, position.fen, animation.uci, animation.reverse).flatMap(({from, to}) => {
-      const square = board.current?.querySelector<HTMLElement>(`[data-square="${to}"]`);
-      const piece = square?.querySelector<HTMLElement>('.piece');
-      if (!square || !piece?.animate) return [];
+    for (const {from, to} of motions) {
+      const piece = board.current.querySelector<HTMLElement>(`[data-square="${to}"] .piece`);
+      if (!piece?.animate) continue;
       const [x1, y1] = squareCenter(from, flipped), [x2, y2] = squareCenter(to, flipped);
-      square.style.zIndex = '2';
-      const movement = piece.animate([{transform: `translate(${(x1 - x2) * size}px, ${(y1 - y2) * size}px)`}, {transform: 'translate(0, 0)'}],
+      const offset = offsets.get(from);
+      const dx = x1 - x2 + (offset?.dx ?? 0), dy = y1 - y2 + (offset?.dy ?? 0);
+      piece.style.zIndex = '2';
+      const movement = piece.animate([{transform: `translate(${dx * size}px, ${dy * size}px)`}, {transform: 'translate(0, 0)'}],
         {duration: BOARD_MOVE_MS, easing: 'cubic-bezier(0.16, 1, 0.3, 1)'});
-      movement.onfinish = () => { square.style.zIndex = ''; };
-      return [{movement, square}];
-    });
-    return () => running.forEach(({movement, square}) => { movement.cancel(); square.style.zIndex = ''; });
+      running.current.set(to, {movement, piece, dx, dy});
+      movement.onfinish = () => {
+        if (running.current.get(to)?.movement !== movement) return;
+        piece.style.zIndex = '';
+        running.current.delete(to);
+      };
+    }
   }, [position.fen, flipped, animation?.uci, animation?.reverse, reducedMotion]);
   const errorArrowId = useId();
   const [selected, setSelected] = useState<string | null>(null);
