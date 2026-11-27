@@ -1,7 +1,64 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {movePreviewSteps, pieceMotions, piecesAt} from '../src/boardAnimation.ts';
+import {boardPieceMotions, movePreviewSteps, pieceMotions, piecesAt} from '../src/boardAnimation.ts';
 import {boardMoveSound} from '../src/boardSound.ts';
+import {replayGame} from './fixtures/replayGame.mjs';
+
+test('replay and variation positions slide forward and backward without animation instructions', () => {
+  const {positions, moves} = replayGame;
+  for (let index = 0; index < moves.length; index++) {
+    const from = moves[index].uci.slice(0, 2), to = moves[index].uci.slice(2, 4);
+    assert.deepEqual(boardPieceMotions(positions[index].fen, positions[index + 1].fen), [{from, to}]);
+    assert.deepEqual(boardPieceMotions(positions[index + 1].fen, positions[index].fen), [{from: to, to: from}]);
+  }
+});
+
+test('seeks and returning from variations animate every changed piece once', () => {
+  const {positions} = replayGame;
+  const motions = boardPieceMotions(positions[0].fen, positions[3].fen);
+  assert.deepEqual(motions, [{from: 'e1', to: 'f1'}, {from: 'b8', to: 'b2'}]);
+  assert.deepEqual(boardPieceMotions(positions[3].fen, positions[0].fen),
+    motions.map(({from, to}) => ({from: to, to: from})));
+  const before = '4k3/8/8/8/8/8/8/R3K2R w - - 0 1';
+  const after = '4k3/8/8/8/R6R/8/8/4K3 w - - 0 5';
+  assert.deepEqual(boardPieceMotions(before, after), [{from: 'a1', to: 'a4'}, {from: 'h1', to: 'h4'}]);
+});
+
+test('automatic motion covers captures, en passant, promotions and their undo', () => {
+  for (const [before, after, from, to] of [
+    ['4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1', '4k3/8/8/3P4/8/8/8/4K3 b - - 0 1', 'e4', 'd5'],
+    ['4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1', '4k3/8/3P4/8/8/8/8/4K3 b - - 0 1', 'e5', 'd6'],
+    ...['Q', 'R', 'B', 'N'].map(piece => [
+      '1r2k3/P7/8/8/8/8/8/4K3 w - - 0 1', `1${piece}2k3/8/8/8/8/8/8/4K3 b - - 0 1`, 'a7', 'b8',
+    ]),
+    ...['q', 'r', 'b', 'n'].map(piece => [
+      '4k3/8/8/8/8/8/7p/4K3 b - - 0 1', `4k3/8/8/8/8/8/8/4K2${piece} w - - 0 2`, 'h2', 'h1',
+    ]),
+  ]) {
+    assert.deepEqual(boardPieceMotions(before, after), [{from, to}]);
+    assert.deepEqual(boardPieceMotions(after, before), [{from: to, to: from}]);
+  }
+});
+
+test('automatic castling slides both king and rook in both directions', () => {
+  for (const [before, after, expected] of [
+    ['4k3/8/8/8/8/8/8/4K2R w K - 0 1', '4k3/8/8/8/8/8/8/5RK1 b - - 1 1', [{from: 'e1', to: 'g1'}, {from: 'h1', to: 'f1'}]],
+    ['r3k3/8/8/8/8/8/8/4K3 b q - 0 1', '2kr4/8/8/8/8/8/8/4K3 w - - 1 2', [{from: 'e8', to: 'c8'}, {from: 'a8', to: 'd8'}]],
+  ]) {
+    assert.deepEqual(new Set(boardPieceMotions(before, after)), new Set(expected));
+    assert.deepEqual(new Set(boardPieceMotions(after, before)), new Set(expected.map(({from, to}) => ({from: to, to: from}))));
+  }
+});
+
+test('preview hints cannot move stationary pieces or omit other changes', () => {
+  const {positions} = replayGame;
+  assert.deepEqual(boardPieceMotions(positions[0].fen, positions[3].fen, {uci: 'b8b2', reverse: false}),
+    [{from: 'b8', to: 'b2'}, {from: 'e1', to: 'f1'}]);
+  // A stale move hint must not slide a queen into a king's square.
+  assert.deepEqual(boardPieceMotions(positions[0].fen, positions[1].fen, {uci: 'b8e8', reverse: false}), [{from: 'b8', to: 'b4'}]);
+  assert.deepEqual(boardPieceMotions(positions[1].fen, positions[1].fen, {uci: 'b8b4', reverse: false}), []);
+  assert.deepEqual(boardPieceMotions(positions[1].fen, positions[1].fen.replace(' w ', ' b ')), []);
+});
 
 test('alternative selection undoes Re1 before moving the queen to d2 and can switch or return', () => {
   const position = fen => ({fen, last_move: null, check_square: null});
