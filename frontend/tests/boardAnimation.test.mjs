@@ -1,7 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pieceMotions, piecesAt} from '../src/boardAnimation.ts';
+import {movePreviewSteps, pieceMotions, piecesAt} from '../src/boardAnimation.ts';
 import {boardMoveSound} from '../src/boardSound.ts';
+
+test('alternative selection undoes Re1 before moving the queen to d2 and can switch or return', () => {
+  const position = fen => ({fen, last_move: null, check_square: null});
+  const decision = position('4k3/8/8/8/8/8/8/3Q1RK1 w - - 0 14');
+  const original = position('4k3/8/8/8/8/8/8/3QR1K1 b - - 1 14');
+  const queen = position('4k3/8/8/8/8/8/3Q4/5RK1 b - - 1 14');
+  const king = position('4k3/8/8/8/8/8/8/3Q1R1K b - - 1 14');
+  for (const [current, target, uci, undo] of [
+    [original, queen, 'd1d2', 'f1e1'], [queen, king, 'g1h1', 'd1d2'], [queen, original, 'f1e1', 'd1d2'],
+  ]) {
+    const steps = movePreviewSteps(decision, current, target, uci, undo);
+    assert.deepEqual(steps.map(step => step.position), [decision, target]);
+    let before = current;
+    for (const {position, animation} of steps) {
+      assert.equal(pieceMotions(before.fen, position.fen, animation.uci, animation.reverse).length, 1);
+      before = position;
+    }
+  }
+  // A click while the previous move is being undone starts from that decision.
+  assert.equal(movePreviewSteps(decision, decision, king, 'g1h1', 'd1d2').length, 1);
+  // Collapsing the original move's explanation should leave its piece still.
+  assert.deepEqual(movePreviewSteps(decision, original, original, 'f1e1', 'f1e1'), [{position: original}]);
+});
 
 test('undo and replay animate in the proper direction and each board change has a sound', () => {
   const before = '1q2k3/8/8/8/8/8/8/4K3 b - - 0 12';

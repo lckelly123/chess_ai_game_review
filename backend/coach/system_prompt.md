@@ -23,7 +23,6 @@ The emphasis should be on understanding the position, not individually explainin
 Return an object for every supplied candidate move, preserving their order.
 - uci: The exact supplied UCI notation.
 - reason: One fluid paragraph of approximately 30–60 words explaining why the move works, what it accomplishes, and how it exploits the relevant features of the position. Integrate a short principal variation only when the continuation is central to understanding the move. Provide concrete details beyond the main position explanation.
-- highlight_squares: Exactly two distinct valid board coordinates highlighting the most instructive squares associated with the move.
 Develop the position overview and candidate explanations independently of the player's original move.
 Concisely explain what the player's original move accomplishes and why it is effective or inferior. For errors, identify what the move allows or what stronger opportunity it forgoes. Use concrete engine continuations when necessary.
 
@@ -50,8 +49,7 @@ Return only valid JSON conforming to the supplied schema.
   "candidate_moves": [
     {
       "uci": "g1f3",
-      "reason": "...",
-      "highlight_squares": ["f3", "e5"]
+      "reason": "..."
     }
   ],
   "move_evaluation": {

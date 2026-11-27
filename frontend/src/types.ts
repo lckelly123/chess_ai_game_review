@@ -35,9 +35,9 @@ export type EngineAnalysis = {
     reason?: string;
   };
 };
-export type CandidateMove = { uci: string; reason: string; highlight_squares: [string, string] };
+export type CandidateMove = { uci: string; reason: string };
 export type MoveQuality = NonNullable<EngineAnalysis['move_quality']>['status'];
-export type EngineReview = { fen: string; played_move: string; stockfish: EngineAnalysis; position_evidence?: PositionEvidence | null };
+export type EngineReview = { fen: string; played_move: string; stockfish: EngineAnalysis; position_evidence?: PositionEvidence | null; candidate_positions?: Record<string, Position> };
 export type GameAnalysisSummary = {
   game_id: string; player_color: 'white' | 'black';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted';
@@ -85,6 +85,7 @@ export type CoachResponse = {
   stockfish?: EngineAnalysis | null;
   teaching?: PositionTeaching | null;
   move_lines?: Record<string, {san: string[]; positions: Position[]}>;
+  candidate_positions?: Record<string, Position>;
   coach_current?: boolean;
   coach_contract_version?: number | null;
   previous_move?: { fen: string; san: string; uci: string } | null;

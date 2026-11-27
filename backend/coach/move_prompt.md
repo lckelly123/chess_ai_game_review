@@ -13,7 +13,7 @@ A previous analysis has already evaluated the position and established a positio
 You will receive:
 
 1. **Chess Position:** The FEN and/or ASCII board before the player's move.
-2. **Previous Analysis:** A JSON object with `positional_thesis`, `candidate_moves`, and optionally `move_evaluation`. Each candidate has a legal UCI move, an instructional reason connecting observations to its objective, and two highlight squares. Candidates are selected from an approved engine pool; use Stockfish for objective comparisons. Older analyses may instead arrive as Markdown.
+2. **Previous Analysis:** A JSON object with `positional_thesis`, `candidate_moves`, and optionally `move_evaluation`. Each candidate has a legal UCI move and an instructional reason connecting observations to its objective. Candidates are selected from an approved engine pool; use Stockfish for objective comparisons. Older analyses may instead arrive as Markdown.
 3. **Player's Move:** The move the player actually played.
 4. **Stockfish Analysis:** The engine evaluation of the player's move, the strongest alternative moves, their evaluations, and principal variations when available.
 

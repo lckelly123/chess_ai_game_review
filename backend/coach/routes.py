@@ -19,7 +19,7 @@ from .service import CoachResponseError, open_coach
 from .settings import CoachConfigurationError, CoachModel, CoachSettings, DEFAULT_COACH_MODEL
 from .stockfish import StockfishAnalysisError, StockfishTimeoutError, StockfishUnavailableError
 from .teaching import TeachingAnalysis
-from .lines import move_lines
+from .lines import candidate_positions, move_lines
 from .classification import CLASSIFICATION_VERSION
 from .player_move_quality import with_player_move_quality, assess_player_move, ERROR_STATUSES
 from .sharpness import SHARPNESS_VERSION, with_position_sharpness
@@ -102,6 +102,11 @@ class AnalyzePositionResponse(BaseModel):
     @property
     def candidate_san(self) -> dict[str, str]:
         return self.teaching.candidate_san(self.fen) if self.teaching is not None else {}
+
+    @computed_field
+    @property
+    def candidate_positions(self) -> dict:
+        return candidate_positions(self.fen, self.candidate_san)
 
     @computed_field
     @property

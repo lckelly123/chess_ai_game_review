@@ -1,14 +1,13 @@
 """Combined coaching output contract and evidence-dependent validation."""
 
 import re
-from typing import Annotated, Literal
+from typing import Literal
 
 import chess
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .classification import positional_details
 
-Square = Annotated[str, Field(pattern=r"^[a-h][1-8]$")]
 PieceType = Literal["pawn", "knight", "bishop", "rook", "queen", "king"]
 MOVE_REFERENCE = re.compile(r"\[\[([a-h][1-8][a-h][1-8][qrbn]?)\]\]")
 PV_REFERENCE = re.compile(r"\[\[([^\[\]]+)\]\]")
@@ -97,14 +96,6 @@ class CandidateMove(BaseModel):
 
     uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")
     reason: str = Field(min_length=1)
-    highlight_squares: list[Square] = Field(min_length=2, max_length=2)
-
-    @field_validator("highlight_squares")
-    @classmethod
-    def distinct_squares(cls, squares):
-        if squares[0] == squares[1]:
-            raise ValueError("Highlight squares must be distinct.")
-        return squares
 
     @field_validator("reason")
     @classmethod
@@ -248,6 +239,14 @@ class TeachingAnalysis(TeachingOutput):
     # A legacy thesis can reveal the answer, so it is never used as a hint.
     position_overview: str | None = Field(default=None, min_length=1)
     move_evaluation: SavedMoveEvaluation | None = None
+
+    @field_validator("candidate_moves", mode="before")
+    @classmethod
+    def omit_saved_highlights(cls, value):
+        if isinstance(value, list):
+            return [{key: item for key, item in candidate.items() if key != "highlight_squares"}
+                    if isinstance(candidate, dict) else candidate for candidate in value]
+        return value
 
     @model_validator(mode="before")
     @classmethod
