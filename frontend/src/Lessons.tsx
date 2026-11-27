@@ -70,7 +70,7 @@ function LessonExplorer({data}: {data: LessonAnalytics}) {
         {(['all', ...lessonSeverities] as const).map(severity => <button type="button" key={severity}
           aria-pressed={filter === severity} onClick={() => setFilter(severity)}>{severityLabels[severity]}</button>)}
       </div>
-      {group === 'positional' && <p className="lesson-explorer-context">Grouped by the piece in Stockfish’s best move.</p>}
+      {group === 'positional' && <p className="lesson-explorer-context">Grouped by what the position needed: attack, defend, improve, or convert.</p>}
       {matching === 0 ? <div className="lesson-no-matches" role="status">
         <p>{filter === 'all' ? `No ${group === 'tactical' ? category?.label.toLowerCase() ?? 'tactical errors' : `${group} errors`} in your saved analysis.`
           : `No ${filter === 'inaccuracy' ? 'inaccuracies' : `${filter}s`} in this category.`}</p>

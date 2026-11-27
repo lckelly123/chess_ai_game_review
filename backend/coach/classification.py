@@ -2,7 +2,7 @@
 
 import chess
 
-CLASSIFICATION_VERSION = 3
+CLASSIFICATION_VERSION = 4
 
 
 def current_classification(review: dict | None) -> bool:
@@ -13,12 +13,22 @@ def current_classification(review: dict | None) -> bool:
 
 
 def lesson_classification(review: dict | None) -> bool:
-    """Version 2 and 3 saved labels share the same Lessons taxonomy."""
-    if not review or review.get("classification_version") not in (2, CLASSIFICATION_VERSION):
+    """Keep supported historical labels, without treating pieces as objectives."""
+    if not review or review.get("classification_version") not in (2, 3, CLASSIFICATION_VERSION):
         return False
     teaching = review.get("teaching") or {}
     evaluation = teaching.get("move_evaluation") or {}
-    return "mistake_classification" in evaluation
+    if "mistake_classification" not in evaluation:
+        return False
+    classification = evaluation["mistake_classification"]
+    if classification is None:
+        return True
+    if not isinstance(classification, dict):
+        return False
+    if classification.get("category") == "positional":
+        return classification.get("subcategory") in ("Attack", "Defend", "Improve", "Convert")
+    return (classification.get("category") in ("tactical_miss", "tactical_allowed")
+            and classification.get("subcategory") in ("hanging_piece", "fork", "pin_skewer", "discovered_attack"))
 
 
 def _best_move(fen: str, evidence: dict | None) -> chess.Move | None:

@@ -32,7 +32,7 @@ Keep the explanation proportional to the supplied severity. Recognize best, exce
 For an inaccuracy, mistake, or blunder, classify the primary chess-related error into one of the following categories:
 - tactical_miss: Forgoes an available concrete material gain or forced checkmate.
 - tactical_allowed: Allows an avoidable opponent material gain or forced checkmate.
-- other: Neither tactical condition explains the primary error.
+- positional: Neglects or mishandles an important positional priority, where neither a missed tactical opportunity nor an allowed tactic primarily explains the error.
 For tactical errors, select the closest applicable subcategory:
 - hanging_piece: A profitable capture of an undefended or inadequately defended piece or pawn.
 - fork: A single piece or pawn attacks multiple targets.
@@ -40,12 +40,18 @@ For tactical errors, select the closest applicable subcategory:
 - discovered_attack: Moving a piece reveals an attack from another piece.
 Compare the stronger and played continuations, accounting for exchanges, recaptures, and compensation. Identify the primary tactical mechanism rather than merely its material consequence. If both tactical categories apply, select the one that best explains the evaluation loss.
 
-For other, set subcategory to null. Return mistake_classification: null for best, excellent, good, or uncertain moves.
+For positional errors, set subcategory to the decision context that best describes the dominant need of the position:
+- Attack: Create or exploit pressure against the opponent's king or another meaningful target.
+- Defend: Address an immediate threat or prevent an important opposing plan.
+- Improve: Strengthen piece activity, development, coordination, pawn structure, or another lasting positional feature.
+- Convert: Make an existing advantage more secure or decisive, for example through favorable simplification or advancing a passed pawn.
+Assess the position before the player's move. Select the objective that sound play should prioritize, independently of what the played move attempts to accomplish. When several objectives apply, choose the primary need that best explains why the stronger continuation is preferable.
+
+Return mistake_classification: null for best, excellent, good, or uncertain moves.
 Return only valid JSON conforming to the supplied schema.
 ```
 {
   "position_overview": "...",
-  "decision_context": null,
   "position_explanation": "...",
   "candidate_moves": [
     {
@@ -56,8 +62,8 @@ Return only valid JSON conforming to the supplied schema.
   "move_evaluation": {
     "explanation": "...",
     "mistake_classification": {
-      "category": "other",
-      "subcategory": null
+      "category": "positional",
+      "subcategory": "Improve"
     }
   }
 }
@@ -72,6 +78,3 @@ For unavailable previous-move context, do not infer the previous move. For an un
 For terminal positions or an empty approved candidate list, return candidate_moves: [] and explain the situation without recommending alternatives. For a single supplied candidate, return exactly that candidate.
 When PLAYER MOVE is none, return move_evaluation with explanation "No recorded move is available to evaluate." and mistake_classification null.
 Only position_explanation may contain single-move [[uci]] references, and only for supplied candidates or the player's original move. Bracketed SAN PV sequences belong only in candidate_moves[].reason and move_evaluation.explanation. The overview contains no clickable references. All candidate reasons and the overview must remain independent of the original played move.
-# Decision context
-
-Return `decision_context` as one dominant objective: `Attack` (create or exploit pressure against the king or another meaningful target), `Defend` (address threats or prevent an important opposing plan), `Improve` (development, coordination, piece placement or another lasting positional feature), or `Convert` (make an existing advantage more secure or decisive). Use null when no sufficiently clear, useful objective applies. This is optional semantic context, primarily for positional mistakes; do not force it onto every tactical error.

@@ -49,11 +49,11 @@ class TacticalMistake(BaseModel):
     subcategory: Literal["hanging_piece", "fork", "pin_skewer", "discovered_attack"]
 
 
-class OtherMistake(BaseModel):
+class PositionalError(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    category: Literal["other"]
-    subcategory: None
+    category: Literal["positional"]
+    subcategory: Literal["Attack", "Defend", "Improve", "Convert"]
 
 
 class LegacyPositionalMistake(BaseModel):
@@ -64,7 +64,7 @@ class LegacyPositionalMistake(BaseModel):
     subcategory: PieceType
 
 
-class PositionalMistake(LegacyPositionalMistake):
+class PositionalMistake(PositionalError):
     """Backend-derived metadata, excluded from the LLM output schema."""
 
     best_move_piece: PieceType
@@ -72,7 +72,15 @@ class PositionalMistake(LegacyPositionalMistake):
     same_piece: bool
 
 
-MistakeClassification = TacticalMistake | OtherMistake
+class LegacyEnrichedPositionalMistake(LegacyPositionalMistake):
+    """Preserve the piece metadata in older, piece-grouped reviews."""
+
+    best_move_piece: PieceType
+    played_piece: PieceType
+    same_piece: bool
+
+
+MistakeClassification = TacticalMistake | PositionalError
 
 
 class MoveEvaluation(BaseModel):
@@ -113,7 +121,6 @@ class TeachingOutput(BaseModel):
     # Zero is valid in terminal positions or when no engine moves are approved.
     candidate_moves: list[CandidateMove] = Field(max_length=3)
     move_evaluation: MoveEvaluation
-    decision_context: Literal["Attack", "Defend", "Improve", "Convert"] | None
 
     @field_validator("position_overview", "position_explanation")
     @classmethod
@@ -181,9 +188,9 @@ class TeachingOutput(BaseModel):
     def as_analysis(self, fen: str, *, played_move: str | None, evidence: dict | None) -> "TeachingAnalysis":
         """Normalize the model verdict before it reaches storage or the UI."""
         data = self.model_dump()
-        if isinstance(self.move_evaluation.mistake_classification, OtherMistake):
+        if isinstance(self.move_evaluation.mistake_classification, PositionalError):
             details = positional_details(fen, played_move, evidence)
-            classification = PositionalMistake(category="positional", subcategory=details["best_move_piece"], **details)
+            classification = PositionalMistake(**self.move_evaluation.mistake_classification.model_dump(), **details)
             data["move_evaluation"]["mistake_classification"] = classification.model_dump()
         return TeachingAnalysis.model_validate(data)
 
@@ -212,7 +219,7 @@ class TeachingOutput(BaseModel):
 class SavedMoveEvaluation(MoveEvaluation):
     """Keep historical coaching readable without translating obsolete labels."""
 
-    mistake_classification: TacticalMistake | PositionalMistake | LegacyPositionalMistake | None = None
+    mistake_classification: TacticalMistake | PositionalMistake | PositionalError | LegacyEnrichedPositionalMistake | LegacyPositionalMistake | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -237,7 +244,6 @@ class TeachingAnalysis(TeachingOutput):
     """Read saved teaching while omitting obsolete fields and labels."""
 
     position_character: Literal["quiet", "tense", "forcing"] | None = Field(default=None, exclude=True)
-    decision_context: Literal["Attack", "Defend", "Improve", "Convert"] | None = None
     # A legacy thesis can reveal the answer, so it is never used as a hint.
     position_overview: str | None = Field(default=None, min_length=1)
     move_evaluation: SavedMoveEvaluation | None = None
@@ -254,7 +260,16 @@ class TeachingAnalysis(TeachingOutput):
     @classmethod
     def omit_legacy_needs(cls, value):
         if isinstance(value, dict):
-            result = {key: item for key, item in value.items() if key not in ("needs_of_position", "positional_thesis")}
+            result = {key: item for key, item in value.items() if key not in ("needs_of_position", "positional_thesis", "decision_context")}
+            evaluation = result.get("move_evaluation")
+            classification = evaluation.get("mistake_classification") if isinstance(evaluation, dict) else None
+            if isinstance(classification, dict) and classification.get("category") in ("other", "positional"):
+                context = value.get("decision_context")
+                if context in ("Attack", "Defend", "Improve", "Convert"):
+                    result["move_evaluation"] = {**evaluation, "mistake_classification": {
+                        **classification, "category": "positional", "subcategory": context}}
+                elif classification.get("category") == "other":
+                    result["move_evaluation"] = {**evaluation, "mistake_classification": None}
             if "position_explanation" not in result and "positional_thesis" in value:
                 result["position_explanation"] = value["positional_thesis"]
             return result

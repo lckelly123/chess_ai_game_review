@@ -26,6 +26,7 @@ const mistakeCategoryLabels: Record<MistakeClassification['category'], string> =
 const mistakeSubcategoryLabels: Record<MistakeClassification['subcategory'], string> = {
   hanging_piece: 'Hanging piece', fork: 'Fork', pin_skewer: 'Pin / skewer', discovered_attack: 'Discovered attack',
   pawn: 'Pawn', knight: 'Knight', bishop: 'Bishop', rook: 'Rook', queen: 'Queen', king: 'King',
+  Attack: 'Attack', Defend: 'Defend', Improve: 'Improve', Convert: 'Convert',
 };
 
 export default function CoachCards({ response, engineReview, engineMode = false, opponent = false, reviewedMove, pending, selectedUci, onSelectCandidate, transitioning, activeSequenceId, onPlaySequence, speechId, reducedMotion = false }: {

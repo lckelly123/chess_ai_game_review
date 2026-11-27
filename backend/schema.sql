@@ -96,9 +96,8 @@ CREATE TABLE IF NOT EXISTS game_moves (
     coach_position_explanation TEXT,
     coach_candidate_moves JSONB,
     coach_move_explanation TEXT,
-    coach_error_category TEXT CHECK (coach_error_category IN ('tactical_miss','tactical_allowed','other')),
-    coach_error_subcategory TEXT CHECK (coach_error_subcategory IN ('hanging_piece','fork','pin_skewer','discovered_attack')),
-    coach_decision_context TEXT CHECK (coach_decision_context IN ('Attack','Defend','Improve','Convert')),
+    coach_error_category TEXT CHECK (coach_error_category IN ('tactical_miss','tactical_allowed','positional')),
+    coach_error_subcategory TEXT CHECK (coach_error_subcategory IN ('hanging_piece','fork','pin_skewer','discovered_attack','Attack','Defend','Improve','Convert')),
     coach_output_raw TEXT,
     coach_metadata JSONB,
     top_1_uci TEXT,
@@ -206,6 +205,52 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
 );
+-- Move saved positional objectives into the classification itself. Keep raw
+-- model responses, piece metadata, and reviews; never infer missing objectives.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE name = 'coach_positional_objectives_v1') THEN
+        ALTER TABLE game_moves DROP CONSTRAINT game_moves_coach_error_category_check;
+        ALTER TABLE game_moves DROP CONSTRAINT game_moves_coach_error_subcategory_check;
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema=current_schema() AND table_name='game_moves' AND column_name='coach_decision_context') THEN
+            UPDATE game_moves SET coach_error_subcategory=coach_decision_context
+            WHERE coach_error_category IN ('other','positional');
+        END IF;
+        UPDATE game_moves SET coach_error_category='positional' WHERE coach_error_category='other';
+        UPDATE game_moves
+        SET coach_metadata=jsonb_set(coach_metadata, '{normalized_classification}',
+            CASE WHEN jsonb_typeof(coach_metadata -> 'normalized_classification')='object'
+                THEN coach_metadata -> 'normalized_classification' ELSE '{}'::jsonb END ||
+            jsonb_build_object('category', 'positional', 'subcategory', coach_error_subcategory))
+        WHERE coach_error_category='positional' AND coach_metadata IS NOT NULL;
+
+        -- Standalone saved reviews carry their structured fields as JSON.
+        UPDATE coach_feedback
+        SET position_analysis=jsonb_set(position_analysis, '{structured,move_evaluation,mistake_classification}',
+            (position_analysis #> '{structured,move_evaluation,mistake_classification}') ||
+            jsonb_build_object('category', 'positional', 'subcategory', position_analysis #>> '{structured,decision_context}'))
+        WHERE position_analysis #>> '{structured,move_evaluation,mistake_classification,category}' IN ('other','positional')
+          AND position_analysis #>> '{structured,decision_context}' IN ('Attack','Defend','Improve','Convert');
+        UPDATE coach_feedback SET position_analysis=position_analysis #- '{structured,decision_context}'
+        WHERE jsonb_typeof(position_analysis -> 'structured')='object';
+
+        ALTER TABLE game_moves DROP COLUMN IF EXISTS coach_decision_context;
+        ALTER TABLE game_moves ADD CONSTRAINT game_moves_coach_error_category_check
+            CHECK (coach_error_category IN ('tactical_miss','tactical_allowed','positional'));
+        ALTER TABLE game_moves ADD CONSTRAINT game_moves_coach_error_subcategory_check
+            CHECK (coach_error_subcategory IN ('hanging_piece','fork','pin_skewer','discovered_attack','Attack','Defend','Improve','Convert'));
+        ALTER TABLE game_moves ADD CONSTRAINT game_moves_coach_error_pair_check CHECK (
+            (coach_error_category IS NULL AND coach_error_subcategory IS NULL)
+            OR (coach_error_category IS NOT NULL AND coach_error_category IN ('tactical_miss','tactical_allowed') AND coach_error_subcategory IS NOT NULL
+                AND coach_error_subcategory IN ('hanging_piece','fork','pin_skewer','discovered_attack'))
+            OR (coach_error_category IS NOT NULL AND coach_error_category='positional' AND
+                (coach_error_subcategory IS NULL OR coach_error_subcategory IN ('Attack','Defend','Improve','Convert')))
+        );
+        INSERT INTO schema_migrations(name) VALUES ('coach_positional_objectives_v1');
+    END IF;
+END
+$$;
 -- Remove the retired teaching field once, preserving review history, raw text,
 -- engine evidence, classifications, and all other structured fields.
 DO $$

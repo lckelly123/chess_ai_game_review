@@ -15,7 +15,7 @@ erDiagram
 | 1: import | Import or account sync | Provider payload and PGN | `games` source fields and every `game_moves` source/clock/board field |
 | 2.0: engine | Analyze/resume game, or explicit game-linked coaching needing evidence | Recorded pre-move position and original UCI | Per-move top-five and played CP/mate/depth/bound/PV columns, search provenance, status and final-board evidence |
 | 2.5: metrics | Successful evidence persistence; complete timeline | Saved engine scores | Move quality, pre-move sharpness score/classification, both game accuracy fields |
-| 3: coaching | Selected player error, or explicit game-linked coach request | Position, preceding move, approved engine moves, original move | Explanations, candidates, taxonomy, optional decision context, exact raw response, model/usage/version metadata |
+| 3: coaching | Selected player error, or explicit game-linked coach request | Position, preceding move, approved engine moves, original move | Explanations, candidates, category and subcategory, exact raw response, model/usage/version metadata |
 | 4: practice | Legal submission or deliberate repeat review | Original `move_id` and pre-move position | Review session and ordered submissions, including the final Best, Excellent or Good move |
 
 All schema columns exist from the start. Import creates source rows; engine and coaching enrich them. Practice creates separate session rows. Import never starts an engine or model request. Whole-game analysis evaluates both colors, completes accuracy, then coaches only the selected player's inaccuracies, mistakes and blunders. Direct coaching saves new engine evidence before contacting the model, so a model failure does not lose completed phase 2 work.
@@ -35,7 +35,7 @@ All schema columns exist from the start. Import creates source rows; engine and 
 
 ## Coaching
 
-One current successful response belongs to each recorded move. `coach_output_raw` is the unmodified returned JSON text; queryable fields are populated after validation. Preserve raw `other` while adapting it to Positional for existing lesson displays. `coach_decision_context` is Attack, Defend, Improve, Convert or null, with no mandatory concept taxonomy.
+One current successful response belongs to each recorded move. `coach_output_raw` is the unmodified returned JSON text; queryable fields are populated after validation. The model category and subcategory populate `coach_error_category` and `coach_error_subcategory` directly. Positional errors use `positional` with Attack, Defend, Improve, or Convert; tactical errors retain their motif subcategories. Piece metadata remains separate. The one-time `coach_positional_objectives_v1` migration renames saved `other` errors to `positional`, moves their saved decision context into the subcategory, and removes `coach_decision_context`. Missing historical objectives stay null; raw responses and review history are preserved. Lessons groups positional errors by objective.
 
 The metadata retains model, response ID, usage, generation time, contract/classification/sharpness versions, prior-move context and the engine evidence identity. A failed or stale generation cannot erase or replace successful coaching. Game-linked reads do not borrow standalone responses from another context.
 

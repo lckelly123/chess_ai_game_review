@@ -62,9 +62,8 @@ export type GameAnalysis = GameAnalysisSummary & { moves: Record<string, EngineR
 export type PieceType = 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king';
 export type MistakeClassification =
   | { category: 'tactical_miss' | 'tactical_allowed'; subcategory: 'hanging_piece' | 'fork' | 'pin_skewer' | 'discovered_attack' }
-  | { category: 'positional'; subcategory: PieceType; best_move_piece?: PieceType; played_piece?: PieceType; same_piece?: boolean };
+  | { category: 'positional'; subcategory: 'Attack' | 'Defend' | 'Improve' | 'Convert' | PieceType; best_move_piece?: PieceType; played_piece?: PieceType; same_piece?: boolean };
 export type PositionTeaching = {
-  decision_context?: 'Attack' | 'Defend' | 'Improve' | 'Convert' | null;
   position_overview?: string | null;
   position_explanation?: string;
   positional_thesis?: string;

@@ -113,29 +113,116 @@ def test_black_scores_mates_bounds_and_candidate_reuse_roundtrip(test_db_url):
         conn.execute("UPDATE game_moves SET top_1_cp=30 WHERE move_id=%s", (stored["move_id"],))
 
 
-def test_coaching_preserves_raw_taxonomy_decision_context_and_previous_success(test_db_url):
+def test_coaching_preserves_objective_subcategory_raw_response_and_previous_success(test_db_url):
     db, game = imported(test_db_url)
     save_engine(db, game)
     review = MoveReview.from_game(game["pgn"], 0)
     raw = teaching_output()
-    raw["decision_context"] = "Improve"
-    raw["move_evaluation"]["mistake_classification"] = {"category": "other", "subcategory": None}
+    raw["move_evaluation"]["mistake_classification"] = {"category": "positional", "subcategory": "Improve"}
     exact = json.dumps(raw, indent=2) + "\n"
     normalized = deepcopy(raw)
-    normalized["move_evaluation"]["mistake_classification"] = {"category": "positional", "subcategory": "knight",
+    normalized["move_evaluation"]["mistake_classification"] = {"category": "positional", "subcategory": "Improve",
         "best_move_piece": "knight", "played_piece": "pawn", "same_piece": False}
     answer = CoachAnalysis("Saved explanation", "response-one", "test", review.position, None, played_move=review.played_move_uci,
         output_raw=exact, position_analysis={"structured": normalized, "coach_contract_version": COACH_CONTRACT_VERSION,
             "classification_version": CLASSIFICATION_VERSION, "sharpness_version": SHARPNESS_VERSION})
     db.save_coach_feedback(answer, game_id=game["id"], decision_ply=0)
     stored = move_row(db, game)
-    assert stored["coach_output_raw"] == exact and stored["coach_error_category"] == "other"
-    assert stored["coach_decision_context"] == "Improve" and stored["coach_error_subcategory"] is None
+    assert stored["coach_output_raw"] == exact and stored["coach_error_category"] == "positional"
+    assert "coach_decision_context" not in stored and stored["coach_error_subcategory"] == "Improve"
+    restored = db.coach_feedback_for_reviews([(review.position.fen, review.played_move_uci)], game_id=game["id"])
+    teaching = restored[(review.position.fen, review.played_move_uci)]["teaching"]
+    assert "decision_context" not in teaching
+    assert teaching["move_evaluation"]["mistake_classification"] == normalized["move_evaluation"]["mistake_classification"]
     db.save_coach_feedback(replace(answer, response_id="response-two"), game_id=game["id"], decision_ply=0)
     assert move_row(db, game)["move_id"] == stored["move_id"]
     with pytest.raises(ValueError):
         db.save_coach_feedback(replace(answer, output_raw="broken"), game_id=game["id"], decision_ply=0)
     assert move_row(db, game)["coach_metadata"]["response_id"] == "response-two"
+
+
+def test_objective_migration_preserves_contexts_tactics_raw_text_piece_facts_and_reviews(test_db_url):
+    db, game = imported(test_db_url)
+    save_engine(db, game)
+    review = db.start_review(game["id"], 0, 0)
+    piece_facts = {"best_move_piece": "knight", "played_piece": "pawn", "same_piece": False}
+    raw_responses = []
+    with db.connection() as conn:
+        # Recreate the previous schema, including labels absent from the new contract.
+        conn.execute("ALTER TABLE game_moves DROP CONSTRAINT game_moves_coach_error_pair_check")
+        conn.execute("ALTER TABLE game_moves DROP CONSTRAINT game_moves_coach_error_category_check")
+        conn.execute("ALTER TABLE game_moves DROP CONSTRAINT game_moves_coach_error_subcategory_check")
+        conn.execute("ALTER TABLE game_moves ADD COLUMN coach_decision_context TEXT")
+        conn.execute("""ALTER TABLE game_moves ADD CONSTRAINT game_moves_coach_error_category_check
+            CHECK (coach_error_category IN ('tactical_miss','tactical_allowed','other'))""")
+        conn.execute("""ALTER TABLE game_moves ADD CONSTRAINT game_moves_coach_error_subcategory_check
+            CHECK (coach_error_subcategory IN ('hanging_piece','fork','pin_skewer','discovered_attack'))""")
+        for ply, objective in enumerate(['Attack', 'Defend', 'Improve', 'Convert', None, 'Attack', 'Improve']):
+            category = 'other' if ply < 5 else 'tactical_miss' if ply == 5 else None
+            subcategory = 'fork' if ply == 5 else None
+            raw = teaching_output()
+            raw['decision_context'] = objective
+            raw['move_evaluation']['mistake_classification'] = {'category': category, 'subcategory': subcategory} if category else None
+            raw_text = json.dumps(raw, indent=2) + '\n'
+            raw_responses.append(raw_text)
+            normalized = {'category': 'positional', 'subcategory': 'knight', **piece_facts} if ply < 5 else raw['move_evaluation']['mistake_classification']
+            metadata = {'model': 'test', 'response_id': str(ply), 'text': 'Saved teaching', 'usage': None,
+                        'generated_at': '2026-11-27T12:00:00+00:00', 'classification_version': 3,
+                        'coach_contract_version': 7, 'normalized_classification': normalized}
+            conn.execute("""UPDATE game_moves SET coach_error_category=%s, coach_error_subcategory=%s,
+                coach_decision_context=%s, coach_metadata=%s, coach_output_raw=%s,
+                coach_position_explanation='Saved position', coach_move_explanation='Saved move'
+                WHERE game_id=%s AND decision_ply=%s""",
+                (category, subcategory, objective, psycopg.types.json.Jsonb(metadata), raw_text, game['id'], ply))
+        conn.execute("DELETE FROM schema_migrations WHERE name='coach_positional_objectives_v1'")
+
+    # Standalone JSON reviews use the same labels and retain their original output.
+    standalone = teaching_output()
+    standalone['decision_context'] = 'Convert'
+    standalone['move_evaluation']['mistake_classification'] = {'category': 'positional', 'subcategory': 'knight', **piece_facts}
+    position = MoveReview.from_game(game['pgn'], 0).position
+    db.save_coach_feedback(CoachAnalysis('Saved standalone', 'standalone', 'test', position, None,
+        played_move='e2e4', position_analysis={'structured': standalone, 'classification_version': 3,
+                                             'output_raw': raw_responses[3]}))
+    engine_before = move_row(db, game)
+    upgraded = Database(test_db_url)
+    for ply, objective in enumerate(['Attack', 'Defend', 'Improve', 'Convert', None]):
+        row = move_row(upgraded, game, ply)
+        assert 'coach_decision_context' not in row
+        assert row['coach_error_category'] == 'positional' and row['coach_error_subcategory'] == objective
+        assert row['coach_output_raw'] == raw_responses[ply]
+        assert {key: row['coach_metadata']['normalized_classification'][key] for key in piece_facts} == piece_facts
+        classification = upgraded._coach_row(row)['teaching']['move_evaluation']['mistake_classification']
+        assert classification == ({'category': 'positional', 'subcategory': objective, **piece_facts} if objective else None)
+    for ply, category, subcategory in [(5, 'tactical_miss', 'fork'), (6, None, None)]:
+        row = move_row(upgraded, game, ply)
+        assert (row['coach_error_category'], row['coach_error_subcategory']) == (category, subcategory)
+        assert row['coach_output_raw'] == raw_responses[ply]
+    after = move_row(upgraded, game)
+    assert {key: val for key, val in engine_before.items() if not key.startswith('coach_')} == {
+        key: val for key, val in after.items() if not key.startswith('coach_')}
+    assert upgraded.review_sessions(game['id'], 0) == [review]
+    with upgraded.connection() as conn:
+        saved = conn.execute("SELECT position_analysis FROM coach_feedback WHERE response_id='standalone'").fetchone()['position_analysis']
+    assert saved['output_raw'] == raw_responses[3]
+    assert 'decision_context' not in saved['structured']
+    assert saved['structured']['move_evaluation']['mistake_classification'] == {
+        'category': 'positional', 'subcategory': 'Convert', **piece_facts}
+    # A later restart must neither repeat migration nor change a newly saved objective.
+    with upgraded.connection() as conn:
+        conn.execute("UPDATE game_moves SET coach_error_subcategory='Defend' WHERE decision_ply=0")
+    assert move_row(Database(test_db_url), game)['coach_error_subcategory'] == 'Defend'
+
+
+@pytest.mark.parametrize('category,subcategory', [
+    ('other', None), ('positional', 'knight'), ('positional', 'fork'),
+    ('tactical_miss', 'Attack'), ('tactical_allowed', None), (None, 'Improve'),
+])
+def test_database_rejects_retired_or_mismatched_error_labels(test_db_url, category, subcategory):
+    db, game = imported(test_db_url)
+    with pytest.raises(psycopg.errors.CheckViolation), db.connection() as conn:
+        conn.execute('UPDATE game_moves SET coach_error_category=%s, coach_error_subcategory=%s WHERE game_id=%s',
+                     (category, subcategory, game['id']))
 
 
 @pytest.mark.parametrize("quality", ["best", "excellent", "good"])
