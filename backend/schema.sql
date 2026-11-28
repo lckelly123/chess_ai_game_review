@@ -285,3 +285,102 @@ CREATE UNIQUE INDEX IF NOT EXISTS multi_game_analysis_active ON multi_game_analy
     WHERE status IN ('queued', 'running');
 
 INSERT INTO schema_migrations(name) VALUES ('analytics_relational_v1') ON CONFLICT DO NOTHING;
+
+-- Dashboard summaries: one row per player and time control, rebuilt atomically
+-- from game_moves. These are replaceable summaries, never engine/model inputs.
+CREATE TABLE IF NOT EXISTS analytics_tactical (
+    username TEXT NOT NULL REFERENCES profiles(username) ON DELETE CASCADE,
+    time_class TEXT NOT NULL,
+    time_control_raw TEXT NOT NULL,
+    hanging_piece_missed BIGINT NOT NULL CHECK (hanging_piece_missed>=0),
+    hanging_piece_allowed BIGINT NOT NULL CHECK (hanging_piece_allowed>=0),
+    fork_missed BIGINT NOT NULL CHECK (fork_missed>=0),
+    fork_allowed BIGINT NOT NULL CHECK (fork_allowed>=0),
+    pin_skewer_missed BIGINT NOT NULL CHECK (pin_skewer_missed>=0),
+    pin_skewer_allowed BIGINT NOT NULL CHECK (pin_skewer_allowed>=0),
+    discovered_attack_missed BIGINT NOT NULL CHECK (discovered_attack_missed>=0),
+    discovered_attack_allowed BIGINT NOT NULL CHECK (discovered_attack_allowed>=0),
+    calculation_version INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (username,time_class,time_control_raw)
+);
+CREATE TABLE IF NOT EXISTS analytics_decision_context (
+    username TEXT NOT NULL REFERENCES profiles(username) ON DELETE CASCADE,
+    time_class TEXT NOT NULL,
+    time_control_raw TEXT NOT NULL,
+    attack_count BIGINT NOT NULL CHECK (attack_count>=0),
+    defend_count BIGINT NOT NULL CHECK (defend_count>=0),
+    improve_count BIGINT NOT NULL CHECK (improve_count>=0),
+    convert_count BIGINT NOT NULL CHECK (convert_count>=0),
+    calculation_version INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (username,time_class,time_control_raw)
+);
+CREATE TABLE IF NOT EXISTS analytics_piece_comparison (
+    username TEXT NOT NULL REFERENCES profiles(username) ON DELETE CASCADE,
+    time_class TEXT NOT NULL,
+    time_control_raw TEXT NOT NULL,
+    counts JSONB NOT NULL CHECK (jsonb_typeof(counts)='object'),
+    calculation_version INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (username,time_class,time_control_raw)
+);
+CREATE TABLE IF NOT EXISTS analytics_context_outlook (
+    username TEXT NOT NULL REFERENCES profiles(username) ON DELETE CASCADE,
+    time_class TEXT NOT NULL,
+    time_control_raw TEXT NOT NULL,
+    counts JSONB NOT NULL CHECK (jsonb_typeof(counts)='object'),
+    calculation_version INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (username,time_class,time_control_raw)
+);
+CREATE TABLE IF NOT EXISTS analytics_phase (
+    username TEXT NOT NULL REFERENCES profiles(username) ON DELETE CASCADE,
+    time_class TEXT NOT NULL,
+    time_control_raw TEXT NOT NULL,
+    opening_errors BIGINT NOT NULL CHECK (opening_errors>=0),
+    opening_moves BIGINT NOT NULL CHECK (opening_moves>=opening_errors),
+    middlegame_errors BIGINT NOT NULL CHECK (middlegame_errors>=0),
+    middlegame_moves BIGINT NOT NULL CHECK (middlegame_moves>=middlegame_errors),
+    endgame_errors BIGINT NOT NULL CHECK (endgame_errors>=0),
+    endgame_moves BIGINT NOT NULL CHECK (endgame_moves>=endgame_errors),
+    calculation_version INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (username,time_class,time_control_raw)
+);
+CREATE TABLE IF NOT EXISTS analytics_sharpness (
+    username TEXT NOT NULL REFERENCES profiles(username) ON DELETE CASCADE,
+    time_class TEXT NOT NULL,
+    time_control_raw TEXT NOT NULL,
+    forgiving_errors BIGINT NOT NULL CHECK (forgiving_errors>=0),
+    forgiving_moves BIGINT NOT NULL CHECK (forgiving_moves>=forgiving_errors),
+    flexible_errors BIGINT NOT NULL CHECK (flexible_errors>=0),
+    flexible_moves BIGINT NOT NULL CHECK (flexible_moves>=flexible_errors),
+    selective_errors BIGINT NOT NULL CHECK (selective_errors>=0),
+    selective_moves BIGINT NOT NULL CHECK (selective_moves>=selective_errors),
+    demanding_errors BIGINT NOT NULL CHECK (demanding_errors>=0),
+    demanding_moves BIGINT NOT NULL CHECK (demanding_moves>=demanding_errors),
+    critical_errors BIGINT NOT NULL CHECK (critical_errors>=0),
+    critical_moves BIGINT NOT NULL CHECK (critical_moves>=critical_errors),
+    calculation_version INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (username,time_class,time_control_raw)
+);
+CREATE TABLE IF NOT EXISTS analytics_outlook (
+    username TEXT NOT NULL REFERENCES profiles(username) ON DELETE CASCADE,
+    time_class TEXT NOT NULL,
+    time_control_raw TEXT NOT NULL,
+    losing_errors BIGINT NOT NULL CHECK (losing_errors>=0),
+    losing_moves BIGINT NOT NULL CHECK (losing_moves>=losing_errors),
+    worse_errors BIGINT NOT NULL CHECK (worse_errors>=0),
+    worse_moves BIGINT NOT NULL CHECK (worse_moves>=worse_errors),
+    equal_errors BIGINT NOT NULL CHECK (equal_errors>=0),
+    equal_moves BIGINT NOT NULL CHECK (equal_moves>=equal_errors),
+    better_errors BIGINT NOT NULL CHECK (better_errors>=0),
+    better_moves BIGINT NOT NULL CHECK (better_moves>=better_errors),
+    winning_errors BIGINT NOT NULL CHECK (winning_errors>=0),
+    winning_moves BIGINT NOT NULL CHECK (winning_moves>=winning_errors),
+    calculation_version INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (username,time_class,time_control_raw)
+);
