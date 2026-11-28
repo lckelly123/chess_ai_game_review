@@ -1,5 +1,9 @@
 # Lessons
 
+Status: Retired; superseded by [Analytics](analytics.md). The former `#lessons`
+and `#lessons/multi-game` routes now resolve to `#analytics`. This brief retains
+the historical Lessons direction; it does not describe the current interface.
+
 Mode: Operate. Route: `#lessons`. Direction: `lessons-explorer-2026-11-21`.
 
 The user requested a layout like the supplied summary-card and topic-list reference, while retaining the current color palette. This replaces the grouped table within the established app; no new visual identity or concept selection is needed. Build path: code. The reference is structural inspiration, not an exact reproduction.

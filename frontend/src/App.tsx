@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleAlert, Clock3, Code2, GraduationCap, LoaderCircle, Search, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleAlert, Clock3, Code2, ChartNoAxesColumn, LoaderCircle, Search, UserRound } from 'lucide-react';
 import { BrandKnight } from './Board';
 import Replay from './Replay';
 import GameAnalysisAction from './GameAnalysisAction';
-import Lessons from './Lessons';
+import Analytics from './Analytics';
 import { api, perspective, readStored, timeControl } from './types';
 import type { GameDetail } from './types';
 import AccountDialog from './AccountDialog';
@@ -23,8 +23,7 @@ export default function App() {
     sync, selectAccount, reloadLibrary} = useGameLibrary();
   const [accountOpen, setAccountOpen] = useState(false);
   const [replayRoute, setReplayRoute] = useState(readReplayRoute);
-  const [lessonsOpen, setLessonsOpen] = useState(() => ['#lessons', '#lessons/multi-game'].includes(window.location.hash));
-  const [multiGameOpen, setMultiGameOpen] = useState(() => window.location.hash === '#lessons/multi-game');
+  const [analyticsOpen, setAnalyticsOpen] = useState(() => ['#analytics', '#lessons', '#lessons/multi-game'].includes(window.location.hash));
   const [devOpen, setDevOpen] = useState(() => window.location.hash === '#dev');
   const [detail, setDetail] = useState<GameDetail | null>(null);
   const [search, setSearch] = useState('');
@@ -36,7 +35,7 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const gameListRef = useRef<HTMLUListElement>(null);
   const libraryPosition = useRef({ page: 0, list: 0, game: '' });
-  const wasOutsideLibrary = useRef(!!replayRoute || lessonsOpen || devOpen);
+  const wasOutsideLibrary = useRef(!!replayRoute || analyticsOpen || devOpen);
   const reloadLibraryRef = useRef(reloadLibrary);
   reloadLibraryRef.current = reloadLibrary;
 
@@ -64,16 +63,17 @@ export default function App() {
 
   useEffect(() => {
     const navigate = () => {
-      setReplayRoute(readReplayRoute()); setLessonsOpen(['#lessons', '#lessons/multi-game'].includes(window.location.hash));
-      setMultiGameOpen(window.location.hash === '#lessons/multi-game');
+      if (['#lessons', '#lessons/multi-game'].includes(window.location.hash)) window.history.replaceState(null, '', '#analytics');
+      setReplayRoute(readReplayRoute()); setAnalyticsOpen(window.location.hash === '#analytics');
       setDevOpen(window.location.hash === '#dev');
     };
+    navigate();
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
 
   useLayoutEffect(() => {
-    if (replayRoute || lessonsOpen || devOpen) {
+    if (replayRoute || analyticsOpen || devOpen) {
       window.scrollTo(0, 0);
       if (replayRoute) workspaceRef.current?.focus({ preventScroll: true });
     } else if (wasOutsideLibrary.current) {
@@ -84,9 +84,9 @@ export default function App() {
       }
       window.scrollTo(0, libraryPosition.current.page);
     }
-    wasOutsideLibrary.current = !!replayRoute || lessonsOpen || devOpen;
-    document.title = devOpen ? 'Chess study — Dev' : multiGameOpen ? 'Chess study — Multi-game analysis' : lessonsOpen ? 'Chess study — Lessons' : replayRoute ? 'Chess study — Game replay' : 'Chess study — Your game library';
-  }, [replayRoute, lessonsOpen, multiGameOpen, devOpen]);
+    wasOutsideLibrary.current = !!replayRoute || analyticsOpen || devOpen;
+    document.title = devOpen ? 'Chess study — Dev' : analyticsOpen ? 'Chess study — Analytics' : replayRoute ? 'Chess study — Game replay' : 'Chess study — Your game library';
+  }, [replayRoute, analyticsOpen, devOpen]);
 
   useEffect(() => {
     if (!replayRoute) { setDetail(null); setDetailError(''); setDetailLoading(false); return; }
@@ -115,19 +115,19 @@ export default function App() {
   return <>
     <header className="site-header"><a className="wordmark" href="#games" aria-label="Chess study home"><span className="brand-piece"><BrandKnight/></span>Chess <span>study</span></a>
       <nav className="primary-nav" aria-label="Main navigation">
-        <a href="#games" aria-current={!lessonsOpen && !devOpen ? 'page' : undefined}><BookOpen size={16}/> <span>Your game library</span></a>
-        <a href="#lessons" aria-current={lessonsOpen ? 'page' : undefined} onClick={() => {
-          if (!replayRoute && !lessonsOpen && !devOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
-        }}><GraduationCap size={17}/> Lessons</a>
+        <a href="#games" aria-current={!analyticsOpen && !devOpen ? 'page' : undefined}><BookOpen size={16}/> <span>Your game library</span></a>
+        <a href="#analytics" aria-current={analyticsOpen ? 'page' : undefined} onClick={() => {
+          if (!replayRoute && !analyticsOpen && !devOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
+        }}><ChartNoAxesColumn size={17}/> Analytics</a>
       </nav>
       <div className="header-tools"><a className="dev-tab" href="#dev" aria-current={devOpen ? 'page' : undefined} onClick={() => {
-        if (!replayRoute && !lessonsOpen && !devOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
+        if (!replayRoute && !analyticsOpen && !devOpen) libraryPosition.current = {...libraryPosition.current, page: window.scrollY, list: gameListRef.current?.scrollTop || 0};
       }}><Code2 size={16}/>Dev</a><button className="account-button" onClick={() => setAccountOpen(true)} aria-label={username ? `Account settings for ${username}` : 'Add your Chess.com account'}
         aria-haspopup="dialog" aria-expanded={accountOpen}><UserRound size={17}/><span>{username || 'Account'}</span><ChevronDown size={14}/></button></div>
     </header>
     {accountOpen && <AccountDialog username={username} profiles={profiles} onSave={saveAccount} onClose={() => setAccountOpen(false)}/>}
     <main className={`app-layout ${replayRoute ? 'replay-layout' : 'library-layout'}`}>
-      {devOpen ? <Dev/> : lessonsOpen ? <Lessons key={`${username}:${revision}`} username={username} multiGameOpen={multiGameOpen} profilesLoading={profilesLoading}
+      {devOpen ? <Dev/> : analyticsOpen ? <Analytics key={`${username}:${revision}`} username={username} profilesLoading={profilesLoading}
         profileError={profileError} onRetryProfiles={reloadLibrary}/>
       : !replayRoute ? <div className="library">
         <div className="library-heading"><div><h1>Your game library</h1><p>Your games, ready for a closer look.</p></div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, readStored, store } from './types';
 import type { Game, ImportJob, Profile } from './types';
+import { refreshAnalytics } from './analyticsData';
 
 type SyncState = { status: 'idle' | 'checking' | 'completed' | 'failed'; message: string; added: number; skipped: number };
 const idleSync: SyncState = { status: 'idle', message: '', added: 0, skipped: 0 };
@@ -51,6 +52,9 @@ export default function useGameLibrary() {
     const controller = new AbortController();
     let timer: number | undefined;
     setSync({ ...idleSync, status: 'checking' });
+    // Refresh saved statistics even if the independent Chess.com sync fails.
+    // Analytics reports its own errors when opened; syncing never waits on it.
+    void refreshAnalytics(username).catch(() => undefined);
 
     const fail = (err: unknown) => {
       if (!controller.signal.aborted) setSync({...idleSync, status: 'failed',
@@ -60,6 +64,7 @@ export default function useGameLibrary() {
       if (controller.signal.aborted) return;
       if (job.status === 'failed') { fail(new Error(job.message)); return; }
       if (job.status === 'completed') {
+        void refreshAnalytics(username).catch(() => undefined);
         // Refresh the list without replacing it with a loading screen or
         // changing filters, scroll position, or the user's current account.
         setRevision(value => value + 1);

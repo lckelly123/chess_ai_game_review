@@ -2,6 +2,57 @@
 
 The complete field types, nullability, constraints and indexes are in `backend/schema.sql`.
 
+## Dashboard summaries
+
+The Analytics tab reads seven persisted tables. Every table has one row per
+`(username, time_class, time_control_raw)`, plus `calculation_version` and
+`updated_at`. Source decisions remain in `game_moves`; summaries contain no
+per-game records and can be rebuilt without an engine or model request.
+
+| Table | Stored measures |
+| --- | --- |
+| `analytics_tactical` | Eight counts: four motifs × missed/allowed |
+| `analytics_decision_context` | Attack, Defend, Improve, Convert counts |
+| `analytics_piece_comparison` | Named JSONB matrix: actual piece → engine-preferred piece → count |
+| `analytics_context_outlook` | Named JSONB matrix: five outlooks → four contexts → count |
+| `analytics_phase` | Error and eligible-move counts for three phases |
+| `analytics_sharpness` | Error and eligible-move counts for five sharpness categories |
+| `analytics_outlook` | Error and eligible-move counts for five outlook categories |
+
+Only the selected player's decisions are eligible, even though engine analysis
+covers both colors. Completed evidence must match the current PGN hash. Errors
+are Inaccuracy, Mistake and Blunder; Best, Excellent and Good also count in rate
+denominators. Uncertain and missing grades count in neither. Missing sharpness
+or outlook excludes a move from that metric only. Coach charts require supported
+saved classifications; absent historical objectives are never inferred. A
+positional review without an objective can still contribute its known piece pair
+to the heatmap. The engine-preferred piece is identified from rank one's origin
+square on the saved pre-move board, including pawn promotions and king castling.
+
+Outlook uses the exact pre-move rank-one evaluation, converted from stored White
+perspective to the player/mover: Losing below −300 cp, Worse from −300 to below
+−50, Equal from −50 through +50, Better above +50 through +300, Winning above
++300. Forced mates map to Winning or Losing; missing/bounded scores do not get
+an outlook. All five bands remain in storage; only the positional chart combines
+Worse into Losing and Better into Winning. Combined time-control rates divide
+the summed error counts by summed eligible-move counts. Zero denominators are
+displayed as no data, never as zero percent.
+
+The `dashboard_analytics_v1` startup migration backfills existing profiles once.
+Imports (including source/time-control changes), saved engine results, saved
+game-linked coach reviews, and resets rebuild affected players in the same
+transaction as the source change. A per-player advisory lock serializes rebuilds;
+one source query provides their snapshot. Rebuilds replace all seven sets of rows,
+removing obsolete controls, with a shared timestamp. Reads use a repeatable-read
+snapshot so they cannot mix generations from different tables.
+
+`GET /api/analytics?username=...` reads summaries; `POST
+/api/analytics/refresh?username=...` rebuilds and returns them. Page-load refresh
+runs independently of game syncing, and the Analytics page offers manual refresh
+and reads saved updates every ten seconds while visible. Sync failure cannot
+prevent refresh from saved evidence. Newly imported but unanalyzed games establish
+zero-count time-control rows without launching analysis.
+
 ```mermaid
 erDiagram
     games ||--o{ game_moves : contains
@@ -35,7 +86,7 @@ All schema columns exist from the start. Import creates source rows; engine and 
 
 ## Coaching
 
-One current successful response belongs to each recorded move. `coach_output_raw` is the unmodified returned JSON text; queryable fields are populated after validation. The model category and subcategory populate `coach_error_category` and `coach_error_subcategory` directly. Positional errors use `positional` with Attack, Defend, Improve, or Convert; tactical errors retain their motif subcategories. Piece metadata remains separate. The one-time `coach_positional_objectives_v1` migration renames saved `other` errors to `positional`, moves their saved decision context into the subcategory, and removes `coach_decision_context`. Missing historical objectives stay null; raw responses and review history are preserved. Lessons groups positional errors by objective.
+One current successful response belongs to each recorded move. `coach_output_raw` is the unmodified returned JSON text; queryable fields are populated after validation. The model category and subcategory populate `coach_error_category` and `coach_error_subcategory` directly. Positional errors use `positional` with Attack, Defend, Improve, or Convert; tactical errors retain their motif subcategories. Piece metadata remains separate. The one-time `coach_positional_objectives_v1` migration renames saved `other` errors to `positional`, moves their saved decision context into the subcategory, and removes `coach_decision_context`. Missing historical objectives stay null; raw responses and review history are preserved. Analytics counts positional decision contexts using these saved objectives.
 
 The metadata retains model, response ID, usage, generation time, contract/classification/sharpness versions, prior-move context and the engine evidence identity. A failed or stale generation cannot erase or replace successful coaching. Game-linked reads do not borrow standalone responses from another context.
 

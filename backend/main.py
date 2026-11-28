@@ -93,6 +93,14 @@ def create_app(database_url: str | None = None, transport=None, *, coach_factory
     def lessons(username: str = Query(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")):
         return lesson_analytics(app.state.db, username)
 
+    @app.get("/api/analytics")
+    def analytics(username: str = Query(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")):
+        return app.state.db.analytics(username)
+
+    @app.post("/api/analytics/refresh")
+    def refresh_analytics(username: str = Query(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")):
+        return app.state.db.analytics(username, refresh=True)
+
     @app.get("/api/games/{game_id}")
     def game(game_id: str):
         record = app.state.db.game(game_id)

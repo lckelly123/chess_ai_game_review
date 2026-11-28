@@ -17,6 +17,7 @@ from .coach.context import COACH_CONTRACT_VERSION, context_key
 from .coach.player_move_quality import ACCEPTABLE_STATUSES, PLAYER_QUALITY_POLICY
 from .game_analysis import analysis_result, analysis_summary, coaching_total, pgn_fingerprint, quality_counts
 from .game_statistics import STATISTICS_VERSION, build_statistics
+from .analytics import refresh_games, refresh_player, read_player
 
 MULTI_GAME_COLUMNS = """id, username, status, input_snapshot -> 'summary' AS summary,
                        report, model, reasoning_effort, response_id, error, created_at, updated_at"""
@@ -49,6 +50,11 @@ class Database:
             db.execute("SELECT pg_advisory_xact_lock(7420918001)")
             db.execute(Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
             self._upgrade_move_quality(db)
+            migration = "dashboard_analytics_v1"
+            if not db.execute("SELECT 1 FROM schema_migrations WHERE name=%s", (migration,)).fetchone():
+                for profile in db.execute("SELECT username FROM profiles ORDER BY username").fetchall():
+                    refresh_player(db, profile["username"])
+                db.execute("INSERT INTO schema_migrations(name) VALUES (%s)", (migration,))
 
     @staticmethod
     def _upgrade_move_quality(db):
@@ -82,6 +88,7 @@ class Database:
         with self.connection() as db:
             db.execute("INSERT INTO profiles VALUES (%s,%s) ON CONFLICT(username) DO UPDATE SET last_synced=excluded.last_synced", (username, now))
             added = 0
+            affected = []
             for record in games:
                 fields, moves = import_records(record, now)
                 db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (fields["source_url"],))
@@ -89,6 +96,7 @@ class Database:
                     (source_game_id=%s OR source_url=%s) FOR UPDATE""",
                     (fields["source"], fields["source_game_id"], fields["source_url"])).fetchone()
                 game_id = existing["game_id"] if existing else fields["game_id"]
+                affected.append(game_id)
                 changed = existing and existing["pgn_hash"] != fields["pgn_hash"]
                 fields["game_id"] = game_id
                 if existing:
@@ -106,7 +114,17 @@ class Database:
                     else:
                         insert(db, "game_moves", move)
                 added += db.execute("INSERT INTO profile_games VALUES (%s,%s) ON CONFLICT DO NOTHING", (username, game_id)).rowcount
+            refresh_games(db, affected, [username])
             return added
+
+    def analytics(self, username, *, refresh=False):
+        username = username.strip().lower()
+        with self.connection() as db:
+            if refresh:
+                return refresh_player(db, username)
+            # All seven tables must come from the same committed refresh.
+            db.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            return read_player(db, username)
 
     def profiles(self):
         with self.connection() as db:
@@ -206,6 +224,7 @@ class Database:
             if game_id is None:
                 feedback += db.execute("DELETE FROM coach_feedback").rowcount
                 reports += db.execute("DELETE FROM multi_game_analysis").rowcount
+            refresh_games(db, ids)
             return {"game_ids": ids, "games_reset": len(ids), "engine_records": engine, "coach_records": feedback, "reports": reports}
 
     @staticmethod
@@ -327,6 +346,7 @@ class Database:
                 return False
             self._save_engine(db, game, move, result, fingerprint)
             db.execute("UPDATE analysis_jobs SET updated_at=clock_timestamp() WHERE game_id=%s", (game_id,))
+            refresh_games(db, [game_id])
             return True
 
     save_game_opponent_move = save_game_analysis_move
@@ -440,6 +460,7 @@ class Database:
                     "coach_error_subcategory": category.get("subcategory"),
                     "coach_output_raw": raw, "coach_metadata": metadata}
                 update(db, "game_moves", fields, "move_id=%s", [move["move_id"]])
+                refresh_games(db, [game_id])
                 return self._coach_row({**move, **fields})
             # Standalone FEN or terminal-board commentary has no recorded move.
             row = insert(db, "coach_feedback", {"fen": analysis.position.fen, "text": analysis.text,
